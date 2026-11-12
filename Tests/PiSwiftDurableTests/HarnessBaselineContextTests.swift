@@ -44,8 +44,8 @@ private func baselineDescription(_ messages: [Message]) -> [String] {
             #expect(try await read(root).messages.first == "user:first")
             _ = try await append(root, baselineSystem("plan"))
             let discovered = try await read(root)
-            // v1.5.2 D3b conversation-tails.ts:28–37 answers the tail without a scan.
-            #expect(discovered.rows == 1)
+            // v1.5.2 D5b context.ts:199–212: publication advances the range.
+            #expect(discovered.rows == 0)
             #expect(Array(discovered.messages.prefix(3)) == ["system:plan", "user:first", "assistant:old 0"])
 
             let fork = try await root.fork(at: first.id, options: .init(ownership: .ownerless()), context: context)
@@ -54,7 +54,8 @@ private func baselineDescription(_ messages: [Message]) -> [String] {
             #expect(try await read(fork).messages == ["user:first", "assistant:answer", "system:note"])
             _ = try await append(fork, baselineSystem("note"))
             let positional = try await read(fork)
-            #expect(positional.rows == 1)
+            // v1.5.2 D5b context.ts:199–212.
+            #expect(positional.rows == 0)
             #expect(positional.messages == ["user:first", "assistant:answer", "system:note", "system:note"])
 
             let omitted = try await root.fork(at: first.id, options: .init(ownership: .ownerless()), context: context)
@@ -64,7 +65,8 @@ private func baselineDescription(_ messages: [Message]) -> [String] {
             #expect(try await read(omitted).messages == ["user:first", "assistant:answer"])
             _ = try await append(omitted, baselineSystem("legacy"))
             let legacy = try await read(omitted)
-            #expect(legacy.rows == 1)
+            // v1.5.2 D5b context.ts:199–212.
+            #expect(legacy.rows == 0)
             #expect(legacy.messages == ["user:first", "assistant:answer", "system:legacy"])
 
             let empty = try await root.fork(at: first.id, options: .init(ownership: .ownerless()), context: context)
@@ -73,7 +75,8 @@ private func baselineDescription(_ messages: [Message]) -> [String] {
             #expect(try await read(empty).messages == ["user:first", "assistant:answer"])
             _ = try await append(empty, baselineSystem("s"))
             let delta = try await read(empty)
-            #expect(delta.rows == 1)
+            // v1.5.2 D5b context.ts:199–212.
+            #expect(delta.rows == 0)
             #expect(delta.messages == ["user:first", "assistant:answer", "system:s"])
             try await runtime.commit({ _, _ in try completed(1) }, context: context)
         }

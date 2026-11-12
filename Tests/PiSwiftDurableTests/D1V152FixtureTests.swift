@@ -299,7 +299,7 @@ struct D1V152FixtureTests {
         #expect(try fileBytes(copied.path) == before)
     }
 
-    @Test(arguments: ["sqlite", "jsonl"])
+    @Test(.timeLimit(.minutes(1)), arguments: ["sqlite", "jsonl"])
     func phaseOnlyFileCanResumeWhileNewerTaskStaysBlocked(backend: String) async throws {
         let copied = try copiedFixture("phase-only", backend: backend)
         defer { try? FileManager.default.removeItem(at: copied.directory) }
@@ -307,8 +307,6 @@ struct D1V152FixtureTests {
         let cases = try #require(fixture["cases"]?.objectValue)
         let newerRawID = try #require(cases["newerGenerationVersion"])
         let newerID = try newerRawID.decode(TaskID.self)
-        let rawBefore = try fileBytes(copied.path)
-        let rowsBefore = backend == "sqlite" ? try sqliteRows(copied.path) : [:]
         let storage: any DurableStorage
         if backend == "sqlite" { storage = try await SqliteStorage.open(path: copied.path.path) }
         else { storage = try await JsonlStorage.open(directory: copied.path.path, fileSystem: LocalExecutionEnv(cwd: copied.path.path)) }
@@ -320,7 +318,10 @@ struct D1V152FixtureTests {
             for (name, rawID) in cases {
                 let id = try rawID.decode(TaskID.self)
                 let saved = try #require(initial.tasks.first { $0.record.id == id })
-                if case .blocked(let reason, _) = saved.state {
+                if ["finish", "drain", "retryPoll"].contains(name) {
+                    // v1.5.2 D5b: the phase runs now (generation.ts:309–345,370–395).
+                    guard case .pending = saved.state else { Issue.record("Fixture phase \(name) is not pending"); continue }
+                } else if case .blocked(let reason, _) = saved.state {
                     #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
                 } else if name == "toolsPending" {
                     // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable work is pending.
@@ -333,25 +334,29 @@ struct D1V152FixtureTests {
                 recordsBefore[id] = try await storage.task(id, context: .background)
             }
             try harness.resume()
-            try await harnessEventually {
-                let state = try await harness.inspect(context: .background)
-                return state.tasks.allSatisfy { if case .blocked = $0.state { return true }; return false }
-            }
+            // v1.5.2 D5b generation.ts:370–395: wait for the two phase outcomes.
+            // A five-second storage polling loop can starve under the full parallel suite.
+            _ = try await harness.waitForTask(id: TaskID(2), context: .background)
+            _ = try await harness.waitForTask(id: TaskID(3), context: .background)
             let resumed = try await harness.inspect(context: .background)
-            #expect(resumed.tasks.count == cases.count)
             for (name, rawID) in cases {
                 let id = try rawID.decode(TaskID.self)
-                let saved = try #require(resumed.tasks.first { $0.record.id == id })
-                guard case .blocked(let reason, _) = saved.state else { Issue.record("Fixture phase \(name) resumed"); continue }
-                #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
+                switch name {
+                case "finish", "drain":
+                    // v1.5.2 D5b: the phase runs now (generation.ts:370–395).
+                    #expect(try await storage.task(id, context: .background)?.state.status == "terminal")
+                case "retryPoll":
+                    // v1.5.2 D5b: retry.poll resumes and sleeps until its tagged deadline (generation.ts:309–323).
+                    #expect(try await storage.task(id, context: .background)?.state.status == "sleeping")
+                default:
+                    let saved = try #require(resumed.tasks.first { $0.record.id == id })
+                    guard case .blocked(let reason, _) = saved.state else { Issue.record("Fixture phase \(name) resumed"); continue }
+                    #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
+                }
             }
-            for (id, record) in recordsBefore {
-                #expect(try await storage.task(id, context: .background) == record)
-            }
+            #expect(try await storage.task(newerID, context: .background) == recordsBefore[newerID])
         } catch { try? await harness.close(context: .background); throw error }
         try await harness.close(context: .background)
-        if backend == "sqlite" { #expect(try sqliteRows(copied.path) == rowsBefore) }
-        else { #expect(try fileBytes(copied.path) == rawBefore) }
         let reopened: any DurableStorage
         if backend == "sqlite" { reopened = try await SqliteStorage.open(path: copied.path.path) }
         else { reopened = try await JsonlStorage.open(directory: copied.path.path, fileSystem: LocalExecutionEnv(cwd: copied.path.path)) }

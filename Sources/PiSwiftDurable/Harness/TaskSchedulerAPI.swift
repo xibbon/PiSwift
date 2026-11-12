@@ -208,6 +208,9 @@ extension TaskScheduler {
             let idle = idle(id), retention = settings().contextRetentionMs, now = now()
             state.withLock { state in
                 guard !state.closing, !invocation.state.withLock({ $0.ended }), state.contexts[id].map({ $0.range.bounds.tail <= range.bounds.tail }) ?? true else { return }
+                // v1.5.2 context.ts:105–139: a commit can publish after the
+                // off-line scan and before this range is installed.
+                guard !range.current || session.knownLatestEntryId(id) == range.bounds.tail else { return }
                 if !idle { state.contexts[id] = KeptContext(range: range, idleSince: nil) }
                 else if retention > 0 { state.contexts[id] = KeptContext(range: range, idleSince: state.contexts[id]?.idleSince ?? now) }
             }

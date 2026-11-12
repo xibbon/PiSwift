@@ -23,8 +23,13 @@ export async function mirrorV152({ dependencies = [] } = {}) {
     const archive = spawn('git', ['-C', upstreamRepository, 'archive', upstreamTag,
       ...names.map(name => `packages/${name}/src`)], { stdio: ['ignore', 'pipe', 'inherit'] });
     const extract = spawn('tar', ['-x', '-C', directory], { stdio: ['pipe', 'inherit', 'inherit'] });
+    // tar can close after the archive end blocks before git's stdout closes.
+    // Both child exit codes still decide whether the mirror is valid.
+    let pipeError;
+    extract.stdin.on('error', error => { if (error.code !== 'EPIPE') pipeError = error; });
     archive.stdout.pipe(extract.stdin);
     await Promise.all([completion(archive), completion(extract)]);
+    if (pipeError) throw pipeError;
     // Install first: npm prunes links absent from its manifest.
     if (dependencies.length) execFileSync('npm', ['install', '--prefix', directory,
       '--no-audit', '--no-fund', '--ignore-scripts', ...dependencies], { stdio: 'ignore' });

@@ -224,6 +224,9 @@ public final class Session: Sendable {
                                           limit: 1, cursor: nil, context: context).items.first?.id
         }
     }
+    /// v1.5.2 context.ts:136–138: a range returned from an off-line scan is
+    /// current only while its tail is still the newest published entry.
+    internal func knownLatestEntryId(_ id: ConversationID) -> EntryID? { tails.peek(id) ?? nil }
     internal func latestHeadMarker(_ id: ConversationID, atOrBefore cutoff: EntryID?,
                                    context: ChordContext) async throws -> EntryRecord? {
         try await touch(SessionKeys.conversationKey(id))

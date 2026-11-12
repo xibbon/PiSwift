@@ -5,6 +5,7 @@ import PiSwiftChord
 private actor GenerationPartialThrottle {
     let runtime: TaskRuntime
     let attempt: Int
+    let thinkingLevel: ModelThinkingLevel?
     let interval: Int64
     let context: ChordContext
     let changes = PartialChanges()
@@ -12,11 +13,13 @@ private actor GenerationPartialThrottle {
     var timer: Task<Void, Never>?
     var inFlight: Task<Void, Never>?
     var stopped = false
-    init(runtime: TaskRuntime, attempt: Int, context: ChordContext) {
-        self.runtime = runtime; self.attempt = attempt; self.context = context
+    init(runtime: TaskRuntime, attempt: Int, thinkingLevel: ModelThinkingLevel?, context: ChordContext) {
+        self.runtime = runtime; self.attempt = attempt; self.thinkingLevel = thinkingLevel; self.context = context
         interval = runtime.settings.progress.partialIntervalMs
     }
-    func offer(_ message: AssistantMessage, event: AssistantMessageEvent) async {
+    func offer(_ incoming: AssistantMessage, event: AssistantMessageEvent) async {
+        var message = incoming
+        if let thinkingLevel { message.thinkingLevel = thinkingLevel }
         guard !stopped, !message.content.isEmpty else { return }
         await changes.observe(event)
         pending = message
@@ -65,10 +68,10 @@ private actor GenerationPartialThrottle {
     }
 }
 func streamGeneration(runtime: TaskRuntime, model: Model, messages: [Message], options: SimpleStreamOptions,
-                      attempt: Int, context: ChordContext) async throws -> AssistantMessage {
-    let throttle = GenerationPartialThrottle(runtime: runtime, attempt: attempt, context: context)
+                      attempt: Int, thinkingLevel: ModelThinkingLevel?, context: ChordContext) async throws -> AssistantMessage {
+    let throttle = GenerationPartialThrottle(runtime: runtime, attempt: attempt, thinkingLevel: thinkingLevel, context: context)
     do {
-        let events = runtime.models.streamSimple(model: model, context: PiSwiftAI.Context(messages: messages), options: options)
+        let events = try runtime.generationModels().streamSimple(model: model, context: PiSwiftAI.Context(messages: messages), options: options)
         for await event in events {
             let partial: AssistantMessage?
             switch event {

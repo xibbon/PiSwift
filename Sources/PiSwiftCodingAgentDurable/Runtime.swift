@@ -364,6 +364,16 @@ private actor DurableRuntime {
             }
         }
     }
+    /// Admit a context continuation while the conversation is idle.
+    func submitContinue() async throws {
+        try assertOpen()
+        let submission = try await current.submit(.continue(), context: .background)
+        watch { [source] in
+            if let message = try runtimeUnansweredNotice(await submission.wait(context: .background)) {
+                source.notice(.error, message)
+            }
+        }
+    }
     private func watch(_ operation: @escaping @Sendable () async throws -> Void) {
         guard !closed else { return }
         let id = UUID()
@@ -487,7 +497,8 @@ internal func runtimeUnansweredNotice(_ settled: SettledSubmission) throws -> St
     let detail: JSONValue?
     switch settled.record {
     case .input(_, _, _, .unanswered(let value, _, let data, _)),
-         .write(_, _, _, .unanswered(let value, let data, _)):
+         .write(_, _, _, .unanswered(let value, let data, _)),
+         .continue(_, _, _, .unanswered(let value, let data, _)):
         reason = value; detail = data
     default: return nil
     }

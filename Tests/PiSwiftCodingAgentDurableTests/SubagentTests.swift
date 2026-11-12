@@ -173,7 +173,10 @@ private func subagentResult(_ root: Conversation) async throws -> (EntryRecord, 
         if case .input(_, _, _, .unanswered(let reason, _, _, _)) = request { #expect(reason == "aborted") }
         else { Issue.record("Expected aborted child input") }
         let child = try #require(await opened.harness.conversation(id: childRecord.id, context: .background))
-        #expect(try await opened.harness.snapshot(LiveDoc, conversationId: child.id, context: .background) == LiveState())
+        // v1.5.2 D5b: harness-ownership.test.ts:1197 keeps the child run failure.
+        let childLive = try await opened.harness.snapshot(LiveDoc, conversationId: child.id, context: .background)
+        #expect(childLive?.run == nil)
+        #expect(childLive?.runFailure?.reason == .aborted)
         #expect(try await child.agent(context: .background).tools.map(\.name) == ["other"])
         try await opened.harness.close(context: .background)
     }

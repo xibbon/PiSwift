@@ -84,6 +84,8 @@ public enum BoundaryPoint: String, Sendable {
 public struct BoundaryResult: Sendable {
     /// The user message entries admitted for this generation.
     public let users: [SubmissionID]
+    /// The first placed user entry, if a boundary placed one.
+    public let first: EntryID?
     /// The reset marker that begins the current context.
     public let reset: Bool
 }
@@ -117,13 +119,15 @@ public func applyBoundary(tx: Transaction, boundary: Boundary, at: BoundaryPoint
         try tx.placeSubmission(item.id, entry: entry.id)
     }
     var placed: [SubmissionID] = []
+    var first: EntryID?
     for index in users {
         let item = values[index]
         let entry = try await appendInput(tx: tx, conversationId: boundary.conversationId, content: item.content!, entry: item.inputEntry, now: now)
+        if first == nil { first = entry.id }
         try tx.placeSubmission(item.id, entry: entry.id); placed.append(item.id)
     }
     for index in (writes + users).sorted(by: >) { try items.splice(index, deleteCount: 1) }
-    return BoundaryResult(users: placed, reset: reset)
+    return BoundaryResult(users: placed, first: first, reset: reset)
 }
 internal func removeInboxItem(tx: Transaction, conversationId: ConversationID, id: SubmissionID) async throws {
     let inbox = try await tx.doc(InboxDoc, conversationId: conversationId)

@@ -203,7 +203,8 @@ private func inputPlaced(_ record: SubmissionRecord) -> EntryID? {
         try await opened.harness.waitForIdle(context: .background)
         #expect(try await follow.status(context: .background).status == "queued")
         #expect(try await inputInbox(opened).map(\.id) == [follow.id])
-        #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background) == LiveState())
+        // v1.5.2 D5b harness-input-entries.test.ts:375–381: model error stays in pi.live.
+        #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)?.runFailure?.reason == .modelError)
         #expect(setup.models.state().callCount == 1)
         _ = try await opened.root.submit(.input(content: .text("g")), context: .background).wait(context: .background)
         #expect(try inputTranscript(await allEntries(opened.root)).filter { $0.first != "pi.assistant" } == [["pi.user", "a"], ["note", "n"], ["chat.mention", ["author": "ann", "text": "f"], "f"], ["pi.user", "g"]])

@@ -1,3 +1,4 @@
+import Foundation
 import Synchronization
 import Testing
 import PiSwiftAI
@@ -31,6 +32,23 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
 }
 
 @Suite struct HarnessRunControlContextTests {
+    @Test("twenty tool rounds reuse published context", .timeLimit(.minutes(1)))
+    func twentyToolRoundContextReadMetric() async throws {
+        // v1.5.2 D5b context.ts:199–212; harness-context.test.ts:452,458.
+        let storage = H6CountingStorage(), setup = HarnessChatSetup()
+        try installHarnessTool(harnessTestTool("echo"), setup: setup)
+        var responses: [FakeDurableResponseStep] = []
+        for index in 0..<20 { responses.append(.message(try toolCalls([("echo", [:], "c\(index)")]))) }
+        responses.append(.message(chatAssistant("done")))
+        setup.models.setResponses(responses)
+        let chat = try await openChat(storage: storage, setup: setup)
+        #expect(try await generationSubmit(chat).wait(context: .background).status == "done")
+        #expect(setup.models.state().callCount == 21)
+        if let path = ProcessInfo.processInfo.environment["D5B_CONTEXT_METRIC_OUT"] {
+            try "scans=\(storage.rangeScans) rows=\(storage.rows)\n".write(toFile: path, atomically: true, encoding: .utf8)
+        }
+        try await chat.harness.close(context: .background)
+    }
     // upstream harness-context.test.ts:223. H3 covered pure bounds; this checks Session visibility.
     @Test func asOfContextMatchesForkAndRejectsInvisibleEntry() async throws {
         let opened = try await openHarness(); let harness = opened.harness
@@ -85,8 +103,8 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
         }
         try registry.install(Extension(name: "range", tasks: [AnyTaskDefinition(definition)]))
         #expect(try await harness.waitForTask(id: harnessStart(root, definition), context: .background).outcome == .completed(result: 1))
-        // v1.5.2 D3b conversation-tails.ts:28–37 saves the newest-entry scan.
-        #expect(rows.values == [3, 1, 0])
+        // v1.5.2 D5b harness-context.test.ts:452,458: committed entries advance the kept range.
+        #expect(rows.values == [0, 0, 0])
         try await harness.close(context: .background)
     }
 
@@ -157,8 +175,8 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
         try await root.waitForIdle(context: .background)
         clock.advance(by: 600000)
         _ = try await harness.waitForTask(id: harnessStart(root, probe), context: .background)
-        // v1.5.2 D3b conversation-tails.ts:28–37 saves the newest-entry scan.
-        #expect(rows.values == [21, 1, 0, 0, 22])
+        // v1.5.2 D5b harness-context.test.ts:564: the retained range advances until expiry.
+        #expect(rows.values == [21, 0, 0, 0, 22])
         try await harness.close(context: .background)
     }
 
@@ -309,12 +327,14 @@ import PiSwiftDurable
 final class H6CountingStorage: DurableStorage, Sendable {
     let base: any DurableStorage
     private let count = Mutex(0)
+    private let rangeCount = Mutex(0)
     private let holdState = Mutex<SessionTestGate?>(nil)
     let scanStarted = SessionTestGate()
     let submissionReadStarted = SessionTestGate()
     private let submissionHold = Mutex<SessionTestGate?>(nil)
     func holdSubmissionRead(_ gate: SessionTestGate) { submissionHold.withLock { $0 = gate } }
     var rows: Int { count.withLock { $0 } }
+    var rangeScans: Int { rangeCount.withLock { $0 } }
     init(_ base: any DurableStorage = MemoryStorage()) { self.base = base }
     func holdNextRange(_ gate: SessionTestGate) { holdState.withLock { $0 = gate } }
     // v1.5.2 D2: mechanical batch forwarding for this storage test double.
@@ -347,6 +367,7 @@ final class H6CountingStorage: DurableStorage, Sendable {
 
     func scanEntries(_ query: EntryQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
         if limit > 1 {
+            rangeCount.withLock { $0 += 1 }
             let gate = holdState.withLock { state in let gate = state; state = nil; return gate }
             if let gate { scanStarted.release(); await gate.wait() }
         }

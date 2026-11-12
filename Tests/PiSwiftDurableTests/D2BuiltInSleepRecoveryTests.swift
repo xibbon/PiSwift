@@ -87,11 +87,18 @@ private func d2StoreLegacyRunning(_ path: URL, _ id: TaskID) async throws {
         try opened.harness.resume()
         let resumed = opened.harness
         try await eventually { try await resumed.getTask(id: id, context: .background)?.state.status == "sleeping" }
-        #expect(try d2SleepingCheckpoint(await d2SleepRecord(resumed, id), until: 61_000) == checkpoint)
+        if legacyRunning {
+            // v1.5.2 D5b generation.ts:330–335,508–543: a stopped in-flight poll spends
+            // an attempt and sleeps before polling its saved handle again.
+            let retry = try d2SleepingCheckpoint(await d2SleepRecord(resumed, id), until: 3_000)
+            #expect(retry["phase"] == .string("retry") && retry["poll"] != nil)
+        } else {
+            #expect(try d2SleepingCheckpoint(await d2SleepRecord(resumed, id), until: 61_000) == checkpoint)
+        }
         #expect(empty.calls().getModel == 0 && empty.calls().fetchDeferred == 0)
         let submission = try #require(await opened.harness.submission(id: input.id, context: .background))
         #expect(try await submission.status(context: .background).status == "placed")
-        clock.advance(by: 60_000)
+        clock.advance(by: legacyRunning ? 2_000 : 60_000)
         let result = try await submission.wait(context: .background)
         #expect(result.status == "unanswered" && result.reason == "no_model")
         #expect(empty.calls().getModel == 1 && empty.calls().fetchDeferred == 0)

@@ -13,6 +13,8 @@ public enum WhenBusy: String, Sendable {
     /// Rejects input while the conversation has active work.
     case reject
 }
+/// Selects whether an input can start work on an idle conversation.
+public enum WhenIdle: String, Sendable { case reject }
 /// The application kind and data used to store a user input.
 public struct InputEntry: Sendable, Equatable, Codable {
     /// The application entry kind. It must be nonempty and must not start with `pi.`.
@@ -34,12 +36,27 @@ public struct InputEntry: Sendable, Equatable, Codable {
 public enum SubmissionDraft: Sendable {
     /// Offers user content with an optional busy policy and request key.
     case input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil, requestId: String? = nil)
+    /// Continues the current context without adding a user entry.
+    case `continue`(requestId: String? = nil)
+    /// An input that rejects an idle conversation.
+    case inputWhenIdle(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil, whenIdle: WhenIdle = .reject, requestId: String? = nil)
+    /// Offers input with an idle admission policy.
+    public static func input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil,
+                             whenIdle: WhenIdle, requestId: String? = nil) -> SubmissionDraft {
+        .inputWhenIdle(content: content, entry: entry, whenBusy: whenBusy, whenIdle: whenIdle, requestId: requestId)
+    }
     /// Offers an entry draft with an optional request key.
     case write(entry: EntryDraft, requestId: String? = nil)
     /// An optional conversation-scoped key that makes request admission idempotent.
-    public var requestId: String? { switch self { case .input(_, _, _, let id), .write(_, let id): id } }
+    public var requestId: String? { switch self { case .input(_, _, _, let id), .inputWhenIdle(_, _, _, _, let id), .write(_, let id), .continue(let id): id } }
     /// The stored input or write submission tag.
-    public var type: String { switch self { case .input: "input"; case .write: "write" } }
+    public var type: String { switch self { case .input, .inputWhenIdle: "input"; case .write: "write"; case .continue: "continue" } }
+}
+/// An input with reject-on-idle policy could not enter the conversation.
+public struct ConversationIdle: Error, Sendable, CustomStringConvertible {
+    public let conversationId: ConversationID
+    public init(conversationId: ConversationID) { self.conversationId = conversationId }
+    public var description: String { "Conversation \(conversationId.rawValue) is idle" }
 }
 /// An input with reject-on-busy policy could not enter the conversation.
 public struct ConversationBusy: Error, Sendable, CustomStringConvertible {
@@ -188,8 +205,9 @@ internal final class Submissions: Sendable {
 private func isSettled(_ record: SubmissionRecord) -> Bool { record.status == "done" || record.status == "unanswered" }
 
 internal func admitSubmission(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft, now: Int64, queueModes: Settings) async throws -> SubmissionID {
-    if case .input(_, let entry?, _, _) = draft,
-       entry.kind.isEmpty || entry.kind.hasPrefix("pi.") {
+    let inputEntry: InputEntry?
+    switch draft { case .input(_, let entry, _, _), .inputWhenIdle(_, let entry, _, _, _): inputEntry = entry; default: inputEntry = nil }
+    if let entry = inputEntry, entry.kind.isEmpty || entry.kind.hasPrefix("pi.") {
         throw SessionError.message("An input entry's kind must be a non-empty string not starting with \"pi.\", got \(entry.kind)")
     }
     if let requestId = draft.requestId, let existing = try await tx.submissionByRequest(conversationId, requestId: requestId) {
@@ -205,8 +223,19 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
     }
     let live = try await tx.doc(LiveDoc, conversationId: conversationId)
     let busy = try live.get("run") != nil
-    if busy, case .input(_, _, .reject, _) = draft { throw ConversationBusy(conversationId: conversationId) }
+    if busy {
+        if case .continue = draft { throw ConversationBusy(conversationId: conversationId) }
+        if case .input(_, _, .reject, _) = draft { throw ConversationBusy(conversationId: conversationId) }
+        if case .inputWhenIdle(_, _, .reject, _, _) = draft { throw ConversationBusy(conversationId: conversationId) }
+    } else if case .inputWhenIdle = draft { throw ConversationIdle(conversationId: conversationId) }
     let boundary = busy ? nil : try await prepareBoundary(tx: tx, conversationId: conversationId, modes: queueModes)
+    if case .continue(let requestId) = draft {
+        let record = try await tx.createSubmission(.continue(conversationId: conversationId, requestId: requestId, state: .placed()))
+        let result = try await applyBoundary(tx: tx, boundary: boundary!, at: .final, now: now)
+        let failure = try live.get("runFailure")?.decode(RunFailure.self)
+        try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: result.users + [record.id], first: failure?.first ?? result.first)
+        return record.id
+    }
     let queued = try boundary?.inbox.child("items")?.count() ?? 0
     if boundary == nil || queued > 0 {
         let record = try await tx.createSubmission(draft.type == "input" ? .input(conversationId: conversationId, requestId: draft.requestId) : .write(conversationId: conversationId, requestId: draft.requestId))
@@ -216,26 +245,30 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
         switch draft {
         case .input(let content, let entry, let whenBusy, _):
             item = InboxItem(id: record.id, mode: whenBusy == .steer ? .steer : .followUp, content: try inputContentJSON(content), inputEntry: entry)
+        case .inputWhenIdle(let content, let entry, let whenBusy, _, _):
+            item = InboxItem(id: record.id, mode: whenBusy == .steer ? .steer : .followUp, content: try inputContentJSON(content), inputEntry: entry)
         case .write(let entry, _): item = InboxItem(id: record.id, mode: .write, entry: entry)
+        case .continue: throw ConversationBusy(conversationId: conversationId)
         }
         try inbox.child("items")!.append(JSONValue(encoding: item))
         if let boundary {
             let result = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: now)
-            if !result.users.isEmpty { try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: result.users) }
+            if !result.users.isEmpty { try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: result.users, first: result.first) }
         }
         return record.id
     }
     switch draft {
+    case .continue: throw ConversationBusy(conversationId: conversationId)
     case .write(let entry, let requestId):
         if isStale(boundary: boundary!, entry: entry) {
             return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .unanswered(reason: "stale"))).id
         }
         let appended = try await tx.appendEntry(conversationId, value: entry)
         return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
-    case .input(let content, let inputEntry, _, let requestId):
+    case .input(let content, let inputEntry, _, let requestId), .inputWhenIdle(let content, let inputEntry, _, _, let requestId):
         let entry = try await appendInput(tx: tx, conversationId: conversationId, content: inputContentJSON(content), entry: inputEntry, now: now)
         let record = try await tx.createSubmission(.input(conversationId: conversationId, requestId: requestId, state: .placed(entry: entry.id)))
-        try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: [record.id])
+        try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: [record.id], first: entry.id)
         return record.id
     }
 }

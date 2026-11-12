@@ -112,7 +112,8 @@ public struct ConversationHandle: Sendable {
     internal init(_ conversation: Conversation) { self.conversation = conversation; id = conversation.id }
     /// Durably admits user input or an entry write and returns its submission handle.
     public func submit(_ draft: SubmissionDraft, context: ChordContext) async throws -> Submission {
-        guard case .input = draft else { throw SessionError.message("A conversation handle can submit only input") }
+        // v1.5.2 harness.ts:552–565: an invocation-bound handle admits the
+        // same drafts as a public conversation, including `continue`.
         return try await conversation.submit(draft, context: context)
     }
     /// Requests abort for conversation tasks; background work is included only when requested.

@@ -47,6 +47,11 @@ func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoin
             }
         }
         try live.remove("generation"); try live.set("tools", JSONValue(encoding: slots))
+        if let run = try live.child("run"), try run.get("taskId")?.decode(TaskID.self) == runtime.taskId {
+            let turns = try run.get("turns")?.decode(Int.self) ?? 0
+            try run.set("turns", .number(Double(turns + 1)))
+            if try run.get("first") == nil { try run.set("first", JSONValue(encoding: entry.id)) }
+        }
         return try generationTask.waiting(GenerationCheckpoint(phase: .tools, assistant: entry.id, tools: tools, pending: pending), on: tools, policy: .allSettled)
     }, context: context)
 }
@@ -67,30 +72,39 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     let results = slots.compactMap(\.entry)
     try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in try await hooks.afterTools?(assistant, results, runtime.hookApi, context) }
     let byTask = Dictionary(uniqueKeysWithValues: zip(tools, controls))
-    let terminate = !slots.isEmpty && slots.allSatisfy { slot in slot.taskId.map { byTask[$0]??.terminate == true } ?? false }
-    let added = controls.flatMap { $0?.addTools ?? [] }
-    let handoff = controls.reversed().compactMap { $0?.handoff }.first
+    let ordered: [ToolControl?] = slots.map { $0.taskId.flatMap { byTask[$0] ?? nil } }
+    let terminate = !slots.isEmpty && ordered.allSatisfy { $0?.terminate == true }
+    let added = ordered.flatMap { $0?.addTools ?? [] }
+    let handoff = ordered.reversed().compactMap { $0?.handoff }.first
+    let maxTurns = try await runtime.agent(context: context).maxTurns
     try await runtime.commit({ tx, _ in
         var boundary = try await prepareBoundary(tx: tx, conversationId: runtime.conversationId, modes: runtime.settings)
         if !added.isEmpty {
             try await addGenerationTools(tx: tx, conversationId: runtime.conversationId, added: added)
         }
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId), now = try runtime.now()
-        if terminate || handoff != nil {
-            if let handoff {
-                let message = UserMessage(content: .text(handoff), timestamp: now)
-                let entry = try await tx.appendEntry(runtime.conversationId, value: EntryDraft(kind: resetEntry.kind,
-                    model: EntryRecord.encodeMessages([.user(message)]), head: .self))
-                boundary.head = entry.id
-            }
+        if let handoff {
+            let message = UserMessage(content: .text(handoff), timestamp: now)
+            let entry = try await tx.appendEntry(runtime.conversationId, value: EntryDraft(kind: resetEntry.kind,
+                model: EntryRecord.encodeMessages([.user(message)]), head: .self))
+            boundary.head = entry.id
+        }
+        let turns = try live.get("run")?.decode(LiveRun.self).turns ?? 0
+        if terminate {
             let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: now)
             try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .done(answer: assistant))
-            if !applied.users.isEmpty { try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users) }
+            if !applied.users.isEmpty { try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users, first: applied.first) }
+        } else if let maxTurns, turns >= maxTurns {
+            let detail = turns == 1 ? "1 turn" : "\(turns) turns"
+            let policy = runtime.settings.afterFailedRun
+            let failure = GenerationFailure(policy: policy, boundary: policy == .continue ? boundary : nil)
+            try await endFailedRun(tx: tx, runtime: runtime, live: live, failure: failure, reason: .turnLimit, detail: detail)
         } else {
             let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .postTools, now: now)
             if applied.reset {
-                try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "reset"))
-                if !applied.users.isEmpty { try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users) }
+                try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "reset"), failure: .reset)
+                if !applied.users.isEmpty { try await startRun(tx: tx, conversationId: runtime.conversationId, live: live,
+                    inputs: applied.users, first: applied.first, keepFailure: true) }
             } else {
                 try live.remove("tools")
                 if let run = try live.child("run"), try run.get("taskId")?.decode(TaskID.self) == runtime.taskId {

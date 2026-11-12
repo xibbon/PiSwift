@@ -14,14 +14,18 @@ func prepareFailure(tx: Transaction, runtime: TaskRuntime) async throws -> Gener
 }
 
 func endFailedRun(tx: Transaction, runtime: TaskRuntime, live: JSONDraft, failure: GenerationFailure,
-                  settlement: SubmissionSettlement) async throws {
-    try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: settlement)
+                  reason: RunFailureReason, detail: String? = nil,
+                  settlement: SubmissionSettlement? = nil) async throws {
+    let appliedSettlement = settlement ?? .unanswered(reason: reason.rawValue, detail: detail.map(JSONValue.string))
+    try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: appliedSettlement,
+               failure: reason, detail: detail)
     if failure.policy == .withdraw {
         try await withdrawQueuedInputs(tx: tx, conversationId: runtime.conversationId, reason: "run_failed")
     }
     guard let boundary = failure.boundary else { return }
     let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: runtime.now())
     if !applied.users.isEmpty {
-        try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users)
+        try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users,
+                           first: applied.first, keepFailure: true)
     }
 }

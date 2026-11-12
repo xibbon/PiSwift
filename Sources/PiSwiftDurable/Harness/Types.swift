@@ -163,13 +163,15 @@ public struct Agent: Sendable {
     public var instructions: String?
     /// The working directory used by this conversation or command.
     public var cwd: String?
+    /// Maximum tool rounds in one run.
+    public var maxTurns: Int?
     /// Creates the resolved model, tools, sections, instructions, and working directory.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel = .off,
                 extensions: [Extension] = [], tools: [ToolRegistration] = [], callable: [ToolRegistration] = [],
                 deferred: [ToolRegistration] = [], sections: [PromptSection] = [],
-                instructions: String? = nil, cwd: String? = nil) {
+                instructions: String? = nil, cwd: String? = nil, maxTurns: Int? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
         self.tools = tools; self.callable = callable; self.deferred = deferred
-        self.sections = sections; self.instructions = instructions; self.cwd = cwd
+        self.sections = sections; self.instructions = instructions; self.cwd = cwd; self.maxTurns = maxTurns
     }
 }

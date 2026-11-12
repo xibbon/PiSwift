@@ -135,7 +135,7 @@ public struct GenerationCheckpoint: TaskCheckpoint {
 /// The built-in generation definition installed in every registry.
 public let generationTask = TaskDefinition<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>(
     name: "pi.generation", version: 2, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
-    phase: { task, runtime, context in try await runGeneration(task.checkpoint, runtime, context) },
+    phase: { task, runtime, context in try await runGeneration(task, runtime, context) },
     abort: { task, runtime, context in try await abortGeneration(task.checkpoint, runtime, context) },
     migrate: { input, checkpoint, _ in
         // v1.5.2 generation.ts:171-174 preserves both values.
@@ -149,14 +149,23 @@ public func createGeneration(tx: Transaction, conversationId: ConversationID) as
 private func required<Value>(_ value: Value?, _ key: String) throws -> Value {
     guard let value else { throw TaskDefinitionError("Generation checkpoint is missing \(key)") }; return value
 }
-private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
+private func runGeneration(_ task: RunningTask<GenerationInput, GenerationCheckpoint>, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
+    let checkpoint = task.checkpoint
+    if let restarts = task.record.storedRestarts, restarts >= runtime.settings.restartLimit {
+        if checkpoint.phase == .finish || checkpoint.phase == .drain {
+            return try await endAnsweredCutOff(task: task, runtime: runtime, context: context)
+        }
+        return try await endGenerationCutOff(task: task, runtime: runtime, context: context)
+    }
     switch checkpoint.phase {
     case .prepare: try await prepareGeneration(checkpoint, runtime, context)
-    case .request: try await requestGeneration(checkpoint, runtime, context)
-    case .finish, .drain:
-        // The scheduler blocks these before reservation. Fail closed if a direct
-        // caller bypasses that guard; never treat the phase as completed.
-        throw TaskDefinitionError("Generation phase \(checkpoint.phase.rawValue) requires D5")
+    case .request:
+        if task.record.storedRestarts != nil { try await interruptedGeneration(checkpoint, runtime, context) }
+        else { try await requestGeneration(checkpoint, runtime, context) }
+    case .finish:
+        try await endAnsweredRun(runtime: runtime, answer: required(checkpoint.run, "run") .answer, context: context)
+    case .drain:
+        try await endAnsweredRun(runtime: runtime, answer: required(checkpoint.answer, "answer"), context: context)
     case .retry:
         let until = try required(checkpoint.until, "until")
         if until > (try runtime.now()) {
@@ -167,21 +176,29 @@ private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRu
         try await runtime.commit({ tx, _ in
             let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
             try live.set("generation", .object(["attempt": .number(Double(attempt))]))
+            if let poll = checkpoint.poll {
+                let now = try runtime.now()
+                try live.set("generation", JSONValue(encoding: LiveGeneration(attempt: attempt, deferred: LiveDeferred(pollAt: now))))
+                return try generationTask.running(GenerationCheckpoint(phase: .poll, attempt: attempt, compacted: checkpoint.compacted,
+                    model: poll.model, thinkingLevel: poll.thinkingLevel, cutoff: poll.cutoff, handle: poll.handle, pollAt: now))
+            }
             return try generationTask.running(GenerationCheckpoint(phase: .prepare, attempt: attempt, compacted: checkpoint.compacted))
         }, context: context)
     case .poll:
+        if task.record.storedRestarts != nil { return try await interruptedGeneration(checkpoint, runtime, context) }
         let pollAt = try required(checkpoint.pollAt, "pollAt")
         if pollAt > (try runtime.now()) {
             try await runtime.sleepUntil(Double(pollAt), checkpoint: JSONValue(encoding: checkpoint), context: context)
             return
         }
         let ref = try required(checkpoint.model, "model")
-        guard let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else {
+        let models = try runtime.generationModels()
+        guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else {
             return try await failGeneration(runtime, ref: ref, context: context)
         }
         let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
         defer { withExtendedLifetime(bridge) {} }
-        let message = await runtime.models.fetchDeferred(model: model, handle: try required(checkpoint.handle, "handle").handle,
+        let message = await models.fetchDeferred(model: model, handle: try required(checkpoint.handle, "handle").handle,
                                                         options: DeferredFetchOptions(signal: bridge.token, telemetry: context.telemetry))
         try await classifyGeneration(runtime, request: checkpoint, message: message, context: context)
     case .tools:
@@ -204,8 +221,12 @@ private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRu
 }
 private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let agent = try await runtime.agent(context: context), settings = runtime.settings
-    guard let ref = agent.model, let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else {
+    guard let ref = agent.model else {
         return try await failGeneration(runtime, ref: agent.model, context: context)
+    }
+    let models = try runtime.generationModels()
+    guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else {
+        return try await failGeneration(runtime, ref: ref, context: context)
     }
     let attempt = try required(checkpoint.attempt, "attempt")
     if let compacted = checkpoint.compacted, let overflow = checkpoint.overflow {
@@ -221,6 +242,14 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
         }
     }
     let view = try await runtime.context(runtime.conversationId, context: context)
+    let last = view.messages.last { message in
+        if case .system = message { return false }
+        return true
+    }
+    switch last {
+    case .user, .toolResult: break
+    default: return try await failGeneration(runtime, reason: "nothing_to_answer", text: "The conversation has nothing to answer", context: context)
+    }
     let shown = replaySections(view.messages)
     var env: (any ExecutionEnv)?
     do { env = try await runtime.env(context: context) }
@@ -261,7 +290,8 @@ private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
         try await convertPartial(tx: tx, live: live, conversationId: runtime.conversationId)
         try live.set("generation", .object(["attempt": .number(Double(attempt))])); return nil
     }, context: context)
-    guard let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) else { return try await failGeneration(runtime, ref: ref, context: context) }
+    let models = try runtime.generationModels()
+    guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else { return try await failGeneration(runtime, ref: ref, context: context) }
     let view = try await runtime.context(runtime.conversationId, at: required(checkpoint.cutoff, "cutoff"), context: context)
     var messages = view.messages
     try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in
@@ -271,7 +301,8 @@ private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
     let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
     defer { withExtendedLifetime(bridge) {} }
     let options = try generationStreamOptions(required(checkpoint.streamOptions, "streamOptions"), thinkingLevel: required(checkpoint.thinkingLevel, "thinkingLevel"), signal: bridge.token, sessionId: sessionId, context: context)
-    let message = try await streamGeneration(runtime: runtime, model: model, messages: messages, options: options, attempt: attempt, context: context)
+    let message = try await streamGeneration(runtime: runtime, model: model, messages: messages, options: options, attempt: attempt,
+                                             thinkingLevel: checkpoint.thinkingLevel, context: context)
     try await classifyGeneration(runtime, request: checkpoint, message: message, messages: view.messages, context: context)
 }
 func generationStreamOptions(_ options: ConversationStreamOptions, thinkingLevel: ModelThinkingLevel, signal: CancellationToken, sessionId: String, context: ChordContext = .background) throws -> SimpleStreamOptions {
@@ -293,7 +324,8 @@ private func failGeneration(_ runtime: TaskRuntime, reason: String, text: String
         let failure = try await prepareFailure(tx: tx, runtime: runtime)
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         try await endFailedRun(tx: tx, runtime: runtime, live: live, failure: failure,
-            settlement: .unanswered(reason: reason, detail: reason == "model_error" ? .string(text) : nil))
+            reason: RunFailureReason(rawValue: reason)!, detail: reason == "nothing_to_answer" ? nil : text,
+            settlement: reason == "model_error" ? .unanswered(reason: reason, detail: .string(text)) : .unanswered(reason: reason))
         return .terminal(outcome: .failed(error: TaskOutcomeError(message: text, detail: .object(["reason": .string(reason)]))))
     }, context: context)
 }
@@ -308,12 +340,14 @@ internal func convertPartial(tx: Transaction, live: JSONDraft, conversationId: C
     _ = try await appendGenerationAssistant(tx: tx, conversationId: conversationId, message: message)
 }
 private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
-    if checkpoint.phase == .poll, let ref = checkpoint.model, let handle = checkpoint.handle,
-       let model = runtime.models.getModel(provider: ref.provider, modelId: ref.modelId) {
+    let deferred = checkpoint.phase == .retry ? checkpoint.poll.map { ($0.model, $0.handle) } :
+        (checkpoint.phase == .poll ? checkpoint.model.flatMap { model in checkpoint.handle.map { (model, $0) } } : nil)
+    if let (ref, handle) = deferred,
+       let model = try runtime.generationModels().getModel(provider: ref.provider, modelId: ref.modelId) {
         do {
             let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
             defer { withExtendedLifetime(bridge) {} }
-            try await runtime.models.cancelDeferred(model: model, handle: handle.handle, options: DeferredCancelOptions(signal: bridge.token, telemetry: context.telemetry))
+            try await runtime.generationModels().cancelDeferred(model: model, handle: handle.handle, options: DeferredCancelOptions(signal: bridge.token, telemetry: context.telemetry))
         } catch { try runtime.report(error, from: .host(callback: .models)) }
     }
     let unstarted = checkpoint.phase == .tools ? try await generationCalls(runtime: runtime, assistant: required(checkpoint.assistant, "assistant"), callIds: checkpoint.pending ?? [], context: context) : []
@@ -321,7 +355,7 @@ private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Task
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         try await convertPartial(tx: tx, live: live, conversationId: runtime.conversationId)
         for call in unstarted { _ = try await appendGenerationToolError(tx: tx, conversationId: runtime.conversationId, call: call, code: "aborted", text: "Tool \(call.name) was aborted", now: runtime.now()) }
-        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"))
+        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"), failure: .aborted)
         return .terminal(outcome: .aborted())
     }, context: context)
 }

@@ -50,6 +50,7 @@ public final class FakeDurableModels: DurableModels {
     /// The faux models available from this service instance.
     public let models: [Model]
     private let options: FauxRegistrationOptions
+    private let tagCacheAccounting: Bool
 
     private struct DeferredEntry: Sendable {
         let handle: DeferredHandle
@@ -83,8 +84,10 @@ public final class FakeDurableModels: DurableModels {
     private let storage = Mutex(State())
 
     /// Creates a per-instance faux model service with the supplied response script.
-    public init(options: FauxRegistrationOptions = FauxRegistrationOptions(), responses: [FakeDurableResponseStep] = []) {
+    public init(options: FauxRegistrationOptions = FauxRegistrationOptions(), responses: [FakeDurableResponseStep] = [],
+                tagCacheAccounting: Bool = false) {
         self.options = options
+        self.tagCacheAccounting = tagCacheAccounting
         let provider = options.provider ?? "faux"
         let api = options.api.flatMap(Api.init(rawValue:)) ?? .openAICompletions
         let definitions = options.models.isEmpty ? [FauxModelDefinition(id: "faux-1", name: "Faux Model")] : options.models
@@ -294,8 +297,9 @@ public final class FakeDurableModels: DurableModels {
                 let common = zip(previous.utf16, prompt.utf16).prefix { $0 == $1 }.count
                 cacheRead = (common + 3) / 4
                 cacheWrite = (prompt.utf16.count - common + 3) / 4
-                input = max(0, promptTokens - cacheRead)
-            } else { cacheWrite = promptTokens }
+                // v1.5.2 faux.ts:275: tagged fixtures use read/write only cache accounting.
+                input = tagCacheAccounting ? 0 : max(0, promptTokens - cacheRead)
+            } else { cacheWrite = promptTokens; if tagCacheAccounting { input = 0 } }
         }
         var result = message
         result.usage = Usage(input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite,

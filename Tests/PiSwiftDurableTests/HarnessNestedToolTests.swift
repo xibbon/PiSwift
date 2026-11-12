@@ -149,7 +149,8 @@ func d4bToolTasks(_ harness: Harness) async throws -> [TaskRecord] {
         guard case .terminal(let outcome, _) = b.state else { Issue.record("No terminal B"); return }
         #expect(outcome.status == "aborted")
         for task in requests.withLock({ $0 }) { _ = await task.result }
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:81: abort records runFailure.
+        #expect(try await generationLive(opened)?.runFailure?.reason == (mode == "abort" ? .aborted : nil))
         try await opened.harness.close(context: .background)
     }
 
@@ -324,7 +325,8 @@ extension HarnessNestedToolDocumentTests {
             let submission = try await tx.createSubmission(.input(conversationId: opened.root.id, state: .placed(entry: user.id)))
             let generation = try await createGeneration(tx: tx, conversationId: opened.root.id)
             let assistant = try await tx.appendEntry(opened.root.id, value: EntryDraft(kind: assistantEntry.kind,
-                model: EntryRecord.encodeMessages([.assistant(chatAssistant("round", reason: .toolUse))])))
+                // v1.5.2 D5b generation.ts:205–210: a continued run needs a user or tool result.
+                model: EntryRecord.encodeMessages([.assistant(try toolCalls([("synthetic", [:], "synthetic")]))])))
             let child = try await tx.createTask(toolTask, input: .model(assistant: assistant.id, callId: "synthetic"),
                 options: .init(ownership: .task(taskId: generation)))
             let live = try await tx.doc(LiveDoc, conversationId: opened.root.id)

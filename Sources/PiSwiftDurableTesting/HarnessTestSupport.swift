@@ -14,6 +14,10 @@ public final class HarnessReports: Sendable {
     public var count: Int { state.withLock { $0.count } }
     /// Records one error report for later test inspection.
     public func append(_ error: any Error) { state.withLock { $0.append(Report(error: error, info: nil)) } }
+    /// Records the tagged report and its original error.
+    public func appendReport(_ report: PiSwiftDurable.Report) {
+        state.withLock { $0.append(Report(error: report.error, info: report.info)) }
+    }
     /// The typed information supplied with reports, in delivery order.
     public var infos: [ReportInfo] { state.withLock { $0.compactMap(\.info) } }
     /// Records the original error and its typed information together.

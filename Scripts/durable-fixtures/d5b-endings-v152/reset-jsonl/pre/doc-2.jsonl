@@ -1,0 +1,1 @@
+{"format":1,"type":"record","seq":2,"ordinal":2,"payload":{"type":"document","id":2,"content":{"version":3,"kind":"base","value":{"run":{"taskId":10,"inputs":[9],"turns":1,"first":7},"tools":[{"callId":"call-stop","name":"stop","taskId":12,"status":"done","entry":11}]}}}}

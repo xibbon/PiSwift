@@ -269,7 +269,8 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         let receipt = try await recoveredSubmission.wait(context: .background)
         #expect(receipt.status == "unanswered")
         #expect(receipt.reason == "faulted")
-        #expect(try await reopened.harness.snapshot(LiveDoc, conversationId: reopened.root.id, context: .background) == LiveState())
+        // v1.5.2 D5b live.ts:439–450: recovered faulted runs retain a failure record.
+        #expect(try await reopened.harness.snapshot(LiveDoc, conversationId: reopened.root.id, context: .background)?.runFailure?.reason == .faulted)
         #expect(try await allEntries(reopened.root).map(\.kind) == ["pi.user", "pi.assistant"])
         try await reopened.harness.close(context: .background)
     }

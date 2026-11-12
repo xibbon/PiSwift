@@ -224,7 +224,8 @@ private final class IntegrationUsageModels: DurableModels {
         if !childOnly { #expect(rejected.isSignalled) }
         let child = try #require(try await chat.harness.conversation(id: children.values[0], context: .background))
         try await child.waitForIdle(context: .background)
-        #expect(try await chat.harness.snapshot(LiveDoc, conversationId: child.id, context: .background) == LiveState())
+        // v1.5.2 D5b harness-ownership.test.ts:1197: aborted child runs retain runFailure.
+        #expect(try await chat.harness.snapshot(LiveDoc, conversationId: child.id, context: .background)?.runFailure?.reason == .aborted)
         try await chat.harness.close(context: .background)
     }
 
@@ -268,7 +269,8 @@ private final class IntegrationUsageModels: DurableModels {
         setup.models.setResponses([.message(try toolCalls(calls)), .factory { request, _, _, _ in
             requests.append(request.messages.filter { if case .system = $0 { return false }; return true }.map { textOf($0) ?? "" })
             return chatAssistant("fresh")
-        }])
+        // v1.5.2 D5b harness-inbox.test.ts:409: the queued follow-up runs after the handoff answer.
+        }, .message(chatAssistant("followed"))])
         let chat = try await openChat(setup: setup)
         let input = try await chat.root.submit(.input(content: .text("a")), context: .background); await entered.wait()
         let follow = mode == "handoff" ? nil : try await chat.root.submit(.input(content: .text("f")), context: .background)
@@ -288,9 +290,11 @@ private final class IntegrationUsageModels: DurableModels {
             if mode.contains("handoff") { #expect(textOf(try reset.messages()?.first) == (mode == "last-handoff" ? "two" : "one")) }
             #expect(try await chat.root.context(context: .background).entries.first?.id == reset.id)
         } else { #expect(!entries.contains { $0.kind == "pi.reset" }) }
-        #expect(setup.models.state().callCount == (mode == "handoff" ? 1 : 2))
+        // v1.5.2 D5b harness-inbox.test.ts:352,409: handoff continues the same run;
+        // a queued follow-up starts after that continuing run answers.
+        #expect(setup.models.state().callCount == (mode == "last-handoff" ? 3 : 2))
         if mode == "reset" { #expect(requests.values == [["f"]]) }
-        if mode == "last-handoff" { #expect(requests.values == [["two", "f"]]) }
+        if mode == "last-handoff" { #expect(requests.values == [["two"]]) }
         if mode == "terminate" { #expect(original.answer == entries.first { $0.kind == "pi.assistant" }?.id) }
         try await chat.harness.close(context: .background)
     }

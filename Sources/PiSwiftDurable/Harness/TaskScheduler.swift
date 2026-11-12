@@ -210,8 +210,23 @@ internal final class TaskScheduler: Sendable {
     private func observe(_ publication: CommitPublication) {
         var aborts: [TaskInvocation] = [], settled: [TaskRecord] = [], updated: [TaskRecord] = []
         var failed = Set<TaskID>(), repair = false, changed = false
+        // v1.5.2 context.ts:199–212; scheduler.ts publication handling:
+        // extend retained current ranges from the committed entries in order.
+        var appended: [ConversationID: [EntryRecord]] = [:]
+        for change in publication.changes {
+            if case .entry(let entry) = change { appended[entry.conversationId, default: []].append(entry) }
+        }
         state.withLock { state in
             state.publicationVersion &+= 1
+            for (id, entries) in appended {
+                guard let kept = state.contexts[id] else { continue }
+                // If derivation fails, drop the cached range. The next read
+                // reconstructs it from committed storage.
+                do {
+                    let advanced = try advanceContextRange(kept.range, appended: entries)
+                    state.contexts[id] = advanced.map { KeptContext(range: $0, idleSince: kept.idleSince) }
+                } catch { state.contexts.removeValue(forKey: id) }
+            }
             // Install conversation edges before the tasks that need them.
             for change in publication.changes {
                 if case .conversation(let record) = change, state.edges[record.id] == nil { state.setEdge(record) }
@@ -430,8 +445,6 @@ internal final class TaskScheduler: Sendable {
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
             if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return "phase \(phase)" }
-            if phase == "finish" || phase == "drain" { return phase }
-            if phase == "retry", record.checkpoint?["poll"] != nil { return "retry.poll" }
         }
         if record.kind == "pi.tool" {
             if let phase, !["call", "execute"].contains(phase) { return "phase \(phase)" }

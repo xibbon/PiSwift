@@ -68,6 +68,59 @@ private final class RecoveryBlockingTool: Sendable {
 }
 
 @Suite struct HarnessToolRecoveryTests {
+    @Test("does not charge a generation that sleeps in a retry or waits for its tools", .timeLimit(.minutes(1)))
+    func toolWaitRestartDoesNotChargeGeneration() async throws {
+        // v1.5.2 D5b harness-restart-failure.test.ts:275–328. The sleeping
+        // retry half is also covered by D2BuiltInSleepRecoveryTests.
+        let directory = try sqliteTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("tool-wait.sqlite").path
+        let setup = HarnessChatSetup(), work = RecoveryBlockingTool()
+        try recoveryInstall(setup, tool: work.registration())
+        setup.models.setResponses([.message(recoveryCall("work")), .message(chatAssistant("done"))])
+        let first = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        let input = try await generationSubmit(first, "hi")
+        await work.started.wait()
+        let generation = try #require(await generationLive(first)?.run?.taskId)
+        #expect(try await first.harness.getTask(id: generation, context: .background)?.state.status == "waiting")
+        try await first.harness.close(context: .background)
+        let second = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup, resume: false)
+        #expect(try await second.harness.getTask(id: generation, context: .background)?.storedRestarts == nil)
+        try second.harness.resume()
+        #expect(try await recoveryWait(second, id: input.id).status == "done")
+        #expect(try await second.harness.getTask(id: generation, context: .background)?.storedRestarts == nil)
+        try await second.harness.close(context: .background)
+    }
+    @Test("keeps the stored count across a restart", .timeLimit(.minutes(1)))
+    func turnLimitCountSurvivesRunningToolRestart() async throws {
+        // v1.5.2 D5b harness-turn-limit.test.ts:307–360.
+        let directory = try sqliteTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("turns.sqlite").path
+        let setup = HarnessChatSetup(), started = HarnessChatSignal(), runs = Mutex(0)
+        try recoveryInstall(setup, tool: recoveryTool("work", replay: .safe) { _, _, context in
+            let count = runs.withLock { value in value += 1; return value }
+            if count == 2 { started.signal(); try await recoveryAborted(context) }
+            return ToolExecutionResult(output: [])
+        })
+        setup.models.setResponses([.message(recoveryCall("work", id: "c1")),
+                                   .message(recoveryCall("work", id: "c2")),
+                                   .message(chatAssistant("unreached"))])
+        let first = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        try await first.root.configure(change: .init(maxTurns: .set(2)), context: .background)
+        let input = try await generationSubmit(first, "go")
+        await started.wait()
+        #expect(try await first.harness.snapshot(LiveDoc, conversationId: first.root.id, context: .background)?.run?.turns == 2)
+        try await first.harness.close(context: .background)
+        let second = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup, resume: false)
+        #expect(try await second.harness.snapshot(LiveDoc, conversationId: second.root.id, context: .background)?.run?.turns == 2)
+        try second.harness.resume()
+        let settled = try await recoveryWait(second, id: input.id)
+        #expect(settled.reason == "turn_limit")
+        #expect(try JSONValue(encoding: settled.record)["detail"] == "2 turns")
+        #expect(setup.models.state().callCount == 2)
+        try await second.harness.close(context: .background)
+    }
     // harness-tools-recovery.test.ts:109. A new SQLite connection reads the execute intent and partial output.
     @Test func unsafeToolRecoversDurablePartialOutputWithoutRunningAgain() async throws {
         let directory = try sqliteTestDirectory()

@@ -192,7 +192,8 @@ struct HarnessGenerationHooksTests {
         #expect(live.generation == nil)
         try await opened.root.abort(context: .background)
         #expect(try await submission.wait(context: .background).reason == "aborted")
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:81: abort leaves runFailure after compaction.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .aborted)
         try await opened.harness.close(context: .background)
     }
 

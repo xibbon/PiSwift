@@ -100,12 +100,14 @@ public struct AgentState: Sendable, Equatable, Codable {
     public var instructions: String?
     /// The working directory used by this conversation or command.
     public var cwd: String?
+    /// Maximum tool rounds in one run.
+    public var maxTurns: Int?
     /// Creates stored agent overrides. Absent fields use host defaults.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 extensions: ExtensionSelection? = nil, tools: ToolSelection? = nil, modelTools: ModelToolSelection? = nil,
-                instructions: String? = nil, cwd: String? = nil) {
+                instructions: String? = nil, cwd: String? = nil, maxTurns: Int? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd; self.maxTurns = maxTurns
     }
 }
 
@@ -117,6 +119,9 @@ public let AgentDoc = try! RewindableConversationDocToken<AgentState>(
 
 /// Writes partial agent changes within the conversation transaction.
 public func configure(tx: Transaction, conversationId: ConversationID, change: AgentChange) async throws {
+    if case .set(let turns) = change.maxTurns, turns < 1 {
+        throw SessionError.message("maxTurns must be an integer 1 or more, got \(turns)")
+    }
     let draft = try await tx.doc(AgentDoc, conversationId: conversationId)
     var state = AgentState()
     applyAgentChange(&state, change)
@@ -128,6 +133,7 @@ public func configure(tx: Transaction, conversationId: ConversationID, change: A
     try applyAgentField(draft, key: "modelTools", change: change.modelTools, value: value)
     try applyAgentField(draft, key: "instructions", change: change.instructions, value: value)
     try applyAgentField(draft, key: "cwd", change: change.cwd, value: value)
+    try applyAgentField(draft, key: "maxTurns", change: change.maxTurns, value: value)
 }
 
 private func applyAgentField<Value>(_ draft: JSONDraft, key: String, change: AgentFieldChange<Value>, value: JSONObject) throws {
@@ -198,13 +204,16 @@ public struct AgentChange: Sendable {
     public var instructions: AgentFieldChange<String>
     /// Whether to keep, clear, or replace the saved working directory.
     public var cwd: AgentFieldChange<String>
+    /// Sets or clears the maximum tool rounds in one run.
+    public var maxTurns: AgentFieldChange<Int>
     /// Selects the fields to keep, clear, or replace in stored agent configuration.
     public init(model: AgentFieldChange<ModelRef> = .unchanged, thinkingLevel: AgentFieldChange<ModelThinkingLevel> = .unchanged,
                 extensions: AgentFieldChange<ExtensionChange> = .unchanged, tools: AgentFieldChange<ToolChange> = .unchanged,
                 modelTools: AgentFieldChange<ModelToolChange> = .unchanged,
-                instructions: AgentFieldChange<String> = .unchanged, cwd: AgentFieldChange<String> = .unchanged) {
+                instructions: AgentFieldChange<String> = .unchanged, cwd: AgentFieldChange<String> = .unchanged,
+                maxTurns: AgentFieldChange<Int> = .unchanged) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
-        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd
+        self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd; self.maxTurns = maxTurns
     }
 }
 
@@ -230,7 +239,7 @@ public func applyAgentChange(_ state: inout AgentState, _ change: AgentChange) {
     case .set(.edit(let add, let remove)):
         state.modelTools = .edit(add: add?.map(\.name), remove: remove?.map(\.name))
     }
-    apply(&state.instructions, change.instructions); apply(&state.cwd, change.cwd)
+    apply(&state.instructions, change.instructions); apply(&state.cwd, change.cwd); apply(&state.maxTurns, change.maxTurns)
 }
 private func apply<Value>(_ value: inout Value?, _ change: AgentFieldChange<Value>) {
     switch change { case .unchanged: break; case .clear: value = nil; case .set(let next): value = next }
@@ -385,7 +394,7 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
     if let instructions = state?.instructions { sections.append(section(instructionsKey) { _, _ in instructions }) }
     return Agent(model: state?.model, thinkingLevel: state?.thinkingLevel ?? .off, extensions: extensions,
                  tools: tools, callable: callable, deferred: deferred, sections: sections,
-                 instructions: state?.instructions, cwd: state?.cwd)
+                 instructions: state?.instructions, cwd: state?.cwd, maxTurns: state?.maxTurns)
 }
 
 /// Adapts a wrapper report callback that receives only the error.

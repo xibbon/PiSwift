@@ -146,7 +146,16 @@ private func typedReportView() -> DurableView {
             }))
         do {
             await result.controller.toggleTasks()
-            try await eventually { result.view.current().notices.contains { $0.category == .taskFault && $0.taskId == id } }
+            // v1.5.2 D5b: harness-blocked.test.ts:134–183 waits for the typed terminal report,
+            // which can arrive after the task graph's provisional fault notice.
+            try await eventually {
+                let view = result.view.current()
+                return view.notices.contains {
+                    $0.reportType == "task_faulted" && $0.reportInfo == .taskFaulted(
+                        task: ReportTask(id: id, kind: "test.host-crash-loop", conversationId: rootConversationID),
+                        reason: .restartLimit)
+                } && view.blockedTasks.isEmpty
+            }
             #expect(result.view.current().tasks == nil)
             #expect(result.view.current().terminal == nil)
             #expect(result.failure == nil)

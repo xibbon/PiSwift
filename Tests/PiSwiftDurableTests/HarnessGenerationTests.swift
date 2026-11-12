@@ -32,7 +32,8 @@ struct HarnessGenerationTests {
         _ = try await opened.harness.abortTask(id: id, context: .background)
         _ = try await opened.harness.waitForTask(id: id, context: .background)
         #expect(try await submission.wait(context: .background).reason == "withdrawn")
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:81: an aborted run leaves its reason in pi.live.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .aborted)
         try await opened.harness.close(context: .background)
     }
     @Test(arguments: [false, true]) func noModel(unset: Bool) async throws {
@@ -41,7 +42,8 @@ struct HarnessGenerationTests {
         let settled = try await generationSubmit(opened).wait(context: .background)
         #expect(settled.reason == "no_model")
         #expect(try await allEntries(opened.root).map(\.kind) == ["pi.user"])
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:64: no_model retains detail only in runFailure.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .noModel)
         try await opened.harness.close(context: .background)
     }
     @Test func retryBackoffThenAnswerReadsNewSettings() async throws {
@@ -71,7 +73,8 @@ struct HarnessGenerationTests {
         let opened = try await openChat(setup: setup)
         #expect(try await generationSubmit(opened).wait(context: .background).reason == "model_error")
         #expect(setup.models.state().callCount == 1)
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:38: model errors remain visible after the run ends.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .modelError)
         try await opened.harness.close(context: .background)
     }
     @Test func sectionWrapperFailureIsReported() async throws {

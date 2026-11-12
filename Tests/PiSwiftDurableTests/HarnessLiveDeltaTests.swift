@@ -19,9 +19,12 @@ import PiSwiftDurableTesting
         let commits = log.commits
         #expect(commits.count == 8)
         // v1.5.2 D1: live.ts:138-145 stores run.turns in a new run.
-        #expect(commits[0] == [.set(["run"], ["taskId": .number(Double(generations[0].rawValue)), "inputs": [.number(Double(input.id.rawValue))], "turns": 0])])
+        // v1.5.2 D5b submissions.ts:312–315: a direct input records its first entry.
+        let user = try #require(await allEntries(opened.root).first { $0.kind == "pi.user" })
+        #expect(commits[0] == [.set(["run"], ["taskId": .number(Double(generations[0].rawValue)), "inputs": [.number(Double(input.id.rawValue))], "turns": 0, "first": .number(Double(user.id.rawValue))])])
         #expect(commits[1] == [.set(["generation"], ["attempt": 1])])
-        #expect(commits[2].count == 2 && commits[2].contains(.delete(["generation"])) && commits[2].contains(.set(["tools"], [["callId": "c1", "name": "noop", "taskId": .number(Double(tool.id.rawValue)), "status": "pending"]])))
+        // v1.5.2 D5b generation.ts:1048–1053: the tool round increments run.turns.
+        #expect(commits[2].contains(.delete(["generation"])) && commits[2].contains(.set(["tools"], [["callId": "c1", "name": "noop", "taskId": .number(Double(tool.id.rawValue)), "status": "pending"]])) && commits[2].contains(.set(["run", "turns"], 1)))
         #expect(commits[3] == [.set(["tools", 0, "status"], "running")])
         #expect(commits[4].contains(.set(["tools", 0, "status"], "done")) && commits[4].contains(.set(["tools", 0, "entry"], .number(Double(result.id.rawValue)))) && commits[4].count == 2)
         #expect(commits[5].contains(.delete(["tools"])) && commits[5].contains(.set(["run", "taskId"], .number(Double(generations[1].rawValue)))) && commits[5].count == 2)

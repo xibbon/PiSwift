@@ -334,16 +334,24 @@ private func renameReason(_ value: JSONObject) -> JSONObject {
     return result
 }
 
-internal func endRun(tx: Transaction, live: JSONDraft, taskId: TaskID, settlement: SubmissionSettlement) throws {
+internal func endRun(tx: Transaction, live: JSONDraft, taskId: TaskID, settlement: SubmissionSettlement,
+                     failure: RunFailureReason? = nil, detail: String? = nil,
+                     inputSettlement: SubmissionSettlement? = nil) throws {
     if let run = try live.get("run")?.decode(LiveRun.self), run.taskId == taskId {
-        for id in run.inputs { try tx.settleSubmission(id, settlement: settlement) }
+        for id in run.inputs { try tx.settleSubmission(id, settlement: inputSettlement ?? settlement) }
+        if let failure, run.afterRun == nil {
+            try live.set("runFailure", JSONValue(encoding: RunFailure(taskId: taskId, inputs: run.inputs,
+                reason: failure, detail: detail, first: run.first)))
+        }
         try live.remove("run")
     }
     try live.remove("generation"); try live.remove("tools"); try live.remove("nestedTools")
 }
-internal func startRun(tx: Transaction, conversationId: ConversationID, live: JSONDraft, inputs: [SubmissionID]) async throws {
+internal func startRun(tx: Transaction, conversationId: ConversationID, live: JSONDraft, inputs: [SubmissionID],
+                       first: EntryID? = nil, keepFailure: Bool = false) async throws {
     let id = try await createGeneration(tx: tx, conversationId: conversationId)
-    try live.set("run", JSONValue(encoding: LiveRun(taskId: id, inputs: inputs)))
+    try live.set("run", JSONValue(encoding: LiveRun(taskId: id, inputs: inputs, first: first)))
+    if !keepFailure { try live.remove("runFailure") }
 }
 internal func handOver(live: JSONDraft, from: TaskID, to: TaskID) throws {
     guard let run = try live.child("run"), try run.get("taskId")?.decode(TaskID.self) == from else { return }
@@ -422,20 +430,35 @@ internal func settleSchedulerOutcome(tx: Transaction, record: TaskRecord, outcom
         try removeNestedSlots(live: live, taskId: record.id); return
     }
     if record.kind == "pi.compaction" {
+        let cutOff = outcome.restartLimitFault
         switch outcome {
-        case .faulted(let error, _): try failCompactionStatus(live: live, taskId: record.id, error: error.message)
+        case .faulted(let error, _):
+            if cutOff { try removeCompactionStatus(live: live, taskId: record.id) }
+            else { try failCompactionStatus(live: live, taskId: record.id, error: error.message) }
         case .orphaned(let reason, _): try failCompactionStatus(live: live, taskId: record.id, error: reason)
         default: break
         }
         return
     }
     guard try live.get("run")?.decode(LiveRun.self).taskId == record.id else { return }
-    try await convertPartial(tx: tx, live: live, conversationId: record.conversationId)
+    let cutOff = outcome.restartLimitFault
+    if !cutOff { try await convertPartial(tx: tx, live: live, conversationId: record.conversationId) }
     let settlement: SubmissionSettlement
+    let failure: RunFailureReason
+    let detail: String
     switch outcome {
-    case .faulted(let error, _): settlement = .unanswered(reason: "faulted", detail: .string(error.message))
-    case .orphaned(let reason, _): settlement = .unanswered(reason: reason)
+    case .faulted(let error, _):
+        failure = cutOff ? .aborted : .faulted
+        detail = error.message
+        settlement = .unanswered(reason: failure.rawValue, detail: .string(error.message))
+    case .orphaned(let reason, _): failure = .orphaned; detail = reason; settlement = .unanswered(reason: reason)
     default: return
     }
-    try endRun(tx: tx, live: live, taskId: record.id, settlement: settlement)
+    try endRun(tx: tx, live: live, taskId: record.id, settlement: settlement, failure: failure, detail: detail)
+}
+private extension TaskOutcome {
+    var restartLimitFault: Bool {
+        if case .faulted(let error, _) = self { return error.detail?["reason"] == .string("restart_limit") }
+        return false
+    }
 }

@@ -82,7 +82,8 @@ struct HarnessGenerationStreamTests {
         #expect(entries.map(\.kind) == ["pi.user", "pi.assistant"])
         guard case .assistant(let message) = try entries.last?.messages()?.first else { Issue.record("No converted partial"); return }
         #expect(message.stopReason == .aborted && textOf(.assistant(message)) == "partial")
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b harness-run-failure.test.ts:81: abort remains visible as runFailure.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .aborted)
         try await opened.harness.close(context: .background)
     }
     @Test func emptyStartThenDeferredLeavesNoPartial() async throws {
@@ -115,7 +116,8 @@ struct HarnessGenerationStreamTests {
         var invalid = chatAssistant("final"); invalid.usage.cost.total = .nan
         models.stream.push(.done(reason: .stop, message: invalid))
         #expect(try await submission.wait(context: .background).reason == "faulted")
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b live.ts:439–450: a faulted generation stores runFailure.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .faulted)
         let entries = try await allEntries(opened.root)
         #expect(entries.count == 2)
         guard case .assistant(let partial) = try entries.last?.messages()?.first else { Issue.record("No converted partial"); return }
@@ -141,7 +143,8 @@ struct HarnessGenerationStreamTests {
         let outcome = try await opened.harness.waitForTask(id: ids.0, context: .background)
         #expect(outcome.outcome.status == "orphaned")
         #expect(try await opened.harness.submission(id: ids.1, context: .background)?.wait(context: .background).reason == "task_too_old")
-        #expect(try await generationLive(opened) == LiveState())
+        // v1.5.2 D5b live.ts:439–450: orphaned keeps a typed run failure.
+        #expect(try await generationLive(opened)?.runFailure?.reason == .orphaned)
         try await opened.harness.close(context: .background)
     }
     @Test func rejectsRegistryWithoutBuiltins() async throws {

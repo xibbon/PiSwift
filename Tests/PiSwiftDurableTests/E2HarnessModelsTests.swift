@@ -108,7 +108,7 @@ struct E2HarnessModelsTests {
         try await opened.harness.close(context: .background)
     }
 
-    @Test func providerFailureReportsModelsHostError() async throws {
+    @Test func providerFailureFaultsGeneration() async throws {
         let reports = Mutex<[ReportInfo]>([]), fail = Mutex(true)
         let recovered = FakeDurableModels(responses: [.message(chatAssistant("recovered"))])
         let opened = try await open(.init(models: {
@@ -118,13 +118,17 @@ struct E2HarnessModelsTests {
             onReport: { _, info in reports.withLock { $0.append(info) } }))
         let settled = try await opened.root.submit(.input(content: .text("go")), context: .background).wait(context: .background)
         #expect(settled.status == "unanswered")
+        // v1.5.2 D5b scheduler.ts:2686–2688,2428–2442 and live.ts:439–450:
+        // a throwing models getter faults the task and reports task_faulted.
+        let live = try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)
+        #expect(live?.runFailure?.reason == .faulted)
         let seen = reports.withLock { $0 }
         #expect(!seen.isEmpty)
         for info in seen {
-            if case .hostError(let callback, let task) = info {
-                #expect(callback == .models)
-                #expect(task?.conversationId == opened.root.id)
-            } else { Issue.record("A model provider failure must be a host error") }
+            if case .taskFaulted(let task, _, let reason) = info {
+                #expect(reason == .threw)
+                #expect(task.conversationId == opened.root.id)
+            } else { Issue.record("A throwing model provider must fault the task") }
         }
         #expect(opened.harness.failure == nil)
         fail.withLock { $0 = false }

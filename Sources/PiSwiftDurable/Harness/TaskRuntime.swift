@@ -45,6 +45,9 @@ public final class TaskRuntime: Sendable {
             return UnavailableDurableModels(error: error)
         }
     }
+    /// v1.5.2 scheduler.ts:2686–2688: generation observes a throwing host
+    /// models callback as a task fault, rather than as a missing model.
+    internal func generationModels() throws -> any DurableModels { try scheduler.models() }
     /// The current host settings or resolved task settings.
     public var settings: Settings { scheduler.settings() }
     /// The installed extension and task definitions used by this harness.

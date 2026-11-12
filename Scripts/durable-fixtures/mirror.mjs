@@ -21,8 +21,13 @@ export async function mirror({ dependencies = [], tag = upstreamTag } = {}) {
     const archive = spawn('git', ['-C', upstreamRepository, 'archive', tag,
       'packages/chord/src', 'packages/durable/src', 'packages/ai/src', 'packages/telemetry/src'], { stdio: ['ignore', 'pipe', 'inherit'] });
     const extract = spawn('tar', ['-x', '-C', directory], { stdio: ['pipe', 'inherit', 'inherit'] });
+    // tar can close stdin after the archive end blocks while git still closes its pipe.
+    // Judge both child exit codes; a closed pipe is not itself an extraction failure.
+    let pipeError;
+    extract.stdin.on('error', error => { if (error.code !== 'EPIPE') pipeError = error; });
     archive.stdout.pipe(extract.stdin);
     await Promise.all([completion(archive), completion(extract)]);
+    if (pipeError) throw pipeError;
     // Install first: npm prunes package links that are not in its manifest.
     if (dependencies.length) execFileSync('npm', ['install', '--prefix', directory, '--no-audit', '--no-fund', '--ignore-scripts', ...dependencies], { stdio: 'ignore' });
     const packages = {
