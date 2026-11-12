@@ -7,6 +7,10 @@ public struct ConversationStreamOptions: Sendable, Codable {
     public var transport: Transport?
     /// The model request timeout in milliseconds.
     public var timeoutMs: Int?
+    /// The WebSocket connection timeout in milliseconds.
+    public var websocketConnectTimeoutMs: Int?
+    /// Token budgets for provider thinking levels.
+    public var thinkingBudgets: ThinkingBudgets?
     /// The maximum number of retry attempts.
     public var maxRetries: Int?
     /// The maximum retry delay in milliseconds.
@@ -20,15 +24,18 @@ public struct ConversationStreamOptions: Sendable, Codable {
     /// The pending deferred response state, when present.
     public var deferred: DeferredRequest?
     /// Selects provider request overrides for this conversation.
-    public init(transport: Transport? = nil, timeoutMs: Int? = nil, maxRetries: Int? = nil,
+    public init(transport: Transport? = nil, timeoutMs: Int? = nil, websocketConnectTimeoutMs: Int? = nil,
+                thinkingBudgets: ThinkingBudgets? = nil, maxRetries: Int? = nil,
                 maxRetryDelayMs: Int? = nil, headers: [String: String]? = nil, metadata: JSONObject? = nil,
                 cacheRetention: CacheRetention? = nil, deferred: DeferredRequest? = nil) {
-        self.transport = transport; self.timeoutMs = timeoutMs; self.maxRetries = maxRetries
+        self.transport = transport; self.timeoutMs = timeoutMs
+        self.websocketConnectTimeoutMs = websocketConnectTimeoutMs; self.thinkingBudgets = thinkingBudgets
+        self.maxRetries = maxRetries
         self.maxRetryDelayMs = maxRetryDelayMs; self.headers = headers; self.metadata = metadata
         self.cacheRetention = cacheRetention; self.deferred = deferred
     }
     private enum CodingKeys: String, CodingKey {
-        case transport, timeoutMs, maxRetries, maxRetryDelayMs, headers, metadata, cacheRetention, deferred
+        case transport, timeoutMs, websocketConnectTimeoutMs, thinkingBudgets, maxRetries, maxRetryDelayMs, headers, metadata, cacheRetention, deferred
     }
     private struct DeferredValue: Codable { let window: DeferredWindow? }
     /// Decodes this value from its durable JSON representation.
@@ -44,6 +51,8 @@ public struct ConversationStreamOptions: Sendable, Codable {
         }
         self.transport = transport.flatMap(Transport.init(rawValue:))
         timeoutMs = try c.decodeIfPresent(Int.self, forKey: .timeoutMs)
+        websocketConnectTimeoutMs = try c.decodeIfPresent(Int.self, forKey: .websocketConnectTimeoutMs)
+        thinkingBudgets = try c.decodeIfPresent(ThinkingBudgets.self, forKey: .thinkingBudgets)
         maxRetries = try c.decodeIfPresent(Int.self, forKey: .maxRetries)
         maxRetryDelayMs = try c.decodeIfPresent(Int.self, forKey: .maxRetryDelayMs)
         headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
@@ -56,6 +65,8 @@ public struct ConversationStreamOptions: Sendable, Codable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(transport?.rawValue, forKey: .transport)
         try c.encodeIfPresent(timeoutMs, forKey: .timeoutMs)
+        try c.encodeIfPresent(websocketConnectTimeoutMs, forKey: .websocketConnectTimeoutMs)
+        try c.encodeIfPresent(thinkingBudgets, forKey: .thinkingBudgets)
         try c.encodeIfPresent(maxRetries, forKey: .maxRetries)
         try c.encodeIfPresent(maxRetryDelayMs, forKey: .maxRetryDelayMs)
         try c.encodeIfPresent(headers, forKey: .headers)
@@ -130,7 +141,7 @@ public struct CompactionModelOverride: Sendable, Equatable, Codable {
     }
 }
 /// Optional compaction settings. Absent fields use the harness defaults.
-public struct CompactionPolicyOverrides: Sendable {
+public struct CompactionPolicyOverrides: Sendable, Equatable, Codable {
     /// Whether this policy is active.
     public var enabled: Bool?
     /// Token budget left free for the next model response.

@@ -51,6 +51,17 @@ public struct GenerationRequest: Sendable {
     /// Stores the model messages supplied to before-request hooks.
     public init(messages: [Message]) { self.messages = messages }
 }
+/// The provider's JSON request body after PiSwiftAI has built it.
+public struct ProviderRequest: Sendable {
+    public var model: Model
+    public var payload: JSONValue
+    public init(model: Model, payload: JSONValue) { self.model = model; self.payload = payload }
+}
+/// A replacement body for this provider request.
+public struct ProviderRequestReplacement: Sendable {
+    public var payload: JSONValue
+    public init(payload: JSONValue) { self.payload = payload }
+}
 /// Additional user content that continues the current generation.
 public struct GenerationYield: Sendable {
     /// The user content that continues the current generation.
@@ -80,6 +91,8 @@ public struct AfterRunResult: Sendable {
 public struct GenerationHooks: Sendable {
     /// Can replace messages before a model request starts.
     public var beforeRequest: (@Sendable (GenerationRequest, HookApi, ChordContext) async throws -> GenerationRequest?)?
+    /// Can replace the provider body for each generated provider request.
+    public var beforeProviderRequest: (@Sendable (ProviderRequest, HookApi, ChordContext) async throws -> ProviderRequestReplacement?)?
     /// Runs after a complete assistant response is received.
     public var afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)?
     /// Can supply additional user content after the assistant yields.
@@ -91,12 +104,14 @@ public struct GenerationHooks: Sendable {
     /// Selects optional request, response, yield, and after-tools callbacks.
     public init(
         beforeRequest: (@Sendable (GenerationRequest, HookApi, ChordContext) async throws -> GenerationRequest?)? = nil,
+        beforeProviderRequest: (@Sendable (ProviderRequest, HookApi, ChordContext) async throws -> ProviderRequestReplacement?)? = nil,
         afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)? = nil,
         onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)? = nil,
         afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil,
         afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)? = nil
     ) {
-        self.beforeRequest = beforeRequest; self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
+        self.beforeRequest = beforeRequest; self.beforeProviderRequest = beforeProviderRequest
+        self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
         self.afterRun = afterRun
     }
 }

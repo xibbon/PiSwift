@@ -33,26 +33,29 @@ public enum ValidationError: Error, LocalizedError {
 
 private struct CachedToolValidator {
     let parameters: [String: AnyCodable]
+    let orderedKey: [UInt16]?
     let validator: CoercingValidator
 }
 
 private let toolValidators = Mutex([CachedToolValidator]())
 
-private func validator(for tool: AITool) throws -> CoercingValidator {
+private func validator(for tool: AITool, orderedParameters: OrderedJSON?) throws -> CoercingValidator {
+    let orderedKey = orderedParameters.map { Array($0.serialized(escapeSlashes: false).utf16) }
     if let cached = toolValidators.withLock({ cache -> CoercingValidator? in
-        guard let index = cache.lastIndex(where: { $0.parameters == tool.parameters }) else { return nil }
+        guard let index = cache.lastIndex(where: { $0.parameters == tool.parameters && $0.orderedKey == orderedKey }) else { return nil }
         let value = cache.remove(at: index)
         cache.append(value)
         return value.validator
     }) { return cached }
-    let compiled = try compileCoercing(toolSchemaObject(tool.parameters),
+    let source = orderedParameters.flatMap { try? SchemaValue.parse(json: $0.serialized(escapeSlashes: false)) }
+    let compiled = try compileCoercing(toolSchemaObject(tool.parameters, source: source),
                                        options: .init(formats: standardFormats, unresolvedRefs: .reject))
     return toolValidators.withLock { cache in
-        if let index = cache.lastIndex(where: { $0.parameters == tool.parameters }) {
+        if let index = cache.lastIndex(where: { $0.parameters == tool.parameters && $0.orderedKey == orderedKey }) {
             return cache[index].validator
         }
         if cache.count == 256 { cache.removeFirst() }
-        cache.append(CachedToolValidator(parameters: tool.parameters, validator: compiled))
+        cache.append(CachedToolValidator(parameters: tool.parameters, orderedKey: orderedKey, validator: compiled))
         return compiled
     }
 }
@@ -66,12 +69,13 @@ public func validateToolCall(tools: [AITool], toolCall: ToolCall) throws -> [Str
 }
 
 /// Validates and coerces tool arguments with pi-schema.
-public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [String: AnyCodable] {
+public func validateToolArguments(tool: AITool, toolCall: ToolCall,
+                                  orderedParameters: OrderedJSON? = nil) throws -> [String: AnyCodable] {
     if let error = toolCall.argumentsError, !error.isEmpty {
         throw ValidationError.invalidArguments(toolName: toolCall.name, message: error)
     }
     guard tool.name == toolCall.name else { throw ValidationError.toolNotFound(toolCall.name) }
-    let compiled = try validator(for: tool)
+    let compiled = try validator(for: tool, orderedParameters: orderedParameters)
     let order = validOrderSource(toolCall.argumentsJSON, arguments: toolCall.arguments)
     let input = toolSchemaObject(toolCall.arguments, source: order)
     switch compiled.parse(input) {
@@ -84,6 +88,26 @@ public func validateToolArguments(tool: AITool, toolCall: ToolCall) throws -> [S
         throw ValidationError.validationFailed(toolName: toolCall.name, errors: errors,
                                                receivedArguments: order == nil ? withoutArgumentOrder(toolCall.arguments) : toolCall.arguments)
     }
+}
+
+/// Checks a tool result with pi-schema without changing its value.
+/// v1.5.2 durable/src/harness/tool.ts:778-801 uses the first issue only.
+public func validateStructuredToolOutput(schemaJSON: String, valueJSON: String) throws -> SchemaValidationError? {
+    let parsedSchema: SchemaValue
+    do { parsedSchema = try SchemaValue.parse(json: schemaJSON) }
+    catch SchemaJSONError.nestingTooDeep { throw SchemaCompileError.nestedTooDeep }
+    let validator = try compile(parsedSchema,
+                                options: .init(formats: standardFormats, unresolvedRefs: .reject))
+    let input: SchemaValue
+    do { input = try SchemaValue.parse(json: valueJSON) }
+    catch SchemaJSONError.nestingTooDeep {
+        return SchemaValidationError(path: "root", message: "value is nested too deeply")
+    }
+    guard !validator.check(input) else { return nil }
+    guard let first = validator.errors(input).first else {
+        return SchemaValidationError(path: "root", message: "invalid")
+    }
+    return SchemaValidationError(path: toolValidationPath(first.path), message: first.message)
 }
 
 private func toolValidationPath(_ pointer: String) -> String {
@@ -110,7 +134,11 @@ private func validOrderSource(_ source: OrderedJSON?, arguments: [String: AnyCod
 private func toolSchemaObject(_ values: [String: AnyCodable], source: SchemaValue? = nil) -> SchemaValue {
     var object = SchemaObject()
     let keys: [String]
-    if case .object(let sourceObject) = source { keys = sourceObject.keys }
+    if case .object(let sourceObject) = source {
+        keys = sourceObject.keys + values.keys.filter { key in
+            !sourceObject.keys.contains { $0.utf16.elementsEqual(key.utf16) }
+        }.sorted(by: utf16Less)
+    }
     else { keys = values.keys.sorted(by: utf16Less) }
     for key in keys {
         if let value = values[key] { object[key] = toolSchemaValue(value.value, depth: 0, source: schemaMember(source, key)) }
@@ -144,7 +172,11 @@ private func toolSchemaValue(_ value: Any, depth: Int, source: SchemaValue? = ni
     if let dictionary = value as? [String: Any] {
         var object = SchemaObject()
         let keys: [String]
-        if case .object(let sourceObject) = source { keys = sourceObject.keys }
+        if case .object(let sourceObject) = source {
+            keys = sourceObject.keys + dictionary.keys.filter { key in
+                !sourceObject.keys.contains { $0.utf16.elementsEqual(key.utf16) }
+            }.sorted(by: utf16Less)
+        }
         else { keys = dictionary.keys.sorted(by: utf16Less) }
         for key in keys {
             if let item = dictionary[key] { object[key] = toolSchemaValue(item, depth: depth + 1, source: schemaMember(source, key)) }

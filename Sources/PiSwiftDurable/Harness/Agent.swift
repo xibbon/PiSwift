@@ -102,12 +102,16 @@ public struct AgentState: Sendable, Equatable, Codable {
     public var cwd: String?
     /// Maximum tool rounds in one run.
     public var maxTurns: Int?
+    /// Per-conversation compaction policy fields.
+    public var compaction: CompactionPolicyOverrides?
     /// Creates stored agent overrides. Absent fields use host defaults.
     public init(model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 extensions: ExtensionSelection? = nil, tools: ToolSelection? = nil, modelTools: ModelToolSelection? = nil,
-                instructions: String? = nil, cwd: String? = nil, maxTurns: Int? = nil) {
+                instructions: String? = nil, cwd: String? = nil, maxTurns: Int? = nil,
+                compaction: CompactionPolicyOverrides? = nil) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
         self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd; self.maxTurns = maxTurns
+        self.compaction = compaction
     }
 }
 
@@ -122,6 +126,12 @@ public func configure(tx: Transaction, conversationId: ConversationID, change: A
     if case .set(let turns) = change.maxTurns, turns < 1 {
         throw SessionError.message("maxTurns must be an integer 1 or more, got \(turns)")
     }
+    if case .set(let policy) = change.compaction {
+        try validateAgentCompaction(policy)
+        for override in policy.modelOverrides?.values ?? Dictionary<String, CompactionModelOverride>().values {
+            try validateAgentCompaction(override)
+        }
+    }
     let draft = try await tx.doc(AgentDoc, conversationId: conversationId)
     var state = AgentState()
     applyAgentChange(&state, change)
@@ -134,6 +144,23 @@ public func configure(tx: Transaction, conversationId: ConversationID, change: A
     try applyAgentField(draft, key: "instructions", change: change.instructions, value: value)
     try applyAgentField(draft, key: "cwd", change: change.cwd, value: value)
     try applyAgentField(draft, key: "maxTurns", change: change.maxTurns, value: value)
+    try applyAgentField(draft, key: "compaction", change: change.compaction, value: value)
+}
+
+private func validateAgentCompaction(_ policy: CompactionPolicyOverrides) throws {
+    try validateAgentCompactionFields(reserve: policy.reserveTokens, keep: policy.keepRecentTokens,
+                                      background: policy.backgroundTokens)
+}
+private func validateAgentCompaction(_ policy: CompactionModelOverride) throws {
+    try validateAgentCompactionFields(reserve: policy.reserveTokens, keep: policy.keepRecentTokens,
+                                      background: policy.backgroundTokens)
+}
+private func validateAgentCompactionFields(reserve: Int?, keep: Int?, background: Int?) throws {
+    for (name, value) in [("reserveTokens", reserve), ("keepRecentTokens", keep), ("backgroundTokens", background)] {
+        if let value, value < 0 || value > 9_007_199_254_740_991 {
+            throw SessionError.message("compaction.\(name) must be an integer 0 or more, got \(value)")
+        }
+    }
 }
 
 private func applyAgentField<Value>(_ draft: JSONDraft, key: String, change: AgentFieldChange<Value>, value: JSONObject) throws {
@@ -206,14 +233,18 @@ public struct AgentChange: Sendable {
     public var cwd: AgentFieldChange<String>
     /// Sets or clears the maximum tool rounds in one run.
     public var maxTurns: AgentFieldChange<Int>
+    /// Sets or clears per-conversation compaction fields.
+    public var compaction: AgentFieldChange<CompactionPolicyOverrides>
     /// Selects the fields to keep, clear, or replace in stored agent configuration.
     public init(model: AgentFieldChange<ModelRef> = .unchanged, thinkingLevel: AgentFieldChange<ModelThinkingLevel> = .unchanged,
                 extensions: AgentFieldChange<ExtensionChange> = .unchanged, tools: AgentFieldChange<ToolChange> = .unchanged,
                 modelTools: AgentFieldChange<ModelToolChange> = .unchanged,
                 instructions: AgentFieldChange<String> = .unchanged, cwd: AgentFieldChange<String> = .unchanged,
-                maxTurns: AgentFieldChange<Int> = .unchanged) {
+                maxTurns: AgentFieldChange<Int> = .unchanged,
+                compaction: AgentFieldChange<CompactionPolicyOverrides> = .unchanged) {
         self.model = model; self.thinkingLevel = thinkingLevel; self.extensions = extensions
         self.tools = tools; self.modelTools = modelTools; self.instructions = instructions; self.cwd = cwd; self.maxTurns = maxTurns
+        self.compaction = compaction
     }
 }
 
@@ -240,6 +271,7 @@ public func applyAgentChange(_ state: inout AgentState, _ change: AgentChange) {
         state.modelTools = .edit(add: add?.map(\.name), remove: remove?.map(\.name))
     }
     apply(&state.instructions, change.instructions); apply(&state.cwd, change.cwd); apply(&state.maxTurns, change.maxTurns)
+    apply(&state.compaction, change.compaction)
 }
 private func apply<Value>(_ value: inout Value?, _ change: AgentFieldChange<Value>) {
     switch change { case .unchanged: break; case .clear: value = nil; case .set(let next): value = next }
@@ -394,7 +426,8 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
     if let instructions = state?.instructions { sections.append(section(instructionsKey) { _, _ in instructions }) }
     return Agent(model: state?.model, thinkingLevel: state?.thinkingLevel ?? .off, extensions: extensions,
                  tools: tools, callable: callable, deferred: deferred, sections: sections,
-                 instructions: state?.instructions, cwd: state?.cwd, maxTurns: state?.maxTurns)
+                 instructions: state?.instructions, cwd: state?.cwd, maxTurns: state?.maxTurns,
+                 compaction: state?.compaction)
 }
 
 /// Adapts a wrapper report callback that receives only the error.

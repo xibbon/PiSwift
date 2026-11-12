@@ -139,8 +139,10 @@ private struct SchemaContext {
         guard ref == "#" || ref.hasPrefix("#/") else { return nil }
         var current: Any = root
         for segment in ref.dropFirst(2).split(separator: "/").filter({ !$0.isEmpty }) {
-            let key = (String(segment).removingPercentEncoding ?? String(segment))
-                .replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+            // v1.5.2 codemode/src/declarations.ts:156-181 rejects malformed URI escapes.
+            guard let decoded = String(segment).removingPercentEncoding else { return nil }
+            let key = decoded.replacingOccurrences(of: "~1", with: "/")
+                .replacingOccurrences(of: "~0", with: "~")
             guard let next = object(current)?[key] else { return nil }
             current = next
         }

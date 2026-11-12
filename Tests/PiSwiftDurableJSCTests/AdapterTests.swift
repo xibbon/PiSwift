@@ -61,6 +61,18 @@ private func adapterTimeless(_ input: CodemodeResult) -> CodemodeResult {
 
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct CodemodeAdapterTests {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func readImageStructuredValueBecomesImageOutput(_ watchdog: Bool) async throws {
+        // v1.5.2 durable/test/codemode.test.ts:1053-1072.
+        let (run, log) = try await adapterRun("image(await tools.read({path:'image.png'}))", watchdog: watchdog,
+            tools: [.init(name: "read")], answer: { _ in
+                .success(["type": "image", "data": .string(adapterPNG), "mimeType": "image/png"])
+            })
+        let result = await run.result
+        #expect(result.ok)
+        #expect(log.value.calls.map(\.name) == ["read"])
+        #expect(result.output == [.image(data: adapterPNG, mimeType: "image/png")])
+    }
     // E10 appendix / deterministic.test.ts:108.
     @Test(arguments: [false, true]) func sameStartHasSameCallsAndJavaScriptOutput(_ watchdog: Bool) async throws {
         let code = """

@@ -85,6 +85,8 @@ public final class RegistryDurableModels: DurableModels {
                 requestOptions.apiKey = requestOptions.apiKey ?? resolved.auth.apiKey
                 requestOptions.headers = mergeProviderHeaders(resolved.auth.headers, requestOptions.headers)
                 requestOptions.env = mergeEnvironment(resolved.auth.env, requestOptions.env)
+                // v1.5.2 durable/src/harness/generation.ts:675-683: preserve onPayload here.
+                // PiSwiftAI invokes it after building each provider body, including retry bodies.
                 let input = try registry.streamSimplePrepared(model: resolved.model, context: context, options: requestOptions)
                 for await event in input { output.push(event) }
                 output.end(await input.result())

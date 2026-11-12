@@ -51,6 +51,24 @@ private func canonicalToolJSON(_ value: Any) throws -> String {
     }
 }
 
+@Test func durableOrderedSchemaSourceKeepsTaggedErrorOrder() throws {
+    // v1.5.2 D8: ai/src/utils/validation.ts:54-68 reports issues in schema property order.
+    let schema: [String: Any] = ["type": "object", "properties": [
+        "z": ["type": "number"], "a": ["type": "boolean"]
+    ]]
+    let tool = AITool(name: "echo", description: "", parameters: schema.mapValues(AnyCodable.init))
+    let call = ToolCall(id: "ordered", name: "echo", arguments: ["z": AnyCodable("bad"), "a": AnyCodable("bad")],
+        argumentsJSON: try OrderedJSON.parse(#"{"z":"bad","a":"bad"}"#))
+    let source = try OrderedJSON.parse(#"{"type":"object","properties":{"z":{"type":"number"},"a":{"type":"boolean"}}}"#)
+    do {
+        _ = try validateToolArguments(tool: tool, toolCall: call, orderedParameters: source)
+        Issue.record("Expected validation failure")
+    } catch {
+        let text = error.localizedDescription
+        #expect(text.range(of: "- z: expected number")!.lowerBound < text.range(of: "- a: expected boolean")!.lowerBound)
+    }
+}
+
 @Test func toolArgumentDepthLimitBecomesValidationFailure() throws {
     let outcome = Mutex(false)
     let done = DispatchSemaphore(value: 0)

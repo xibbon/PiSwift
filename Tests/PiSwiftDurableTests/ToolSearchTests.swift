@@ -15,6 +15,21 @@ private func searchCandidate(_ name: String, description: String, parameters: JS
 }
 
 @Suite struct ToolSearchTests {
+    @Test func localReferenceDescriptionIsSearchableButUnusedDefinitionIsNot() async throws {
+        // v1.5.2 durable/test/tool-search.test.ts:197-225.
+        let candidate = try searchCandidate("ledger_inspect", description: "Inspect records", parameters: [
+            "type": "object", "properties": ["options": ["$ref": "#/$defs/options"]],
+            "$defs": [
+                "options": ["type": "object", "properties": ["mode": ["type": "string", "description": "reconciliation"]]],
+                "unused": ["description": "forecast"]
+            ]
+        ])
+        let tool = try createToolSearchTool(), api = try searchApi([candidate])
+        let absent = try await tool.execute(["query": "forecast"], api, .background)
+        #expect(toolResultText(absent) == "No matching tools found.")
+        let found = try await tool.execute(["query": "reconciliation"], api, .background)
+        #expect(toolResultText(found) == "Loaded 1 tool. They are available from your next call:\n- ledger_inspect: Inspect records")
+    }
     @Test func searchIsModelOnlyAndReplaySafe() throws {
         let tool = try createToolSearchTool()
         #expect(tool.name == TOOL_SEARCH_TOOL_NAME)

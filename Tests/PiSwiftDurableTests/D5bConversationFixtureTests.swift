@@ -39,9 +39,9 @@ struct D5bConversationFixtureTests {
                 "values": .array(values)]
     }
 
-    private func normalized(_ value: JSONValue) -> JSONValue {
+    private func normalized(_ value: JSONValue, ignoreFauxUsage: Bool = false) -> JSONValue {
         switch value {
-        case .array(let values): return .array(values.map(normalized))
+        case .array(let values): return .array(values.map { normalized($0, ignoreFauxUsage: ignoreFauxUsage) })
         case .object(var fields):
             if fields["role"]?.stringValue == "assistant", fields["api"] != nil {
                 // The faux provider registers an ephemeral API key on each runtime.
@@ -51,7 +51,13 @@ struct D5bConversationFixtureTests {
                 // The Swift message codec retains a null optional field.
                 fields.removeValue(forKey: "details")
             }
-            for (key, value) in fields { fields[key] = normalized(value) }
+            // v1.5.2 D8: faux.ts:190-204 counts JavaScript JSON key order. Swift stores the same JSON
+            // objects but its test faux provider orders keys differently, shifting simulated cache counts.
+            if ignoreFauxUsage {
+                fields.removeValue(forKey: "cacheWrite"); fields.removeValue(forKey: "totalTokens")
+                fields.removeValue(forKey: "durationMs")
+            }
+            for (key, value) in fields { fields[key] = normalized(value, ignoreFauxUsage: ignoreFauxUsage) }
             return .object(fields)
         default: return value
         }
@@ -75,13 +81,14 @@ struct D5bConversationFixtureTests {
     }
 
     @Test(.timeLimit(.minutes(5)))
-    func twentySeededConversationsMatchTaggedRecords() async throws {
+    func thirtySeededConversationsMatchTaggedRecords() async throws {
         let data = try Data(contentsOf: fixture)
         let scripts = try #require(JSONValue(jsonData: data)["scripts"]?.arrayValue)
-        #expect(scripts.count == 20)
-        #expect(Set(scripts.compactMap { $0["seed"]?.intValue }) == Set(0..<20))
+        #expect(scripts.count == 30)
+        #expect(Set(scripts.compactMap { $0["seed"]?.intValue }) == Set(0..<30))
         #expect(Set(scripts.compactMap { $0["kind"]?.stringValue }) ==
-                Set(["simple", "continue", "tool", "turnLimit", "handoff", "followUp", "abort", "compaction"]))
+                Set(["simple", "continue", "tool", "turnLimit", "handoff", "followUp", "abort", "compaction",
+                     "coerce", "invalid", "structured", "readImage", "search"]))
         for script in scripts {
             let seed = try #require(script["seed"]?.intValue)
             let kind = try #require(script["kind"]?.stringValue)
@@ -102,7 +109,41 @@ struct D5bConversationFixtureTests {
                               control: handoff.map { .init(handoff: $0) })
                     }), setup: setup)
                 }
-                let chat = try await openChat(storage: storage, setup: setup)
+                if ["coerce", "invalid", "structured"].contains(kind) {
+                    let schema: JSONObject = ["type": "object", "properties": [
+                        "count": ["type": "integer"]], "required": ["count"]]
+                    let outputSchema: JSONObject? = kind == "structured" ? ["type": "object", "properties": [
+                        "count": ["type": "integer"]], "required": ["count"], "additionalProperties": false] : nil
+                    try installHarnessTool(ToolRegistration(name: "probe", description: "D8 probe", parameters: schema,
+                        structuredOutputSchema: outputSchema) { _, _, _ in
+                        .init(output: [.text(.init(text: "probe ran"))],
+                              structuredOutput: kind == "structured" ? ["count": "bad"] : nil)
+                    }, setup: setup)
+                }
+                if kind == "readImage" {
+                    let image = try #require(Data(base64Encoded:
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="))
+                    try image.write(to: directory.appendingPathComponent("pixel.png"))
+                    try installHarnessTool(createReadTool(), setup: setup)
+                }
+                if kind == "search" {
+                    let ledger = try ToolRegistration(name: "ledger_inspect", description: "Inspect records", parameters: [
+                        "type": "object", "properties": ["options": ["$ref": "#/$defs/options"]], "$defs": [
+                            "options": ["type": "object", "properties": ["mode": ["type": "string", "description": "reconciliation"]]],
+                            "unused": ["description": "forecast"]]], deferred: true) { _, _, _ in .init(output: []) }
+                    try installHarnessTool(ledger, setup: setup)
+                    try setup.registry.install(createToolSearchExtension())
+                }
+                let chat: OpenChatResult
+                if kind == "readImage" {
+                    let harness = try await Harness.open(storage: storage, options: .init(models: setup.models,
+                        registry: setup.registry, settings: setup.settingsProvider,
+                        env: { target, _ in LocalExecutionEnv(cwd: target.cwd ?? directory.path) }, clock: setup.clock,
+                        onReport: { setup.reports.appendReport($0) }), context: .background)
+                    let root = try await harness.root(options: .init(agent: .init(
+                        model: .set(.init(provider: "faux", modelId: "faux-1")), cwd: .set(directory.path))), context: .background)
+                    chat = .init(harness: harness, root: root)
+                } else { chat = try await openChat(storage: storage, setup: setup) }
                 if kind == "turnLimit" {
                     try await chat.root.configure(change: .init(maxTurns: .set(1)), context: .background)
                 }
@@ -133,6 +174,29 @@ struct D5bConversationFixtureTests {
                     var failure = chatAssistant("", reason: .error, error: "invalid-\(seed)")
                     failure.content = []; failure.timestamp = 1_700_000_000_000; failure.durationMs = 0; failure.thinkingLevel = .off
                     setup.models.setResponses([.message(failure)])
+                } else if ["coerce", "invalid", "structured", "readImage", "search"].contains(kind) {
+                    let calls: [(String, JSONObject, String)]
+                    if kind == "search" {
+                        calls = [("tool_search", ["query": "forecast"], "call-\(seed)"),
+                                 ("tool_search", ["query": "reconciliation"], "call-\(seed)-2")]
+                    } else if kind == "readImage" {
+                        calls = [("read", ["path": "pixel.png"], "call-\(seed)")]
+                    } else if kind == "invalid" {
+                        calls = [("probe", ["count": seed == 24 ? "bad" : .null], "call-\(seed)")]
+                    } else {
+                        calls = [("probe", ["count": seed == 20 ? "3.5" : "7"], "call-\(seed)")]
+                    }
+                    if kind == "search" {
+                        var first = try toolCalls([calls[0]])
+                        first.timestamp = 1_700_000_000_000; first.durationMs = 0; first.thinkingLevel = .off
+                        var second = try toolCalls([calls[1]])
+                        second.timestamp = 1_700_000_000_000; second.durationMs = 0; second.thinkingLevel = .off
+                        setup.models.setResponses([.message(first), .message(second), .message(answer())])
+                    } else {
+                        var call = try toolCalls(calls)
+                        call.timestamp = 1_700_000_000_000; call.durationMs = 0; call.thinkingLevel = .off
+                        setup.models.setResponses([.message(call), .message(answer())])
+                    }
                 } else {
                     var call = try toolCalls([("echo", [:], "call-\(seed)")])
                     call.timestamp = 1_700_000_000_000; call.durationMs = 0; call.thinkingLevel = .off
@@ -169,8 +233,12 @@ struct D5bConversationFixtureTests {
                     }
                 }
                 try await chat.root.waitForIdle(context: .background)
-                let actual = normalized(try await snapshot(storage, root: chat.root.id))
-                let expected = normalized(try #require(script["records"]))
+                let raw = try await snapshot(storage, root: chat.root.id)
+                let portable = kind == "readImage"
+                    ? try JSONValue(jsonData: Data(raw.jsonText().replacingOccurrences(of: directory.path,
+                        with: "<fixture-cwd>").utf8)) : raw
+                let actual = normalized(portable, ignoreFauxUsage: seed >= 20)
+                let expected = normalized(try #require(script["records"]), ignoreFauxUsage: seed >= 20)
                 if let mismatch = difference(actual, expected) {
                     Issue.record("seed \(seed), \(kind), \(backend): \(mismatch)")
                     return

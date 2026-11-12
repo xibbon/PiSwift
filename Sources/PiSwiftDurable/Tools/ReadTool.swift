@@ -43,7 +43,16 @@ public func createReadTool(images: (any ImageProcessor)? = nil) throws -> ToolRe
             "offset": .object(["type": "number", "description": "Line number to start reading from (1-indexed)"]),
             "limit": .object(["type": "number", "description": "Maximum number of lines to read"])
         ]), "required": .array(["path"])
-    ], args: ReadToolInput.self, execute: { args, api, context in
+    ], args: ReadToolInput.self, structuredOutputSchema: [
+        "anyOf": .array([
+            .object(["type": "string"]),
+            .object(["type": "object", "properties": .object([
+                "type": .object(["const": "image"]),
+                "data": .object(["type": "string"]),
+                "mimeType": .object(["type": "string"])
+            ]), "required": .array(["type", "data", "mimeType"])])
+        ])
+    ], execute: { args, api, context in
         try await executeReadTool(args, api, context, images: images)
     })
 }
@@ -175,7 +184,8 @@ private func readText(_ reader: any BinaryReader, info: FileInfo, args: ReadTool
         let remaining = Double(totalFileLines) - (startLine + userLimitedLines)
         diagnostics.append(.init(severity: .info, message: "\(numberText(remaining)) more lines in file. Use offset=\(numberText(startLine + userLimitedLines + 1)) to continue."))
     }
-    return .init(output: output.isEmpty ? [] : [.text(TextContent(text: output))], details: details, diagnostics: diagnostics)
+    return .init(output: output.isEmpty ? [] : [.text(TextContent(text: output))],
+                 structuredOutput: .string(output), details: details, diagnostics: diagnostics)
 }
 
 private func truncationDetails(_ result: TruncationResult, outputLines: Int? = nil,
@@ -253,7 +263,8 @@ private func readImage(_ reader: any BinaryReader, info: FileInfo, path: String,
         image = PreparedImage(data: toBase64(bytes), mimeType: mimeType)
     }
     if !vision { notes.append("The current model does not support images; it sees a placeholder instead.") }
-    return .init(output: [.image(.init(data: image.data, mimeType: image.mimeType))], diagnostics: [
+    return .init(output: [.image(.init(data: image.data, mimeType: image.mimeType))],
+                 structuredOutput: .object(["type": "image", "data": .string(image.data), "mimeType": .string(image.mimeType)]), diagnostics: [
         .init(severity: .info, message: (["Read image file [\(image.mimeType)]."] + notes).joined(separator: " "), code: "image")
     ])
 }

@@ -7,6 +7,34 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct CodemodeDescribeTests {
+    @Test func readDeclarationMatchesTaggedText() throws {
+        // v1.5.2 durable/src/tools/read.ts:34-56; durable/src/codemode/describe.ts:43-108.
+        let expected = """
+        Tools scripts can call (`await tools.<name>(args)`):
+
+        ### `read`
+        Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.
+
+        codemode tool declaration:
+        ```ts
+        declare const tools: { read(args: {
+          // Maximum number of lines to read
+          limit?: number;
+          // Line number to start reading from (1-indexed)
+          offset?: number;
+          // Path to the file to read (relative or absolute)
+          path: string;
+        }): Promise<string | { data: string; mimeType: string; type: "image"; }>; };
+        ```
+        """
+        #expect(try codemodeSection(tools: [createReadTool()], namespaces: [], inlineBudget: 10_000) == expected)
+    }
+
+    @Test func malformedLocalReferenceRendersUnknown() {
+        // v1.5.2 codemode/test/declarations.test.ts:246; codemode/src/declarations.ts:160-181.
+        let schema = AnyCodable(["$defs": ["ok": ["type": "string"]], "$ref": "#/$defs/%E0"] as [String: Any])
+        #expect(schemaToType(schema) == "unknown")
+    }
     let github = CodemodeNamespace(name: "github", prefix: "mcp__github__", description: "GitHub MCP server")
 
     @Test func fixedDescription() {

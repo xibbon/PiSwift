@@ -70,6 +70,7 @@ internal actor DurableCodemodeCall {
     let context: ChordContext
     var run: (any CodemodeRun)?
     var start: CodemodeStart!
+    var searchDocuments: [SearchDocument] = []
     var replayed: [CodemodeJournalEntry] = []
     var journalLength = 0
     var nextReplayed = 0
@@ -106,6 +107,9 @@ internal actor DurableCodemodeCall {
     func execute(_ source: String) async throws -> ToolExecutionResult {
         let parsed = try parseCodemodeSource(source)
         let agent = try await api.agent(context)
+        searchDocuments = try agent.callable.map { tool in
+            SearchDocument(name: tool.name, text: try searchText(tool))
+        }
         let tools = try agent.callable.map { tool in
             CodemodeStart.Tool(name: tool.name, jsName: toCodemodeIdentifier(tool.name), description: try codemodeSample(of: tool),
                 structured: tool.structuredOutputSchema == nil ? nil : true, hidden: codemodeHasPrefix(tool.name, "pi.codemode.") ? true : nil)
@@ -505,7 +509,9 @@ internal actor DurableCodemodeCall {
         let documents = tools.compactMap { tool -> SearchDocument? in
             let own = start.namespaces.first { $0.tools.contains { harnessNamesEqual($0, tool.name) } }
             if let name = namespace?.stringValue, own.map({ matches($0, name) }) != true { return nil }
-            return .init(name: tool.name, text: [tool.name, tool.name.replacingOccurrences(of: "_", with: " "), tool.description, own?.name ?? "", own?.description ?? ""].joined(separator: " "))
+            let text = searchDocuments.first { harnessNamesEqual($0.name, tool.name) }?.text ?? tool.description
+            return .init(name: tool.name, text: text,
+                namespaceText: [own?.name ?? "", own?.description ?? "", own?.instructions ?? ""].joined(separator: " "))
         }
         return .array(rankDocuments(query, documents: documents, limit: Int(min(limit, Double(documents.count)))).compactMap { name in
             tools.first { harnessNamesEqual($0.name, name) }.map { ["name": .string($0.jsName), "description": .string($0.description)] }

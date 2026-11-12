@@ -79,24 +79,48 @@ public func createToolSearchExtension() throws -> Extension {
     Extension(name: "tool-search", tools: [try createToolSearchTool()])
 }
 
-private func searchText(_ tool: ToolRegistration) throws -> String {
-    var parts = [tool.name, tool.name.replacingOccurrences(of: "_", with: " "), tool.description]
-    appendSchemaText(try tool.currentOrderedDeclaration()["parameters"], to: &parts)
+internal func searchText(_ tool: ToolRegistration) throws -> String {
+    var parts = [tool.description]
+    let root = try tool.currentOrderedDeclaration()["parameters"]
+    var seen: Set<String> = ["#"]
+    var visited = 0
+    appendSchemaText(root, root: root, to: &parts, seen: &seen, visited: &visited, depth: 0)
     return parts.filter { !trimSearchText($0).isEmpty }.joined(separator: " ")
 }
 
-private func appendSchemaText(_ schema: JSONValue?, to parts: inout [String]) {
-    guard let object = schema?.objectValue else { return }
+private func resolveSearchRef(_ ref: String, root: JSONValue?) -> JSONValue? {
+    guard ref == "#" || ref.hasPrefix("#/") else { return nil }
+    var value = root
+    if ref == "#" { return value }
+    for component in ref.dropFirst(2).split(separator: "/", omittingEmptySubsequences: false) {
+        guard let decoded = String(component).removingPercentEncoding else { return nil }
+        let key = decoded.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        value = value?.objectValue?[key]
+        if value == nil { return nil }
+    }
+    return value
+}
+
+private func appendSchemaText(_ schema: JSONValue?, root: JSONValue?, to parts: inout [String],
+                              seen: inout Set<String>, visited: inout Int, depth: Int) {
+    guard let object = schema?.objectValue, depth <= 64, visited < 4_096 else { return }
+    visited += 1
+    if let ref = object["$ref"]?.stringValue, seen.insert(ref).inserted,
+       let target = resolveSearchRef(ref, root: root) {
+        appendSchemaText(target, root: root, to: &parts, seen: &seen, visited: &visited, depth: depth + 1)
+    }
     if let description = object["description"]?.stringValue { parts.append(description) }
     if let properties = object["properties"]?.objectValue {
         for (name, property) in properties {
             parts.append(name)
-            appendSchemaText(property, to: &parts)
+            appendSchemaText(property, root: root, to: &parts, seen: &seen, visited: &visited, depth: depth + 1)
         }
     }
-    appendSchemaText(object["items"], to: &parts)
+    appendSchemaText(object["items"], root: root, to: &parts, seen: &seen, visited: &visited, depth: depth + 1)
     for key in ["anyOf", "oneOf", "allOf"] {
-        for variant in object[key]?.arrayValue ?? [] { appendSchemaText(variant, to: &parts) }
+        for variant in object[key]?.arrayValue ?? [] {
+            appendSchemaText(variant, root: root, to: &parts, seen: &seen, visited: &visited, depth: depth + 1)
+        }
     }
 }
 

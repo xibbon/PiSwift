@@ -29,7 +29,8 @@ func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, m
     }
     if [.stop, .length, .toolUse].contains(message.stopReason) { return try await answerGeneration(runtime: runtime, message: message, context: context) }
     let settings = runtime.settings
-    let compact = request.model.map { compactionPolicy(settings: settings, model: $0) } ?? settings.compaction
+    let conversationPolicy = try await runtime.agent(context: context).compaction
+    let compact = request.model.map { compactionPolicy(settings: settings, model: $0, conversation: conversationPolicy) } ?? settings.compaction
     let overflow = message.stopReason == .error && isContextOverflow(message)
     if overflow && request.compacted == nil && compact.enabled {
         let view = try await runtime.context(runtime.conversationId, at: request.cutoff, context: context)

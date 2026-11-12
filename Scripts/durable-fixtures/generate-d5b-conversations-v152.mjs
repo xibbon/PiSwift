@@ -1,4 +1,4 @@
-// Twenty deterministic v1.5.2 Harness conversations on both storage backends.
+// Thirty deterministic v1.5.2 Harness conversations on both storage backends.
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,9 @@ const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
 const { defineTool } = await source.import('packages/durable/src/harness/define.ts');
+const { createToolSearchExtension } = await source.import('packages/durable/src/tool-search/index.ts');
+const { createReadTool } = await source.import('packages/durable/src/tools/read.ts');
+const { NodeExecutionEnv } = await source.import('packages/durable/src/env/node.ts');
 const { createModels } = await source.import('packages/ai/src/models.ts');
 const { fauxProvider, fauxAssistantMessage, fauxText, fauxToolCall } = await source.import('packages/ai/src/providers/faux.ts');
 const { openNodeSqliteStorage } = await source.import('packages/durable/src/storage/sqlite/node.ts');
@@ -46,7 +49,9 @@ async function snapshot(store, rootId) {
 }
 const kinds = ['simple', 'simple', 'simple', 'continue', 'continue', 'continue',
   'tool', 'tool', 'tool', 'turnLimit', 'turnLimit', 'turnLimit', 'handoff', 'handoff',
-  'followUp', 'followUp', 'abort', 'abort', 'compaction', 'compaction'];
+  'followUp', 'followUp', 'abort', 'abort', 'compaction', 'compaction',
+  'coerce', 'coerce', 'coerce', 'coerce', 'invalid', 'invalid',
+  'structured', 'structured', 'readImage', 'search'];
 const scripts = kinds.map((kind, seed) => ({ seed, kind }));
 function gate() {
   let release;
@@ -58,6 +63,26 @@ async function run(kind, script) {
   const store = kind === 'sqlite' ? await openNodeSqliteStorage(path) : await openNodeJsonlStorage(path, context);
   const faux = fauxProvider(), models = createModels(), registry = createRegistry();
   models.setProvider(faux.provider);
+  if (['coerce', 'invalid', 'structured'].includes(script.kind)) {
+    registry.install({ name: 'd8-tools', tools: [defineTool({
+      name: 'probe', description: 'D8 probe',
+      parameters: { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'] },
+      ...(script.kind === 'structured' ? { structuredOutputSchema: {
+        type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false,
+      } } : {}),
+      execute: async args => ({ output: [{ type: 'text', text: 'probe ran' }],
+        ...(script.kind === 'structured' ? { structuredOutput: { count: 'bad' } } : {}) }),
+    })] });
+  }
+  if (script.kind === 'readImage') registry.install({ name: 'd8-read', tools: [createReadTool()] });
+  if (script.kind === 'search') {
+    registry.install({ name: 'd8-searchable', tools: [defineTool({ name: 'ledger_inspect',
+      description: 'Inspect records', deferred: true, parameters: { type: 'object',
+        properties: { options: { $ref: '#/$defs/options' } }, $defs: { options: { type: 'object',
+          properties: { mode: { type: 'string', description: 'reconciliation' } } },
+          unused: { description: 'forecast' } } }, execute: async () => ({ output: [] }) })] });
+    registry.install(createToolSearchExtension());
+  }
   if (['tool', 'turnLimit', 'handoff'].includes(script.kind)) {
     registry.install({ name: 'fixture-tools', tools: [defineTool({
       name: 'echo', description: 'Echo', parameters: { type: 'object', properties: {} },
@@ -66,10 +91,12 @@ async function run(kind, script) {
     })] });
   }
   const harness = await Harness.open(store, { models, registry, now: () => clock,
+    ...(script.kind === 'readImage' ? { env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? temporary }) } : {}),
     settings: { retry: { enabled: false }, ...(script.kind === 'compaction'
       ? { compaction: { enabled: false, keepRecentTokens: 1 } } : {}) } }, context);
   const root = await harness.root(context, { agent: { model: { provider: 'faux', modelId: 'faux-1' },
-    ...(script.kind === 'turnLimit' ? { maxTurns: 1 } : {}) } });
+    ...(script.kind === 'turnLimit' ? { maxTurns: 1 } : {}),
+    ...(script.kind === 'readImage' ? { cwd: temporary } : {}) } });
   const answer = () => fauxAssistantMessage([fauxText(`answer-${script.seed}`)]);
   let first, second, queued;
   if (script.kind === 'simple') {
@@ -111,6 +138,24 @@ async function run(kind, script) {
     await (await root.submit({ type: 'input', content: `history-${script.seed}` }, context)).wait(context);
     await harness.waitForTask(await root.compact(undefined, context), context);
     second = json(await (await root.submit({ type: 'input', content: `after-summary-${script.seed}` }, context)).wait(context));
+  } else if (['coerce', 'invalid', 'structured', 'readImage', 'search'].includes(script.kind)) {
+    if (script.kind === 'readImage') {
+      // 1x1 PNG; the base64 bytes are deterministic on both backends.
+      await writeFile(join(temporary, 'pixel.png'), Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64'));
+    }
+    const calls = script.kind === 'search'
+      ? [fauxToolCall('tool_search', { query: 'forecast' }, { id: `call-${script.seed}` }),
+        fauxToolCall('tool_search', { query: 'reconciliation' }, { id: `call-${script.seed}-2` })]
+      : [fauxToolCall(script.kind === 'readImage' ? 'read' : 'probe',
+        script.kind === 'readImage' ? { path: 'pixel.png' } : script.kind === 'invalid'
+          ? { count: script.seed === 24 ? 'bad' : null }
+          : { count: script.seed === 20 ? '3.5' : '7' }, { id: `call-${script.seed}` })];
+    faux.setResponses(script.kind === 'search'
+      ? [fauxAssistantMessage([calls[0]], { stopReason: 'toolUse' }),
+        fauxAssistantMessage([calls[1]], { stopReason: 'toolUse' }), answer()]
+      : [fauxAssistantMessage(calls, { stopReason: 'toolUse' }), answer()]);
+    first = json(await (await root.submit({ type: 'input', content: `question-${script.seed}` }, context)).wait(context));
   } else {
     faux.setResponses([fauxAssistantMessage([fauxToolCall('echo', {}, { id: `call-${script.seed}` })], { stopReason: 'toolUse' }), answer()]);
     first = json(await (await root.submit({ type: 'input', content: `question-${script.seed}` }, context)).wait(context));
@@ -119,7 +164,8 @@ async function run(kind, script) {
     }
   }
   await root.waitForIdle(context);
-  const records = await snapshot(store, root.id);
+  let records = await snapshot(store, root.id);
+  if (script.kind === 'readImage') records = JSON.parse(JSON.stringify(records).replaceAll(temporary, '<fixture-cwd>'));
   if (script.kind === 'compaction' && !records.entries.some(entry => entry.kind === 'pi.compaction'))
     throw new Error('Compaction did not save a summary entry');
   await harness.close(context);
@@ -148,7 +194,7 @@ try {
     await mkdir(fileURLToPath(new URL('./', import.meta.url)), { recursive: true });
     await writeFile(output, serialized);
   }
-  console.log(`D5b conversations ${check ? 'match' : 'written'}: 20 scripts, SQLite and JSONL.`);
+  console.log(`D5b conversations ${check ? 'match' : 'written'}: 30 scripts, SQLite and JSONL.`);
 } finally {
   Date.now = oldDateNow;
   if (oldPerformanceNow) Object.defineProperty(performance, 'now', oldPerformanceNow);

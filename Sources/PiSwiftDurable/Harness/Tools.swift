@@ -310,7 +310,8 @@ public func defineTool<Args: Decodable & Sendable>(
                 throw HarnessDefinitionError.argumentsMustBeObject(name)
             }
             let call = ToolCall(id: api.callId, name: name, arguments: object.mapValues(AnyCodable.init))
-            let checked = try PiSwiftAI.validateToolArguments(tool: declaration, toolCall: call)
+            let checked = try PiSwiftAI.validateToolArguments(tool: declaration, toolCall: call,
+                orderedParameters: OrderedJSON.parse(parameters.jsonText()))
             let decoded = try JSONDecoder().decode(Args.self, from: JSONEncoder().encode(checked))
             return try await execute(decoded, api, context)
         }

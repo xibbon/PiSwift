@@ -62,7 +62,8 @@ import PiSwiftChord
         #expect(durableStructuredSchemaError(.null, schema: ["const": .null]) == nil)
         #expect(durableStructuredSchemaError(true, schema: ["const": 1]) != nil)
         #expect(durableStructuredSchemaError(1, schema: ["enum": [true]]) != nil)
-        #expect(durableStructuredSchemaError("e\u{301}", schema: ["minLength": 2]) != nil)
+        // v1.5.2 D8: schema/src/compiler.ts counts Unicode scalars here, not Swift grapheme clusters.
+        #expect(durableStructuredSchemaError("e\u{301}", schema: ["minLength": 2]) == nil)
         #expect(durableStructuredSchemaError("😀", schema: ["maxLength": 1]) == nil)
         #expect(durableStructuredSchemaError("abc", schema: ["pattern": "^a"]) == nil)
         #expect(durableStructuredSchemaError("abc", schema: ["pattern": "^z"]) != nil)
@@ -101,13 +102,17 @@ import PiSwiftChord
         #expect(durableStructuredSchemaError(1, schema: ["$ref": "#"]) != nil)
         var validSchema: JSONValue = ["type": "integer"]
         for _ in 0..<80 { validSchema = ["allOf": [validSchema]] }
-        #expect(durableStructuredSchemaError(1, schema: validSchema.objectValue!) == nil)
+        // v1.5.2 D8: durable/src/harness/tool.ts:796 delegates to pi-schema;
+        // Swift's PiSwiftSchema/DepthSafety.swift:7 counts object and array levels.
+        #expect(durableStructuredSchemaError(1, schema: validSchema.objectValue!) == "schema is nested too deeply")
         var validValue: JSONValue = [:]
         for _ in 0..<40 { validValue = ["next": validValue] }
         #expect(durableStructuredSchemaError(validValue, schema: ["type": "object", "properties": ["next": ["$ref": "#"]]]) == nil)
         var deepSchema: JSONValue = ["type": "integer"]
         for _ in 0..<300 { deepSchema = ["allOf": [deepSchema]] }
-        #expect(durableStructuredSchemaError(1, schema: deepSchema.objectValue!) == nil)
+        // v1.5.2 D8: durable/src/harness/tool.ts:796 delegates to pi-schema;
+        // Swift's PiSwiftSchema/DepthSafety.swift:7 limits untrusted schemas to 128 levels.
+        #expect(durableStructuredSchemaError(1, schema: deepSchema.objectValue!) == "schema is nested too deeply")
         var value: JSONValue = [:]
         for _ in 0..<300 { value = ["next": value] }
         #expect(durableStructuredSchemaError(value, schema: ["type": "object", "properties": ["next": ["$ref": "#"]]]) == nil)

@@ -149,14 +149,17 @@ internal func estimateContext(view: ContextView, extra: [Message] = []) -> Int {
     generationEstimateContext(view: view, extra: extra)
 }
 /// Resolves one model's exact override over the global compaction policy.
-public func compactionPolicy(settings: Settings, model: ModelRef) -> CompactionPolicy {
+public func compactionPolicy(settings: Settings, model: ModelRef,
+                             conversation: CompactionPolicyOverrides? = nil) -> CompactionPolicy {
     let policy = settings.compaction
     let key = "\(model.provider)/\(model.modelId)"
-    let override = policy.modelOverrides?.first { harnessNamesEqual($0.key, key) }?.value
-    return CompactionPolicy(enabled: override?.enabled ?? policy.enabled,
-        reserveTokens: override?.reserveTokens ?? policy.reserveTokens,
-        keepRecentTokens: override?.keepRecentTokens ?? policy.keepRecentTokens,
-        backgroundTokens: override?.backgroundTokens ?? policy.backgroundTokens)
+    let hostModel = policy.modelOverrides?.first { harnessNamesEqual($0.key, key) }?.value
+    let conversationModel = conversation?.modelOverrides?.first { harnessNamesEqual($0.key, key) }?.value
+    return CompactionPolicy(enabled: conversationModel?.enabled ?? (conversation?.enabled == false ? false :
+        (hostModel?.enabled ?? conversation?.enabled ?? policy.enabled)),
+        reserveTokens: conversationModel?.reserveTokens ?? hostModel?.reserveTokens ?? conversation?.reserveTokens ?? policy.reserveTokens,
+        keepRecentTokens: conversationModel?.keepRecentTokens ?? hostModel?.keepRecentTokens ?? conversation?.keepRecentTokens ?? policy.keepRecentTokens,
+        backgroundTokens: conversationModel?.backgroundTokens ?? hostModel?.backgroundTokens ?? conversation?.backgroundTokens ?? policy.backgroundTokens)
 }
 internal func summarizedMessages(view: ContextView, cut: Int) -> [Message] {
     let end = cut < 0 ? max(0, view.contributions.count + cut) : cut
@@ -170,7 +173,7 @@ private func selectCompaction(_ task: RunningTask<CompactionInput, CompactionChe
         return try await failCompactionNoModel(runtime, ref: agent.model, context: context)
     }
     let view = try await runtime.context(runtime.conversationId, context: context)
-    let policy = compactionPolicy(settings: settings, model: ref)
+    let policy = compactionPolicy(settings: settings, model: ref, conversation: agent.compaction)
     guard let cut = selectCut(view: view, keepRecentTokens: policy.keepRecentTokens) else {
         return try await completeCompaction(runtime, context: context)
     }

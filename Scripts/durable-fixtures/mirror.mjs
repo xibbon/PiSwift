@@ -18,8 +18,9 @@ function completion(child) {
 export async function mirror({ dependencies = [], tag = upstreamTag } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'piswift-durable-fixtures-'));
   try {
-    const archive = spawn('git', ['-C', upstreamRepository, 'archive', tag,
-      'packages/chord/src', 'packages/durable/src', 'packages/ai/src', 'packages/telemetry/src'], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const paths = ['packages/chord/src', 'packages/durable/src', 'packages/ai/src', 'packages/telemetry/src'];
+    if (tag === 'v1.5.2') paths.push('packages/schema/src');
+    const archive = spawn('git', ['-C', upstreamRepository, 'archive', tag, ...paths], { stdio: ['ignore', 'pipe', 'inherit'] });
     const extract = spawn('tar', ['-x', '-C', directory], { stdio: ['pipe', 'inherit', 'inherit'] });
     // tar can close stdin after the archive end blocks while git still closes its pipe.
     // Judge both child exit codes; a closed pipe is not itself an extraction failure.
@@ -35,6 +36,7 @@ export async function mirror({ dependencies = [], tag = upstreamTag } = {}) {
       ai: { '.': './src/index.ts', './utils/*': './src/utils/*.ts' },
       telemetry: { '.': './src/index.ts', './testing': './src/testing/index.ts' },
     };
+    if (tag === 'v1.5.2') packages.schema = { '.': './src/index.ts', './formats': './src/formats/index.ts' };
     // SQLite moved to Chord in v1.4.0. Keep older tags' export maps unchanged.
     const chord = JSON.parse(execFileSync('git', ['-C', upstreamRepository, 'show', `${tag}:packages/chord/package.json`], { encoding: 'utf8' }));
     for (const subpath of ['./sqlite', './sqlite/node', './sqlite/cloudflare']) {

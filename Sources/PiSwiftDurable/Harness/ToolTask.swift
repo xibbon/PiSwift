@@ -134,13 +134,20 @@ private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ cont
         throw TaskDefinitionError("Entry \(assistant.rawValue) has no tool call \(callId)")
     }
 }
-private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ value: JSONValue) throws -> JSONObject {
+private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ value: JSONValue,
+                                  preserveCallOrder: Bool = true) throws -> JSONObject {
     guard let object = try foundationJSON(from: value) as? [String: Any] else {
         throw HarnessDefinitionError.argumentsMustBeObject(tool.name)
     }
     var candidate = call
-    candidate.arguments = object.mapValues(AnyCodable.init); candidate.argumentsJSON = nil
-    let checked = try validateToolArguments(tool: tool.declaration, toolCall: candidate)
+    candidate.arguments = object.mapValues(AnyCodable.init)
+    candidate.argumentsJSON = preserveCallOrder && call.argumentsJSON != nil
+        ? toolArgumentsToOrderedJSON(candidate.arguments, argumentsJSON: call.argumentsJSON)
+        : try OrderedJSON.parse(value.jsonText())
+    candidate.arguments = toolArgumentsWithOrder(candidate.arguments, argumentsJSON: candidate.argumentsJSON)
+    let schema = try tool.currentOrderedDeclaration()["parameters"] ?? .object([:])
+    let checked = try validateToolArguments(tool: tool.declaration, toolCall: candidate,
+                                            orderedParameters: OrderedJSON.parse(schema.jsonText()))
     guard case .object(let arguments) = try durableJSON(fromFoundation: checked.mapValues(\.value)) else {
         throw HarnessDefinitionError.argumentsMustBeObject(tool.name)
     }
@@ -212,7 +219,7 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
         return try await rejectTool(runtime, task.input, call, tool: tool,
             result: harnessToolError(code: "blocked", message: "Tool call blocked: \(block)"), context: context)
     }
-    do { args = try checkedToolArguments(tool, call.call, .object(args)) }
+    do { args = try checkedToolArguments(tool, call.call, .object(args), preserveCallOrder: false) }
     catch {
         return try await rejectTool(runtime, task.input, call, tool: tool,
             result: harnessToolError(code: "invalid_arguments", message: toolErrorText(error)), context: context)

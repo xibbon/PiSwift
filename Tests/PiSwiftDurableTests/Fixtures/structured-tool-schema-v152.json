@@ -1,0 +1,1313 @@
+{
+  "tag": "v1.5.2",
+  "source": "packages/schema/src, durable/src/harness/tool.ts:778-801",
+  "cases": [
+    {
+      "name": "count-broken",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": "broken"
+      },
+      "accepted": false,
+      "error": "count: expected integer, got string"
+    },
+    {
+      "name": "count-missing",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {},
+      "accepted": false,
+      "error": "count: missing"
+    },
+    {
+      "name": "count-null",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": null,
+      "accepted": false,
+      "error": "root: expected object, got null"
+    },
+    {
+      "name": "count-null-member",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": null
+      },
+      "accepted": false,
+      "error": "count: expected integer, got null"
+    },
+    {
+      "name": "count-large-integer",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": 100000000000000000000
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "count-fraction",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "value": {
+        "count": 1.5
+      },
+      "accepted": false,
+      "error": "count: expected integer, got number"
+    },
+    {
+      "name": "type-boolean-0",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": true,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "type-boolean-1",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": false,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "type-boolean-2",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": 0,
+      "accepted": false,
+      "error": "root: expected boolean, got integer"
+    },
+    {
+      "name": "type-boolean-3",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": 1,
+      "accepted": false,
+      "error": "root: expected boolean, got integer"
+    },
+    {
+      "name": "type-boolean-4",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": "true",
+      "accepted": false,
+      "error": "root: expected boolean, got string"
+    },
+    {
+      "name": "type-boolean-5",
+      "schema": {
+        "type": "boolean"
+      },
+      "value": null,
+      "accepted": false,
+      "error": "root: expected boolean, got null"
+    },
+    {
+      "name": "type-string-0",
+      "schema": {
+        "type": "string"
+      },
+      "value": "",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "type-string-1",
+      "schema": {
+        "type": "string"
+      },
+      "value": true,
+      "accepted": false,
+      "error": "root: expected string, got boolean"
+    },
+    {
+      "name": "type-string-2",
+      "schema": {
+        "type": "string"
+      },
+      "value": 1,
+      "accepted": false,
+      "error": "root: expected string, got integer"
+    },
+    {
+      "name": "type-string-3",
+      "schema": {
+        "type": "string"
+      },
+      "value": [],
+      "accepted": false,
+      "error": "root: expected string, got array"
+    },
+    {
+      "name": "type-string-4",
+      "schema": {
+        "type": "string"
+      },
+      "value": null,
+      "accepted": false,
+      "error": "root: expected string, got null"
+    },
+    {
+      "name": "type-array-0",
+      "schema": {
+        "type": "array"
+      },
+      "value": [],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "type-array-1",
+      "schema": {
+        "type": "array"
+      },
+      "value": {},
+      "accepted": false,
+      "error": "root: expected array, got object"
+    },
+    {
+      "name": "type-array-2",
+      "schema": {
+        "type": "array"
+      },
+      "value": "x",
+      "accepted": false,
+      "error": "root: expected array, got string"
+    },
+    {
+      "name": "type-array-3",
+      "schema": {
+        "type": "array"
+      },
+      "value": null,
+      "accepted": false,
+      "error": "root: expected array, got null"
+    },
+    {
+      "name": "minimum-0",
+      "schema": {
+        "type": "number",
+        "minimum": 2
+      },
+      "value": 1,
+      "accepted": false,
+      "error": "root: expected >= 2"
+    },
+    {
+      "name": "minimum-1",
+      "schema": {
+        "type": "number",
+        "minimum": 2
+      },
+      "value": 2,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "maximum-0",
+      "schema": {
+        "type": "number",
+        "maximum": 2
+      },
+      "value": 3,
+      "accepted": false,
+      "error": "root: expected <= 2"
+    },
+    {
+      "name": "maximum-1",
+      "schema": {
+        "type": "number",
+        "maximum": 2
+      },
+      "value": 2,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "exclusiveMinimum-0",
+      "schema": {
+        "type": "number",
+        "exclusiveMinimum": 2
+      },
+      "value": 2,
+      "accepted": false,
+      "error": "root: expected > 2"
+    },
+    {
+      "name": "exclusiveMinimum-1",
+      "schema": {
+        "type": "number",
+        "exclusiveMinimum": 2
+      },
+      "value": 3,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "exclusiveMaximum-0",
+      "schema": {
+        "type": "number",
+        "exclusiveMaximum": 2
+      },
+      "value": 2,
+      "accepted": false,
+      "error": "root: expected < 2"
+    },
+    {
+      "name": "exclusiveMaximum-1",
+      "schema": {
+        "type": "number",
+        "exclusiveMaximum": 2
+      },
+      "value": 1,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "multipleOf-0",
+      "schema": {
+        "type": "number",
+        "multipleOf": 0.1
+      },
+      "value": 0.3,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "multipleOf-1",
+      "schema": {
+        "type": "number",
+        "multipleOf": 0.1
+      },
+      "value": 0.31,
+      "accepted": false,
+      "error": "root: expected a multiple of 0.1"
+    },
+    {
+      "name": "enum-0",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": "b",
+      "accepted": false,
+      "error": "root: expected one of [\"a\",2,null,{\"x\":1}]"
+    },
+    {
+      "name": "enum-1",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": "a",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "enum-2",
+      "schema": {
+        "enum": [
+          "a",
+          2,
+          null,
+          {
+            "x": 1
+          }
+        ]
+      },
+      "value": {
+        "x": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "const-0",
+      "schema": {
+        "const": {
+          "x": 1
+        }
+      },
+      "value": {
+        "x": 2
+      },
+      "accepted": false,
+      "error": "root: expected {\"x\":1}"
+    },
+    {
+      "name": "const-1",
+      "schema": {
+        "const": {
+          "x": 1
+        }
+      },
+      "value": {
+        "x": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "anyOf-0",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": true,
+      "accepted": false,
+      "error": "root: expected string, got boolean"
+    },
+    {
+      "name": "anyOf-1",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": "x",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "anyOf-2",
+      "schema": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "value": 1,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "allOf-0",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 0,
+      "accepted": false,
+      "error": "root: expected >= 1"
+    },
+    {
+      "name": "allOf-1",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 4,
+      "accepted": false,
+      "error": "root: expected <= 3"
+    },
+    {
+      "name": "allOf-2",
+      "schema": {
+        "allOf": [
+          {
+            "type": "number",
+            "minimum": 1
+          },
+          {
+            "type": "number",
+            "maximum": 3
+          }
+        ]
+      },
+      "value": 2,
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unknown-format-0",
+      "schema": {
+        "type": "string",
+        "format": "unknown-fixture-format"
+      },
+      "value": "text",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unknown-format-1",
+      "schema": {
+        "type": "string",
+        "format": "unknown-fixture-format"
+      },
+      "value": "",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "known-format-email-0",
+      "schema": {
+        "type": "string",
+        "format": "email"
+      },
+      "value": "broken",
+      "accepted": false,
+      "error": "root: expected format email"
+    },
+    {
+      "name": "known-format-email-1",
+      "schema": {
+        "type": "string",
+        "format": "email"
+      },
+      "value": "a@b.example",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "if-then-else-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": true
+      },
+      "accepted": false,
+      "error": "count: missing"
+    },
+    {
+      "name": "if-then-else-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": true,
+        "count": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "if-then-else-2",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": false,
+        "count": 1
+      },
+      "accepted": false,
+      "error": "count: expected <= 0"
+    },
+    {
+      "name": "if-then-else-3",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "if": {
+          "properties": {
+            "flag": {
+              "const": true
+            }
+          },
+          "required": [
+            "flag"
+          ]
+        },
+        "then": {
+          "required": [
+            "count"
+          ]
+        },
+        "else": {
+          "properties": {
+            "count": {
+              "maximum": 0
+            }
+          }
+        }
+      },
+      "value": {
+        "flag": false,
+        "count": 0
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "dependentRequired-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {
+        "credit": "x"
+      },
+      "accepted": false,
+      "error": "billing: required when credit is present"
+    },
+    {
+      "name": "dependentRequired-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {
+        "credit": "x",
+        "billing": "y"
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "dependentRequired-2",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "credit": {
+            "type": "string"
+          },
+          "billing": {
+            "type": "string"
+          }
+        },
+        "dependentRequired": {
+          "credit": [
+            "billing"
+          ]
+        }
+      },
+      "value": {},
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "dependentSchemas-0",
+      "schema": {
+        "type": "object",
+        "dependentSchemas": {
+          "credit": {
+            "required": [
+              "billing"
+            ]
+          }
+        }
+      },
+      "value": {
+        "credit": "x"
+      },
+      "accepted": false,
+      "error": "billing: missing"
+    },
+    {
+      "name": "dependentSchemas-1",
+      "schema": {
+        "type": "object",
+        "dependentSchemas": {
+          "credit": {
+            "required": [
+              "billing"
+            ]
+          }
+        }
+      },
+      "value": {
+        "credit": "x",
+        "billing": "y"
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unevaluatedProperties-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unevaluatedProperties-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "accepted": false,
+      "error": "y: unknown field"
+    },
+    {
+      "name": "unevaluatedProperties-allOf-0",
+      "schema": {
+        "type": "object",
+        "allOf": [
+          {
+            "properties": {
+              "x": {
+                "type": "number"
+              }
+            }
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unevaluatedProperties-allOf-1",
+      "schema": {
+        "type": "object",
+        "allOf": [
+          {
+            "properties": {
+              "x": {
+                "type": "number"
+              }
+            }
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "accepted": false,
+      "error": "y: unknown field"
+    },
+    {
+      "name": "unevaluatedItems-0",
+      "schema": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          }
+        ],
+        "unevaluatedItems": false
+      },
+      "value": [
+        1
+      ],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unevaluatedItems-1",
+      "schema": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "number"
+          }
+        ],
+        "unevaluatedItems": false
+      },
+      "value": [
+        1,
+        2
+      ],
+      "accepted": false,
+      "error": "1: unexpected item"
+    },
+    {
+      "name": "additionalProperties-0",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "value": {
+        "x": 1
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "additionalProperties-1",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "value": {
+        "x": 1,
+        "y": 2
+      },
+      "accepted": false,
+      "error": "y: unknown field"
+    },
+    {
+      "name": "pattern-0",
+      "schema": {
+        "type": "string",
+        "pattern": "^a+$"
+      },
+      "value": "aaa",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "pattern-1",
+      "schema": {
+        "type": "string",
+        "pattern": "^a+$"
+      },
+      "value": "b",
+      "accepted": false,
+      "error": "root: expected to match ^a+$"
+    },
+    {
+      "name": "minItems-0",
+      "schema": {
+        "type": "array",
+        "minItems": 2
+      },
+      "value": [
+        1
+      ],
+      "accepted": false,
+      "error": "root: expected at least 2 items"
+    },
+    {
+      "name": "minItems-1",
+      "schema": {
+        "type": "array",
+        "minItems": 2
+      },
+      "value": [
+        1,
+        2
+      ],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "maxItems-0",
+      "schema": {
+        "type": "array",
+        "maxItems": 1
+      },
+      "value": [
+        1
+      ],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "maxItems-1",
+      "schema": {
+        "type": "array",
+        "maxItems": 1
+      },
+      "value": [
+        1,
+        2
+      ],
+      "accepted": false,
+      "error": "root: expected at most 1 items"
+    },
+    {
+      "name": "uniqueItems-0",
+      "schema": {
+        "type": "array",
+        "uniqueItems": true
+      },
+      "value": [
+        1,
+        1
+      ],
+      "accepted": false,
+      "error": "root: expected unique items"
+    },
+    {
+      "name": "uniqueItems-1",
+      "schema": {
+        "type": "array",
+        "uniqueItems": true
+      },
+      "value": [
+        1,
+        2
+      ],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "contains-0",
+      "schema": {
+        "type": "array",
+        "contains": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "x"
+      ],
+      "accepted": false,
+      "error": "root: expected at least 1 matching item"
+    },
+    {
+      "name": "contains-1",
+      "schema": {
+        "type": "array",
+        "contains": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "x",
+        1
+      ],
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "nested-array-valid",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      },
+      "value": {
+        "rows": [
+          {
+            "id": 1
+          }
+        ]
+      },
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "nested-array-invalid",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      },
+      "value": {
+        "rows": [
+          {
+            "id": "broken"
+          }
+        ]
+      },
+      "accepted": false,
+      "error": "rows.0.id: expected integer, got string"
+    },
+    {
+      "name": "root-array-invalid",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "value": [
+        "broken"
+      ],
+      "accepted": false,
+      "error": "0: expected integer, got string"
+    },
+    {
+      "name": "unicode-emoji-minLength-1",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "value": "😀",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-emoji-maxLength-1",
+      "schema": {
+        "type": "string",
+        "maxLength": 1
+      },
+      "value": "😀",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-emoji-minLength-2",
+      "schema": {
+        "type": "string",
+        "minLength": 2
+      },
+      "value": "😀",
+      "accepted": false,
+      "error": "root: expected at least 2 characters"
+    },
+    {
+      "name": "unicode-emoji-maxLength-2",
+      "schema": {
+        "type": "string",
+        "maxLength": 2
+      },
+      "value": "😀",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-emoji-minLength-3",
+      "schema": {
+        "type": "string",
+        "minLength": 3
+      },
+      "value": "😀",
+      "accepted": false,
+      "error": "root: expected at least 3 characters"
+    },
+    {
+      "name": "unicode-emoji-maxLength-3",
+      "schema": {
+        "type": "string",
+        "maxLength": 3
+      },
+      "value": "😀",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-combining-minLength-1",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "value": "é",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-combining-maxLength-1",
+      "schema": {
+        "type": "string",
+        "maxLength": 1
+      },
+      "value": "é",
+      "accepted": false,
+      "error": "root: expected at most 1 characters"
+    },
+    {
+      "name": "unicode-combining-minLength-2",
+      "schema": {
+        "type": "string",
+        "minLength": 2
+      },
+      "value": "é",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-combining-maxLength-2",
+      "schema": {
+        "type": "string",
+        "maxLength": 2
+      },
+      "value": "é",
+      "accepted": true,
+      "error": null
+    },
+    {
+      "name": "unicode-combining-minLength-3",
+      "schema": {
+        "type": "string",
+        "minLength": 3
+      },
+      "value": "é",
+      "accepted": false,
+      "error": "root: expected at least 3 characters"
+    },
+    {
+      "name": "unicode-combining-maxLength-3",
+      "schema": {
+        "type": "string",
+        "maxLength": 3
+      },
+      "value": "é",
+      "accepted": true,
+      "error": null
+    }
+  ]
+}

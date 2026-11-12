@@ -272,7 +272,7 @@ private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
                                           }, context: context)
     let entries = try planSystemEntries(view: view, desired: desired, registrations: agent.tools, timestamp: runtime.now())
     let threshold = checkpoint.compacted == nil ? try generationThresholdCompaction(view: view, planned: entries, contextWindow: model.contextWindow,
-        policy: compactionPolicy(settings: settings, model: ref)) : nil
+        policy: compactionPolicy(settings: settings, model: ref, conversation: agent.compaction)) : nil
     if threshold == .blocking {
         try await runtime.commit({ tx, _ in
             let child = try await createGenerationCompaction(tx: tx, conversationId: runtime.conversationId, reason: .threshold, owner: runtime.taskId)
@@ -309,7 +309,22 @@ private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
     let sessionId = try await ensureProviderSessionId(runtime: runtime, context: context)
     let bridge = ContextCancellationBridge(context: context.withAbortSignal(runtime.signal))
     defer { withExtendedLifetime(bridge) {} }
-    let options = try generationStreamOptions(required(checkpoint.streamOptions, "streamOptions"), thinkingLevel: required(checkpoint.thinkingLevel, "thinkingLevel"), signal: bridge.token, sessionId: sessionId, context: context)
+    var options = try generationStreamOptions(required(checkpoint.streamOptions, "streamOptions"), thinkingLevel: required(checkpoint.thinkingLevel, "thinkingLevel"), signal: bridge.token, sessionId: sessionId, context: context)
+    // v1.5.2 durable/src/harness/generation.ts:675-683 runs this chain for every provider body.
+    options.onPayload = { snapshot in
+        let original = try JSONValue(jsonData: Data(snapshot.json.utf8))
+        var current = original
+        try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in
+            if let hook = hooks.beforeProviderRequest,
+               let replacement = try await hook(.init(model: model, payload: current), runtime.hookApi, context) {
+                guard case .object = replacement.payload else {
+                    throw TaskDefinitionError("beforeProviderRequest payload must be a JSON object")
+                }
+                current = replacement.payload
+            }
+        }
+        return current == original ? nil : PayloadSnapshot(json: try current.jsonText())
+    }
     let message = try await streamGeneration(runtime: runtime, model: model, messages: messages, options: options, attempt: attempt,
                                              thinkingLevel: checkpoint.thinkingLevel, context: context)
     try await classifyGeneration(runtime, request: checkpoint, message: message, messages: view.messages, context: context)
@@ -318,8 +333,10 @@ func generationStreamOptions(_ options: ConversationStreamOptions, thinkingLevel
     var metadata: [String: AnyCodable]?
     if let value = options.metadata { metadata = (try foundationJSON(from: .object(value)) as! [String: Any]).mapValues(AnyCodable.init) }
     return SimpleStreamOptions(signal: signal, telemetry: context.telemetry, transport: options.transport, reasoning: ThinkingLevel(rawValue: thinkingLevel.rawValue),
-        cacheRetention: options.cacheRetention, sessionId: sessionId, headers: options.headers, maxRetryDelayMs: options.maxRetryDelayMs,
-        metadata: metadata, timeoutMs: options.timeoutMs, maxRetries: options.maxRetries, deferred: options.deferred)
+        cacheRetention: options.cacheRetention, sessionId: sessionId, thinkingBudgets: options.thinkingBudgets,
+        headers: options.headers, maxRetryDelayMs: options.maxRetryDelayMs,
+        metadata: metadata, timeoutMs: options.timeoutMs, websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
+        maxRetries: options.maxRetries, deferred: options.deferred)
 }
 private func failGeneration(_ runtime: TaskRuntime, ref: ModelRef?, context: ChordContext) async throws {
     let text = ref.map { "Model \($0.provider)/\($0.modelId) is not available" } ?? "No model is configured"

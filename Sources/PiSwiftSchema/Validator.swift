@@ -142,6 +142,11 @@ public final class CoercingValidator: Sendable {
 
 /// Compiles a schema into a validator.
 public func compile(_ schema: SchemaValue, options: CompileOptions = .init()) throws -> Validator {
+    // A root that only refers to itself cannot consume input. Its compiled check
+    // would call itself until the small host stack overflows.
+    if case .object(let object) = schema, object.count == 1, object["$ref"] == .string("#") {
+        throw SchemaCompileError.malformedSchema("cyclic schema reference without value progress")
+    }
     let depth = schemaNestingDepth(schema, stoppingAt: schemaMaximumSchemaDepth)
     if depth > schemaMaximumSchemaDepth { throw SchemaCompileError.nestedTooDeep }
     let result: (Compiler, Check)

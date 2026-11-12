@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import Synchronization
 import PiSwiftAI
@@ -8,6 +9,67 @@ import PiSwiftDurableTesting
 // Upstream v1.4.0 types.ts:78 requires an explicit checkpoint policy in each definition.
 
 struct HarnessGenerationHooksTests {
+    @Test(.timeLimit(.minutes(1))) func beforeProviderRequestChainsEveryBody() async throws {
+        // v1.5.2 durable/test/harness-tools.test.ts:755-793.
+        let setup = HarnessChatSetup(), seen = Mutex<[JSONValue]>([]), sent = Mutex<[JSONValue]>([])
+        try setup.registry.install(Extension(name: "payload", hooks: [
+            hook(GenerationHooks(beforeProviderRequest: { request, _, _ in
+                seen.withLock { $0.append(request.payload) }
+                var body = try #require(request.payload.objectValue); body["first"] = true
+                return .init(payload: .object(body))
+            })),
+            hook(GenerationHooks(beforeProviderRequest: { request, _, _ in
+                seen.withLock { $0.append(request.payload) }
+                return nil
+            })),
+            hook(GenerationHooks(beforeProviderRequest: { request, _, _ in
+                var body = try #require(request.payload.objectValue); body["last"] = true
+                return .init(payload: .object(body))
+            }))
+        ]))
+        let response: FakeDurableResponseFactory = { _, options, _, _ in
+            guard let callback = options?.onPayload else { throw TaskDefinitionError("No payload callback") }
+            for number in 1...2 {
+                let output = try await callback(.init(json: "{\"body\":\(number)}"))
+                guard let json = output?.json else { throw TaskDefinitionError("No replacement body") }
+                let value = try JSONValue(jsonData: Data(json.utf8))
+                sent.withLock { $0.append(value) }
+            }
+            return chatAssistant("done")
+        }
+        setup.models.setResponses([.factory(response)])
+        let opened = try await openChat(setup: setup)
+        #expect(try await generationSubmit(opened).wait(context: .background).status == "done")
+        #expect(sent.withLock { $0 } == [["body": 1, "first": true, "last": true], ["body": 2, "first": true, "last": true]])
+        #expect(seen.withLock { $0 } == [["body": 1], ["body": 1, "first": true], ["body": 2], ["body": 2, "first": true]])
+        try await opened.harness.close(context: .background)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func throwingBeforeProviderRequestReportsAndContinues() async throws {
+        // v1.5.2 durable/test/harness-tools.test.ts:795-821.
+        let setup = HarnessChatSetup(), sent = Mutex<JSONValue?>(nil)
+        try setup.registry.install(Extension(name: "broken", hooks: [
+            hook(GenerationHooks(beforeProviderRequest: { _, _, _ in throw TaskDefinitionError("broken hook") }))
+        ]))
+        try setup.registry.install(Extension(name: "after", hooks: [
+            hook(GenerationHooks(beforeProviderRequest: { request, _, _ in
+                var body = try #require(request.payload.objectValue); body["after"] = true
+                return .init(payload: .object(body))
+            }))
+        ]))
+        let response: FakeDurableResponseFactory = { _, options, _, _ in
+            guard let callback = options?.onPayload else { throw TaskDefinitionError("No payload callback") }
+            let output = try await callback(.init(json: "{\"body\":1}"))
+            sent.withLock { $0 = try? JSONValue(jsonData: Data((output?.json ?? "").utf8)) }
+            return chatAssistant("done")
+        }
+        setup.models.setResponses([.factory(response)])
+        let opened = try await openChat(setup: setup)
+        #expect(try await generationSubmit(opened).wait(context: .background).status == "done")
+        #expect(sent.withLock { $0 } == ["body": 1, "after": true])
+        #expect(setup.reports.values.contains { String(describing: $0).contains("broken hook") })
+        try await opened.harness.close(context: .background)
+    }
     @Test func sectionsReadConversationDocuments() async throws {
         struct State: Codable, Sendable { var cwd = "/"; var kind = "main" }
         let token = try ConversationDocToken<State>(kind: "test.generation-agent", version: 1, fork: .current, initial: { State() }, checkpointWhen: { _, _, _ in false })

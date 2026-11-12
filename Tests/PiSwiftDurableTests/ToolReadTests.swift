@@ -29,6 +29,8 @@ import PiSwiftDurableTesting
         let text = (1...100).map { "Line \($0)" }.joined(separator: "\n")
         let result = try await run(text, offset: 41, limit: 20)
         #expect(toolResultText(result) == (41...60).map { "Line \($0)" }.joined(separator: "\n"))
+        // v1.5.2 D8: durable/src/tools/read.ts:323 returns text as the program value.
+        #expect(result.structuredOutput == .string(toolResultText(result)))
         #expect(result.diagnostics == [.init(severity: .info, message: "40 more lines in file. Use offset=61 to continue.")])
     }
     @Test("truncates large text at the line limit")
@@ -77,6 +79,8 @@ import PiSwiftDurableTesting
         #expect(result.output?.count == 1); #expect(result.isError != true)
         guard case .image(let image) = result.output?.first else { Issue.record("Expected an image"); return }
         #expect(image.data == png.base64EncodedString()); #expect(image.mimeType == "image/png")
+        // v1.5.2 D8: durable/src/tools/read.ts:203-204 returns the image block as the program value.
+        #expect(result.structuredOutput == ["type": "image", "data": .string(image.data), "mimeType": .string(image.mimeType)])
         #expect(result.diagnostics == [.init(severity: .info, message: "Read image file [image/png].", code: "image")])
     }
     @Test("reads a rewritten file again once and closes the reader")

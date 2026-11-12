@@ -29,8 +29,10 @@ final class Compiler: Sendable {
     private let resolver: Mutex<SchemaResolver>
     // S1b and S3 can inspect the resolver state produced by this compile.
     var r: SchemaResolver { resolver.withLock { $0 } }
-    private let cache = Mutex<[String: Check]>([:])
-    private let annotatingCache = Mutex<[String: AnnotatingCheck]>([:])
+    // Swift String equality folds canonically equivalent spellings. JavaScript keys do not.
+    private struct CacheKey: Hashable, Sendable { let units: [UInt16]; init(_ value: String) { units = Array(value.utf16) } }
+    private let cache = Mutex<[CacheKey: Check]>([:])
+    private let annotatingCache = Mutex<[CacheKey: AnnotatingCheck]>([:])
 
     // compiler.ts:86
     init(_ schema: SchemaValue, options: CompileOptions, dynamic: Bool) {
@@ -454,7 +456,7 @@ final class Compiler: Sendable {
         }
     }
 
-    private func cacheKey(_ value: SchemaValue, _ base: String) -> String { base + "\u{0}" + value.stringify() }
+    private func cacheKey(_ value: SchemaValue, _ base: String) -> CacheKey { CacheKey(base + "\u{0}" + value.stringify()) }
     func resolve(_ reference: String, base: String) throws -> (node: SchemaValue, base: String) {
         try resolver.withLock { state in
             state.loadIfNeeded(reference, base: base)
