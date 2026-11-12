@@ -69,6 +69,9 @@ private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, c
         guard continuation == nil, let hook = hooks.onYield else { return }
         continuation = try await hook(message, runtime.hookApi, context)?.continue
     }
+    let agent = try await runtime.agent(context: context)
+    let asksAfterRun = agentHooks(agent, taskName: generationTask.name, as: GenerationHooks.self)
+        .contains { $0.handlers.afterRun != nil }
     try await runtime.commit({ tx, _ in
         let boundary = try await prepareBoundary(tx: tx, conversationId: runtime.conversationId, modes: runtime.settings)
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
@@ -77,6 +80,11 @@ private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, c
         let queued = try boundary.inbox.snapshot().decode(InboxState.self).items
         let takesContinuation = continuation != nil && !hasQueuedReset(queued) &&
             !queued.contains { $0.mode == .steer || $0.mode == .followUp }
+        if !takesContinuation && asksAfterRun,
+           let held = try holdRun(tx: tx, live: live, runtime: runtime, reason: .answer,
+                                  answer: entry.id, last: entry.id) {
+            return held
+        }
         let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: runtime.now())
         if let continuation, takesContinuation {
             let user = UserMessage(content: continuation, timestamp: try runtime.now())

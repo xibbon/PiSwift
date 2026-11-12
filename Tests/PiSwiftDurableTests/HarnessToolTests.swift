@@ -45,15 +45,18 @@ struct HarnessToolTests {
         let offered = try await opened.root.agent(context: .background).tools[0].currentOrderedDeclaration()
         #expect(system.model?.first?["toolsAdded"] == .array([.object(offered)]))
         let ghostEntry = try #require(entries.first { $0.kind == toolResultEntry.kind && $0.model?.first?["toolCallId"] == "ghost" })
-        #expect(ghostEntry.byTaskId == entries.first { $0.kind == assistantEntry.kind }?.byTaskId)
+        // v1.5.2 D6 generation.ts:1045–1053 gives an unoffered call its own pi.tool task.
+        #expect(ghostEntry.byTaskId != entries.first { $0.kind == assistantEntry.kind }?.byTaskId)
         #expect(ghostEntry.data == ["diagnostics": [["severity": "error", "code": "tool_unavailable", "message": "Tool ghost is not available"]]])
         #expect(harnessToolText(try #require(results.first { $0.toolCallId == "ghost" })) == "<harness>\n[error] Tool ghost is not available\n</harness>")
         let echoEntry = try #require(entries.first { $0.kind == toolResultEntry.kind && $0.model?.first?["toolCallId"] == "echo" })
         #expect(echoEntry.data == ["diagnostics": []] && echoEntry.byTaskId != nil)
         let tasks = try await opened.harness.commit({ tx in try await tx.scanTasks(.init(conversationId: opened.root.id), limit: 20) }, context: .background)
-        #expect(tasks.items.filter { $0.kind == "pi.tool" }.count == 1)
+        // v1.5.2 D6 harness-tools.test.ts:163–165 counts the unoffered task.
+        #expect(tasks.items.filter { $0.kind == "pi.tool" }.count == 2)
         #expect(setup.models.state().callCount == 2)
-        #expect(entries.filter { $0.kind == toolResultEntry.kind }.allSatisfy { $0.byTaskId != nil || $0.data?["diagnostics"]?[0]?["code"] == "tool_unavailable" })
+        // v1.5.2 D6 harness-tools.test.ts:185–187: every result has a tool task.
+        #expect(entries.filter { $0.kind == toolResultEntry.kind }.allSatisfy { $0.byTaskId != nil })
         #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background) == LiveState())
         try await opened.harness.close(context: .background)
     }

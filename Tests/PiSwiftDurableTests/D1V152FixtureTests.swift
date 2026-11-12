@@ -318,14 +318,11 @@ struct D1V152FixtureTests {
             for (name, rawID) in cases {
                 let id = try rawID.decode(TaskID.self)
                 let saved = try #require(initial.tasks.first { $0.record.id == id })
-                if ["finish", "drain", "retryPoll"].contains(name) {
-                    // v1.5.2 D5b: the phase runs now (generation.ts:309–345,370–395).
+                if ["finish", "drain", "retryPoll", "toolsPending", "unofferedTool"].contains(name) {
+                    // v1.5.2 D6 tool.ts:153–168 and generation.ts:346–365 run these phases.
                     guard case .pending = saved.state else { Issue.record("Fixture phase \(name) is not pending"); continue }
                 } else if case .blocked(let reason, _) = saved.state {
-                    #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
-                } else if name == "toolsPending" {
-                    // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable work is pending.
-                    guard case .pending = saved.state else { Issue.record("Fixture phase \(name) was neither pending nor blocked"); continue }
+                    #expect(reason == .taskTooOld)
                 } else { Issue.record("Fixture phase \(name) was not blocked") }
             }
             var recordsBefore: [TaskID: TaskRecord] = [:]
@@ -338,6 +335,10 @@ struct D1V152FixtureTests {
             // A five-second storage polling loop can starve under the full parallel suite.
             _ = try await harness.waitForTask(id: TaskID(2), context: .background)
             _ = try await harness.waitForTask(id: TaskID(3), context: .background)
+            // v1.5.2 D6: synthetic phase-only calls lack their assistant entry and therefore fault,
+            // but their saved tasks run and settle rather than staying migration-blocked.
+            _ = try await harness.waitForTask(id: TaskID(5), context: .background)
+            _ = try await harness.waitForTask(id: TaskID(6), context: .background)
             let resumed = try await harness.inspect(context: .background)
             for (name, rawID) in cases {
                 let id = try rawID.decode(TaskID.self)
@@ -348,10 +349,13 @@ struct D1V152FixtureTests {
                 case "retryPoll":
                     // v1.5.2 D5b: retry.poll resumes and sleeps until its tagged deadline (generation.ts:309–323).
                     #expect(try await storage.task(id, context: .background)?.state.status == "sleeping")
+                case "toolsPending", "unofferedTool":
+                    // v1.5.2 D6 generation.ts:346–365 and tool.ts:153–168.
+                    #expect(try await storage.task(id, context: .background)?.state.status == "terminal")
                 default:
                     let saved = try #require(resumed.tasks.first { $0.record.id == id })
                     guard case .blocked(let reason, _) = saved.state else { Issue.record("Fixture phase \(name) resumed"); continue }
-                    #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
+                    #expect(reason == .taskTooOld)
                 }
             }
             #expect(try await storage.task(newerID, context: .background) == recordsBefore[newerID])

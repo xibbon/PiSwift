@@ -37,6 +37,14 @@ public final class Conversation: Sendable {
             return try await harness.submissions.submit(conversationId: id, draft: draft, context: context).bound(binding)
         }
     }
+    /// Admits a submission in the caller's commit before its first table write.
+    /// The returned ID is stored with the caller's other writes as one batch.
+    public func submit(_ tx: Transaction, _ draft: SubmissionDraft) async throws -> SubmissionID {
+        try binding?.check()
+        try binding?.signal.throwIfAborted()
+        try harness.assertOpen()
+        return try await harness.submissions.admit(tx: tx, conversationId: id, draft: draft)
+    }
     /// Creates a manual compaction task for the conversation.
     public func compact(instructions: String? = nil, context: ChordContext) async throws -> TaskID {
         try await withTaskCancellationContext(try bound(context)) { context in
@@ -115,6 +123,10 @@ public struct ConversationHandle: Sendable {
         // v1.5.2 harness.ts:552–565: an invocation-bound handle admits the
         // same drafts as a public conversation, including `continue`.
         return try await conversation.submit(draft, context: context)
+    }
+    /// Admits a submission in the task or tool's current commit.
+    public func submit(_ tx: Transaction, _ draft: SubmissionDraft) async throws -> SubmissionID {
+        try await conversation.submit(tx, draft)
     }
     /// Requests abort for conversation tasks; background work is included only when requested.
     public func abort(background: Bool = false, context: ChordContext) async throws {

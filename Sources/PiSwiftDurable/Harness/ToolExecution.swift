@@ -52,7 +52,7 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: 
     let pending = await reporter.stop()
     do {
         let final = try await finalToolResult(runtime, call, tool, result, reporter, context)
-        try await settleTool(runtime, call, ending, durationMs: durationMs, context: context) { _ in final }
+        try await settleTool(runtime, call, ending, result: final, durationMs: durationMs, context: context)
         for waiter in pending { waiter.resolve() }
     } catch {
         for waiter in pending { waiter.reject(error) }
@@ -119,7 +119,7 @@ internal func boundToolContent(_ content: [ContentBlock], limits: OutputLimits) 
 }
 
 /// A schema-free program result uses bounded output before rendered diagnostics.
-private func outputValue(_ content: [ContentBlock]) throws -> JSONValue {
+internal func outputValue(_ content: [ContentBlock]) throws -> JSONValue {
     if content.isEmpty { return "" }
     if content.count == 1, case .text(let text) = content[0] { return .string(text.text) }
     let message = ToolResultMessage(toolCallId: "", toolName: "", content: content, isError: false, timestamp: 0)

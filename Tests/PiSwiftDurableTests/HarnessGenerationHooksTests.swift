@@ -62,7 +62,7 @@ struct HarnessGenerationHooksTests {
         #expect(try textOf(users.last?.messages()?.first) == "continue")
         try await opened.harness.close(context: .background)
     }
-    @Test func offeredToolsCreateBlockedOwnedRoundAndUnavailableCallsGetResults() async throws {
+    @Test(.timeLimit(.minutes(1))) func offeredToolsCreateBlockedOwnedRoundAndUnavailableCallsGetResults() async throws {
         let entered = HarnessChatSignal() // H7: the real tool task replaces the H5/H6 placeholder
         let tool = try ToolRegistration(name: "offered", description: "", parameters: [:]) { _, _, context in entered.signal(); try await harnessToolAwaitAbort(context); return ToolExecutionResult() } // H7: the real tool task replaces the H5/H6 placeholder
         let setup = HarnessChatSetup()
@@ -79,7 +79,13 @@ struct HarnessGenerationHooksTests {
         #expect(record.owner == ownerId)
         #expect(record.state.status == "running") // H7: the real tool task replaces the H5/H6 placeholder
         if case .running(let checkpoint, _) = record.state { #expect(checkpoint["phase"] == .string("execute")) } // H7: the real tool task replaces the H5/H6 placeholder
-        #expect(slots[1].status == .done && slots[1].taskId == nil)
+        // v1.5.2 D6 generation.ts:1045–1053 creates a flagged task. Parallel
+        // scheduling can leave it pending when the offered call first runs.
+        let unofferedID = try #require(slots[1].taskId)
+        #expect(slots[1].unoffered == true)
+        _ = try await opened.harness.waitForTask(id: unofferedID, context: .background)
+        let settledSlots = try #require(await generationLive(opened)?.tools)
+        #expect(settledSlots[1].status == .done)
         let entries = try await allEntries(opened.root)
         #expect(entries.map(\.kind) == ["pi.user", "pi.system", "pi.assistant", "pi.tool-result"])
         #expect(entries.last?.data?["diagnostics"]?[0]?["code"] == .string("tool_unavailable"))
@@ -154,7 +160,7 @@ struct HarnessGenerationHooksTests {
         try await opened.harness.close(context: .background)
     }
 
-    @Test func unavailableOnlyRoundContinuesWithoutToolTasks() async throws {
+    @Test func unavailableOnlyRoundContinuesWithFlaggedToolTask() async throws {
         let setup = HarnessChatSetup(), seen = Mutex<[EntryID]>([])
         try setup.registry.install(Extension(name: "hooks", hooks: [hook(GenerationHooks(afterTools: { _, results, _, _ in seen.withLock { $0 = results } }))]))
         var message = chatAssistant("", reason: .toolUse)
@@ -168,7 +174,9 @@ struct HarnessGenerationHooksTests {
         #expect(seen.withLock { $0 } == [entries[2].id])
         #expect(submission.answer == entries[3].id)
         let tasks = try await opened.harness.commit({ tx in try await tx.scanTasks(.init(conversationId: opened.root.id), limit: 10) }, context: .background)
-        #expect(tasks.items.count == 2 && tasks.items.allSatisfy { $0.kind == "pi.generation" })
+        // v1.5.2 D6 harness-tool-hooks.test.ts:704 and generation.ts:1045–1053.
+        #expect(tasks.items.count == 3 && tasks.items.filter { $0.kind == "pi.tool" }.count == 1)
+        #expect(tasks.items.first { $0.kind == "pi.tool" }?.input["unoffered"] == true)
         #expect(try await generationLive(opened) == LiveState())
         try await opened.harness.close(context: .background)
     }

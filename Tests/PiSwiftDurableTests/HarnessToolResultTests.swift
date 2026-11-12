@@ -31,7 +31,7 @@ struct HarnessToolResultTests {
         #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background) == LiveState())
         try await opened.harness.close(context: .background)
     }
-    // :188. Unregister before preparation removes the offer and creates no tool task.
+    // v1.5.2 D6 harness-tools.test.ts:185–187: an unoffered call gets a flagged tool task.
     @Test func registryRemovalAndReaddition() async throws {
         let setup = HarnessChatSetup(), tool = try harnessTestTool()
         try installHarnessTool(tool, setup: setup)
@@ -46,7 +46,9 @@ struct HarnessToolResultTests {
         #expect(try harnessToolResults(entries).first?.isError == true)
         #expect(try await opened.root.agent(context: .background).tools.isEmpty)
         let tasks = try await opened.harness.commit({ tx in try await tx.scanTasks(.init(conversationId: opened.root.id), limit: 20) }, context: .background)
-        #expect(tasks.items.allSatisfy { $0.kind != "pi.tool" })
+        // v1.5.2 D6 generation.ts:1045–1053 and tool.ts:153–168.
+        #expect(tasks.items.filter { $0.kind == "pi.tool" }.count == 1)
+        #expect(tasks.items.first { $0.kind == "pi.tool" }?.input["unoffered"] == true)
         try installHarnessTool(tool, setup: setup)
         setup.models.setResponses([.message(chatAssistant("back"))])
         _ = try await opened.root.submit(.input(content: .text("back")), context: .background).wait(context: .background)

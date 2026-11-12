@@ -163,7 +163,7 @@ private func runGeneration(_ task: RunningTask<GenerationInput, GenerationCheckp
         if task.record.storedRestarts != nil { try await interruptedGeneration(checkpoint, runtime, context) }
         else { try await requestGeneration(checkpoint, runtime, context) }
     case .finish:
-        try await endAnsweredRun(runtime: runtime, answer: required(checkpoint.run, "run") .answer, context: context)
+        try await finishAnsweredRun(runtime: runtime, run: required(checkpoint.run, "run"), context: context)
     case .drain:
         try await endAnsweredRun(runtime: runtime, answer: required(checkpoint.answer, "answer"), context: context)
     case .retry:
@@ -207,7 +207,16 @@ private func runGeneration(_ task: RunningTask<GenerationInput, GenerationCheckp
         guard let next = pending.first else { return try await finishToolRound(runtime: runtime, assistant: assistant, tools: tools, context: context) }
         try await runtime.commit({ tx, _ in
             let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
-            let taskId = try await createGenerationTool(tx: tx, runtime: runtime, assistant: assistant, callId: next)
+            let slots = try live.child("tools")
+            var unoffered = false
+            if let slots {
+                for index in 0..<(try slots.count()) {
+                    guard let slot = try slots.child(index), try slot.get("callId") == .string(next) else { continue }
+                    unoffered = try slot.get("unoffered") == true
+                    break
+                }
+            }
+            let taskId = try await createGenerationTool(tx: tx, runtime: runtime, assistant: assistant, callId: next, unoffered: unoffered)
             if let slots = try live.child("tools") {
                 for index in 0..<(try slots.count()) {
                     guard let slot = try slots.child(index), try slot.get("callId") == .string(next), try slot.get("taskId") == nil else { continue }
@@ -354,7 +363,12 @@ private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Task
     try await runtime.commit({ tx, _ in
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         try await convertPartial(tx: tx, live: live, conversationId: runtime.conversationId)
-        for call in unstarted { _ = try await appendGenerationToolError(tx: tx, conversationId: runtime.conversationId, call: call, code: "aborted", text: "Tool \(call.name) was aborted", now: runtime.now()) }
+        for call in unstarted {
+            let unoffered = try live.child("tools")?.snapshot().decode([ToolSlot].self).first { $0.callId == call.id }?.unoffered == true
+            _ = try await appendGenerationToolError(tx: tx, conversationId: runtime.conversationId, call: call,
+                code: unoffered ? "tool_unavailable" : "aborted",
+                text: unoffered ? "Tool \(call.name) is not available" : "Tool \(call.name) was aborted", now: runtime.now())
+        }
         try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"), failure: .aborted)
         return .terminal(outcome: .aborted())
     }, context: context)

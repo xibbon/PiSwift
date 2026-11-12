@@ -101,7 +101,6 @@ internal final class TaskScheduler: Sendable {
         var stopped = Set<TaskID>()
         var failedMigrations: [TaskID: (UUID, any Error)] = [:]
         var unsupportedReported = Set<TaskID>()
-        var unsupportedToolRounds = Set<TaskID>()
         var enabled = false
         var closing = false
         var dirty = false
@@ -428,9 +427,6 @@ internal final class TaskScheduler: Sendable {
     func fit(_ record: TaskBlockedSubject, definition: AnyTaskDefinition?) -> (reason: String?, error: (any Error)?, migrates: Bool) {
         guard let definition else { return ("missing_task", nil, false) }
         if definition.version < record.version { return ("task_too_old", nil, false) }
-        if state.withLock({ $0.unsupportedToolRounds.contains(record.id) }) {
-            return ("migration_failed", TaskDefinitionError("Task pi.generation requires D6 for tools.pending"), false)
-        }
         if let phase = unsupportedBuiltInPhase(record) {
             // The tagged scheduler blocks work it cannot migrate as migration_failed
             // (scheduler.ts:2083-2096). Block these D5/D6 shapes before reservation.
@@ -448,26 +444,8 @@ internal final class TaskScheduler: Sendable {
         }
         if record.kind == "pi.tool" {
             if let phase, !["call", "execute"].contains(phase) { return "phase \(phase)" }
-            if record.input["unoffered"] == true { return "unoffered" }
         }
         return nil
-    }
-    /// A v2 sequential round needs D6 only when its pending call has no safe
-    /// live slot or the slot marks an unoffered tool. Ordinary Swift rounds keep running.
-    private func unsupportedToolRound(_ record: TaskRecord) async -> Bool {
-        guard record.kind == "pi.generation", record.state.checkpoint?["phase"] == "tools",
-              let pending = record.state.checkpoint?["pending"]?.arrayValue, !pending.isEmpty else { return false }
-        do {
-            let address = DocumentAddress(kind: "pi.live", scope: .conversation(conversationId: record.conversationId))
-            guard let doc = try await storage.findDocument(address, at: .current, context: context),
-                  let stored = try await storage.document(doc.id, at: .current, context: context) else { return true }
-            let value = try LiveDoc.definition.materialize(stored)
-            let slots = value["tools"]?.arrayValue ?? []
-            for call in pending {
-                guard let slot = slots.first(where: { $0["callId"] == call }), slot["unoffered"] != true else { return true }
-            }
-            return false
-        } catch { return true }
     }
     func blockedReason(_ record: TaskBlockedSubject) -> TaskBlockedReason? {
         if ["running", "completing", "terminal"].contains(record.status) { return nil }
@@ -553,11 +531,6 @@ internal final class TaskScheduler: Sendable {
                     }
                     snapshot = snapshot ?? registry.snapshot()
                     let definition = snapshot!.task(name: record.kind)
-                    let unsupportedRound = await unsupportedToolRound(record)
-                    state.withLock { state in
-                        if unsupportedRound { state.unsupportedToolRounds.insert(record.id) }
-                        else { state.unsupportedToolRounds.remove(record.id) }
-                    }
                     var resolution = fit(record, definition: definition)
                     if resolution.reason == nil, resolution.migrates, let definition {
                         do {
@@ -572,8 +545,7 @@ internal final class TaskScheduler: Sendable {
                         }
                     }
                     if let reason = resolution.reason {
-                        let unsupportedShape = unsupportedBuiltInPhase(TaskBlockedSubject(record: record)) != nil ||
-                            state.withLock { $0.unsupportedToolRounds.contains(record.id) }
+                        let unsupportedShape = unsupportedBuiltInPhase(TaskBlockedSubject(record: record)) != nil
                         if reason == "migration_failed", unsupportedShape, let error = resolution.error,
                            state.withLock({ $0.unsupportedReported.insert(record.id).inserted }) {
                             report(error, .migrationFailed(task: ReportTask(record), extension: snapshot!.installer(of: definition!)))

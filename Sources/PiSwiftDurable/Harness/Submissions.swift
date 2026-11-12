@@ -156,11 +156,24 @@ internal final class Submissions: Sendable {
         state.withLock { $0.subscriptions = [commits, close] }
     }
     func submit(conversationId: ConversationID, draft: SubmissionDraft, context: ChordContext) async throws -> Submission {
-        resume()
+        // v1.5.2 submissions.ts:65–78 asks for progress before admission, but
+        // JavaScript reserves the Session line before the resumed scheduler
+        // gets a turn. Swift tasks can run at once, so start progress when
+        // this admission returns or throws, after its Session decision.
+        defer { resume() }
         let id = try await session.commit({ tx in
             try await admitSubmission(tx: tx, conversationId: conversationId, draft: draft, now: now(), queueModes: settings())
         }, context: context)
         return Submission(id: id, submissions: self)
+    }
+    /// v1.5.2 submissions.ts:73–87: admission is part of the caller's one
+    /// transaction and is lost with its other writes if that commit fails.
+    func admit(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft) async throws -> SubmissionID {
+        try tx.assertCanAdmitSubmission(in: session)
+        try tx.context.abortSignal?.throwIfAborted()
+        resume()
+        return try await admitSubmission(tx: tx, conversationId: conversationId, draft: draft,
+                                         now: now(), queueModes: settings())
     }
     func get(id: SubmissionID, context: ChordContext) async throws -> Submission? {
         try context.abortSignal?.throwIfAborted()

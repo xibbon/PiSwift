@@ -4,6 +4,16 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+private func waitForReopenedOwnerEdges(_ condition: @escaping @Sendable () async throws -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(20))
+    while try await !condition() {
+        guard ContinuousClock.now < deadline else {
+            throw TaskDefinitionError("Recovered owner edges did not settle within 20 seconds")
+        }
+        await Task.yield()
+    }
+}
+
 @Suite struct HarnessTaskOwnershipRecoveryTests {
     // upstream harness-ownership.test.ts:410; admit into an empty owned
     // conversation after reopen while its marked owner remains live.
@@ -45,7 +55,7 @@ import PiSwiftDurableTesting
     }
 
     // upstream ownership:319; structured:1490,1523
-    @Test(arguments: ["foreground", "terminal-background"])
+    @Test(.timeLimit(.minutes(1)), arguments: ["foreground", "terminal-background"])
     func reopenedOwnerEdgesDetermineIdleAndBackgroundBoundary(mode: String) async throws {
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -90,10 +100,13 @@ import PiSwiftDurableTesting
         let root = try await harness.root(context: .background)
         if mode == "foreground" {
             let idle = settled { try await root.waitForIdle(context: .background) }
-            try await harnessEventually { clock.pendingSleeperCount == 2 }
+            // v1.5.2 D6 harness-ownership.test.ts:728–759: both reopened owners
+            // must start before the test advances the clock. Under the full
+            // parallel suite, the generic five-second polling limit can expire.
+            try await waitForReopenedOwnerEdges { clock.pendingSleeperCount == 2 }
             #expect(!idle.isSettled)
             clock.advance(by: 100)
-            try await harnessEventually { idle.isSettled }
+            try await waitForReopenedOwnerEdges { idle.isSettled }
             #expect(try await harness.waitForTask(id: parent, context: .background).outcome.status == "completed")
             #expect(try await harness.getTask(id: backgroundInner, context: .background)?.state.status == "running")
             try await root.abort(background: true, context: .background)

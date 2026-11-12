@@ -224,11 +224,33 @@ public final class TaskRuntime: Sendable {
             return try await scheduler.conversation(id, .init(signal: signal, check: { [invocation] in try invocation.check() }), context)
         }
     }
+    /// v1.5.2 util.ts raw history reader: pages entries within this task's
+    /// conversation, with inclusive bounds and an optional cursor.
+    public func entries(_ query: ConversationEntryQuery = .init(), limit: Int, cursor: Cursor? = nil,
+                        context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
+        try await withTaskCancellationContext(context.withAbortSignal(signal)) { context in
+            try invocation.check()
+            let page = try await scheduler.session.readOnLine {
+                try await scheduler.storage.scanEntries(
+                    EntryQuery(conversationId: conversationId, minEntryId: query.minEntryId,
+                               maxEntryId: query.maxEntryId, order: query.order),
+                    limit: limit, cursor: cursor, context: context)
+            }
+            try invocation.check()
+            try context.abortSignal?.throwIfAborted()
+            return page
+        }
+    }
     /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ id: EntryID, context: ChordContext) async throws -> EntryRecord? {
-        try await withTaskCancellationContext(context) { context in
+        try await withTaskCancellationContext(context.withAbortSignal(signal)) { context in
             try invocation.check()
-            return try await scheduler.session.readOnLine { try await scheduler.storage.entry(conversationId, id: id, context: context)?.entry }
+            let entry = try await scheduler.session.readOnLine {
+                try await scheduler.storage.entry(conversationId, id: id, context: context)?.entry
+            }
+            try invocation.check()
+            try context.abortSignal?.throwIfAborted()
+            return entry
         }
     }
     /// Reads the entry identified by ID, or nil when it is absent.

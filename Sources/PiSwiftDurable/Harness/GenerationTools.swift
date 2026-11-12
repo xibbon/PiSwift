@@ -4,8 +4,10 @@ import PiSwiftChord
 /// The saved tool call and model context required for a tool task.
 public typealias GenerationToolInput = ToolTaskInput
 let generationToolKind = toolTask.kind
-func createGenerationTool(tx: Transaction, runtime: TaskRuntime, assistant: EntryID, callId: String) async throws -> TaskID {
-    try await tx.createTask(generationToolKind, input: GenerationToolInput(assistant: assistant, callId: callId),
+func createGenerationTool(tx: Transaction, runtime: TaskRuntime, assistant: EntryID, callId: String,
+                          unoffered: Bool = false) async throws -> TaskID {
+    let input: GenerationToolInput = unoffered ? .unofferedModel(assistant: assistant, callId: callId) : .model(assistant: assistant, callId: callId)
+    return try await tx.createTask(generationToolKind, input: input,
                            options: .init(ownership: .task(taskId: runtime.taskId)))
 }
 func generationCalls(runtime: TaskRuntime, assistant: EntryID, callIds: [String], context: ChordContext) async throws -> [ToolCall] {
@@ -35,15 +37,18 @@ func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoin
         let entry = try await appendGenerationAssistant(tx: tx, conversationId: runtime.conversationId, message: message)
         var slots: [ToolSlot] = [], tools: [TaskID] = [], pending: [String] = []
         for call in calls {
-            if !offered.contains(Array(call.name.utf16)) {
-                let result = try await appendGenerationToolError(tx: tx, conversationId: runtime.conversationId, call: call,
-                    code: "tool_unavailable", text: "Tool \(call.name) is not available", now: runtime.now())
-                slots.append(ToolSlot(callId: call.id, name: call.name, status: .done, entry: result.id))
-            } else if sequential && !tools.isEmpty {
-                pending.append(call.id); slots.append(ToolSlot(callId: call.id, name: call.name))
+            let unoffered = !offered.contains(Array(call.name.utf16))
+            if sequential && !tools.isEmpty {
+                pending.append(call.id)
+                var slot = ToolSlot(callId: call.id, name: call.name)
+                if unoffered { slot.unoffered = true }
+                slots.append(slot)
             } else {
-                let id = try await createGenerationTool(tx: tx, runtime: runtime, assistant: entry.id, callId: call.id)
-                tools.append(id); slots.append(ToolSlot(callId: call.id, name: call.name, taskId: id))
+                let id = try await createGenerationTool(tx: tx, runtime: runtime, assistant: entry.id, callId: call.id, unoffered: unoffered)
+                tools.append(id)
+                var slot = ToolSlot(callId: call.id, name: call.name, taskId: id)
+                if unoffered { slot.unoffered = true }
+                slots.append(slot)
             }
         }
         try live.remove("generation"); try live.set("tools", JSONValue(encoding: slots))
@@ -76,19 +81,26 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     let terminate = !slots.isEmpty && ordered.allSatisfy { $0?.terminate == true }
     let added = ordered.flatMap { $0?.addTools ?? [] }
     let handoff = ordered.reversed().compactMap { $0?.handoff }.first
-    let maxTurns = try await runtime.agent(context: context).maxTurns
+    let agent = try await runtime.agent(context: context)
+    let maxTurns = agent.maxTurns
+    let asksAfterRun = terminate && agentHooks(agent, taskName: generationTask.name, as: GenerationHooks.self)
+        .contains { $0.handlers.afterRun != nil }
     try await runtime.commit({ tx, _ in
         var boundary = try await prepareBoundary(tx: tx, conversationId: runtime.conversationId, modes: runtime.settings)
         if !added.isEmpty {
             try await addGenerationTools(tx: tx, conversationId: runtime.conversationId, added: added)
         }
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId), now = try runtime.now()
+        var last = results.max() ?? assistant
         if let handoff {
             let message = UserMessage(content: .text(handoff), timestamp: now)
             let entry = try await tx.appendEntry(runtime.conversationId, value: EntryDraft(kind: resetEntry.kind,
                 model: EntryRecord.encodeMessages([.user(message)]), head: .self))
             boundary.head = entry.id
+            last = entry.id
         }
+        if asksAfterRun, let held = try holdRun(tx: tx, live: live, runtime: runtime,
+                                               reason: .terminate, answer: assistant, last: last) { return held }
         let turns = try live.get("run")?.decode(LiveRun.self).turns ?? 0
         if terminate {
             let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: now)

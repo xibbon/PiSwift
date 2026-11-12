@@ -106,9 +106,9 @@ struct HarnessToolLifetimeTests {
         try await harness.close(context: .background)
     }
     // :1131,1163. Abort after output is durable; buffered output must not reach the result.
-    @Test(arguments: [false, true]) func abortPreservesDurableOutput(afterHook: Bool) async throws {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true]) func abortPreservesDurableOutput(afterHook: Bool) async throws {
         let setup = HarnessChatSetup(settings: .init(progress: .init(outputIntervalMs: 60_000)), clock: TestClock()), reached = HarnessChatSignal()
-        let pending = Mutex<Task<Void, any Error>?>(nil)
+        let pending = Mutex<Task<Void, any Error>?>(nil), hookCalls = Mutex(0)
         try installHarnessTool(harnessTestTool(execute: { _, api, context in
             try api.output(.text("durable\n"), nil)
             try await eventually { try await api.snapshot(LiveDoc, conversationId: api.conversationId, context: context)?.tools?.first?.output == "durable\n" }
@@ -122,7 +122,11 @@ struct HarnessToolLifetimeTests {
             try await harnessToolAwaitAbort(context); throw CancellationError()
         }), setup: setup)
         if afterHook { try setup.registry.install(Extension(name: "after", hooks: [hook(ToolHooks(afterTool: { _, _, _, context in
-            reached.signal(); try await harnessToolAwaitAbort(context); throw CancellationError()
+            // v1.5.2 D6 tool.ts:278–286,748–771 runs afterTool again on the abort result.
+            let count = hookCalls.withLock { $0 += 1; return $0 }
+            reached.signal()
+            if count == 1 { try await harnessToolAwaitAbort(context); throw CancellationError() }
+            return nil
         }))])) }
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), submission = try await opened.root.submit(.input(content: .text("go")), context: .background)
@@ -132,6 +136,7 @@ struct HarnessToolLifetimeTests {
         #expect(try await submission.wait(context: .background).status == "done")
         let text = harnessToolText(try #require(harnessToolResults(await allEntries(opened.root)).first))
         #expect(text == "durable\n|<harness>\n[error] Tool echo was aborted\n</harness>")
+        if afterHook { #expect(hookCalls.withLock { $0 } == 2) }
         if let pending = pending.withLock({ $0 }) { await #expect(throws: (any Error).self) { try await pending.value } }
         try await opened.harness.close(context: .background)
     }

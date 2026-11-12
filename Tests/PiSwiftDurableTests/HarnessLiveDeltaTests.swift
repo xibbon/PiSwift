@@ -117,14 +117,15 @@ import PiSwiftDurableTesting
         listener.cancel(); try await opened.harness.close(context: .background)
     }
 
-    @Test func unofferedCallsStartDoneFaultedSlotOnlyWritesStatus() async throws {
+    @Test func unofferedCallsStartFlaggedPendingSlotsAndSettle() async throws {
         let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("bad", execute: { _, _, _ in var usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0); usage.cost.total = .nan; return .init(output: [], usage: usage) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("ghost", [:], "g"), ("bad", [:], "b")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
         let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)
         let handover = try #require(log.commits.first { $0.contains { $0.json[0] == "s" && $0.json[1] == ["tools"] } })
         let slots = try #require(handover.first { $0.json[1] == ["tools"] }?.json[2]?.arrayValue)
-        #expect(slots[0]["callId"] == "g" && slots[0]["status"] == "done" && slots[0]["entry"] != nil && slots[0]["taskId"] == nil)
+        // v1.5.2 D6 generation.ts:1045–1053: an unoffered call starts as a flagged pi.tool task.
+        #expect(slots[0]["callId"] == "g" && slots[0]["status"] == "pending" && slots[0]["entry"] == nil && slots[0]["taskId"] != nil && slots[0]["unoffered"] == true)
         #expect(slots[1]["status"] == "pending" && slots[1]["taskId"] != nil)
         #expect(log.commits.contains([.set(["tools", 1, "status"], "done")]))
         listener.cancel(); try await opened.harness.close(context: .background)

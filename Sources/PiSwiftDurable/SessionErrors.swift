@@ -5,7 +5,10 @@ public struct ReadAfterWrite: Error, Sendable, Equatable, CustomStringConvertibl
     /// Records the transaction method that attempted a table read after a write.
     public init(_ method: String) { self.method = method }
     /// Text that describes this value or error to the caller.
-    public var description: String { "Tx.\(method)() cannot read tables after the first table write" }
+    public var description: String {
+        let operation = method == "submit(tx, draft)" ? method : "Tx.\(method)()"
+        return "\(operation) cannot read tables after the first table write"
+    }
 }
 
 /// Errors from the Session and its transaction. Messages follow the upstream kernel.

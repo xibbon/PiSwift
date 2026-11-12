@@ -37,6 +37,17 @@ public final class Transaction: Sendable {
     internal func assertOpen() throws {
         try state.withLock { if $0.sealed { throw SessionError.settled } }
     }
+    /// v1.5.2 submissions.ts:77–82: every in-commit admission must precede
+    /// the first table write, including an admission that needs no table read.
+    internal func assertCanAdmitSubmission(in session: Session) throws {
+        guard self.session === session else {
+            throw SessionError.message("The transaction belongs to another Session")
+        }
+        try state.withLock { state in
+            if state.sealed { throw SessionError.settled }
+            if state.hasTableWrite { throw ReadAfterWrite("submit(tx, draft)") }
+        }
+    }
     private func beginOperation(tableRead: String?, tableWrite: Bool) throws {
         let waiters = try state.withLock { state -> [CheckedContinuation<Void, Never>] in
             if state.sealed { throw SessionError.settled }

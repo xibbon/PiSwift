@@ -17,11 +17,30 @@ public struct HookApi: Sendable {
     public var read: HarnessDocumentReader
     /// Reads a saved task memo or installs a candidate when absent.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    private let readEntries: @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor>
+    private let readEntry: @Sendable (EntryID, ChordContext) async throws -> EntryRecord?
     /// Binds read services, models, and durable memos to a task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, models: @autoclosure @escaping @Sendable () -> any DurableModels,
                 read: HarnessDocumentReader = .init(),
-                memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil }) {
+                memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil },
+                entries: @escaping @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor> = { _, _, _, _ in throw SessionError.message("Hook entry reads unavailable") },
+                entry: @escaping @Sendable (EntryID, ChordContext) async throws -> EntryRecord? = { _, _ in throw SessionError.message("Hook entry reads unavailable") }) {
         self.taskId = taskId; self.conversationId = conversationId; self.modelsProvider = models; self.read = read; self.memo = memo
+        readEntries = entries; readEntry = entry
+    }
+    /// Reads a page of raw entries in this task's visible conversation history.
+    public func entries(_ query: ConversationEntryQuery = .init(), limit: Int, cursor: Cursor? = nil,
+                        context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
+        try await readEntries(query, limit, cursor, context)
+    }
+    /// Reads one raw entry in this task's visible conversation history.
+    public func entry(_ id: EntryID, context: ChordContext) async throws -> EntryRecord? {
+        try await readEntry(id, context)
+    }
+    /// Reads one entry only when its kind matches the token.
+    public func entry<Data>(_ token: EntryKind<Data>, id: EntryID, context: ChordContext) async throws -> TypedEntry<Data>? {
+        guard let record = try await readEntry(id, context), record.kind == token.kind else { return nil }
+        return try TypedEntry(record)
     }
 }
 
@@ -39,6 +58,24 @@ public struct GenerationYield: Sendable {
     /// Supplies user content to continue the current generation.
     public init(continue input: UserContent) { self.continue = input }
 }
+/// A child task requested by an afterRun hook.
+public struct RunEndTask: Sendable {
+    public let task: AnyTaskDefinition
+    public let input: JSONValue
+    public init<Input, Checkpoint, Result, Hooks>(_ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input) throws {
+        self.task = task.eraseToAnyTaskDefinition()
+        self.input = try JSONValue(encoding: input)
+    }
+}
+/// Binds a typed task and input to an afterRun request.
+public func runEndTask<Input, Checkpoint, Result, Hooks>(
+    _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input
+) throws -> RunEndTask { try RunEndTask(task, input: input) }
+/// Child tasks to start after a run answers.
+public struct AfterRunResult: Sendable {
+    public var tasks: [RunEndTask]
+    public init(tasks: [RunEndTask]) { self.tasks = tasks }
+}
 /// Callbacks at request, response, yield, and tool completion boundaries.
 public struct GenerationHooks: Sendable {
     /// Can replace messages before a model request starts.
@@ -49,14 +86,18 @@ public struct GenerationHooks: Sendable {
     public var onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)?
     /// Runs after all tool-result entries are committed.
     public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)?
+    /// Requests children after an answer and settled inputs.
+    public var afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)?
     /// Selects optional request, response, yield, and after-tools callbacks.
     public init(
         beforeRequest: (@Sendable (GenerationRequest, HookApi, ChordContext) async throws -> GenerationRequest?)? = nil,
         afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)? = nil,
         onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)? = nil,
-        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil
+        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil,
+        afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)? = nil
     ) {
         self.beforeRequest = beforeRequest; self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
+        self.afterRun = afterRun
     }
 }
 

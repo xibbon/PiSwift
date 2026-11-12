@@ -44,6 +44,7 @@ actor ControlledStorage: DurableStorage {
     init(_ storage: any DurableStorage = MemoryStorage()) { self.storage = storage }
     private var nextGateID = 0
     private var commitGate: Held?
+    private var taskAbortMarkGate: (TaskID, Held)?
     private var publicationGate: Held?
     private var publicationGateAt: Int?
     private var publicationCount = 0
@@ -78,6 +79,17 @@ actor ControlledStorage: DurableStorage {
         commitGate = held
         return Gate(entered: held.entered) { await self.releaseCommit(held) }
     }
+    /// Holds only the storage batch that publishes one task's abort mark.
+    func holdTaskAbortMark(_ taskId: TaskID) -> Gate {
+        nextGateID += 1
+        let held = Held(id: nextGateID)
+        taskAbortMarkGate = (taskId, held)
+        return Gate(entered: held.entered) {
+            if await self.taskAbortMarkGate?.1.id == held.id { await self.clearTaskAbortMarkGate() }
+            await held.gate.resolve()
+        }
+    }
+    private func clearTaskAbortMarkGate() { taskAbortMarkGate = nil }
 
     func holdFindDocument() -> Gate {
         nextGateID += 1
@@ -151,6 +163,14 @@ actor ControlledStorage: DurableStorage {
         admittedCommits.append(writes)
         commits.append(writes)
         if let held = commitGate {
+            await held.entered.resolve()
+            await held.gate.wait()
+        }
+        if let (taskId, held) = taskAbortMarkGate,
+           writes.contains(where: { write in
+               if case .task(let record) = write { return record.value.id == taskId && record.value.abortRequested }
+               return false
+           }) {
             await held.entered.resolve()
             await held.gate.wait()
         }
