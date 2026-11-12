@@ -78,7 +78,9 @@ actor ControlledStorage: DurableStorage {
         await held.gate.resolve()
     }
 
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        let writes = batches.flatMap { $0 }
         admittedCommits.append(writes)
         commits.append(writes)
         if let held = commitGate {
@@ -89,7 +91,7 @@ actor ControlledStorage: DurableStorage {
             commitFailure = nil
             throw failure
         }
-        return try await storage.commit(writes, context: context)
+        return try await storage.commit(batches, receive: receive, context: context)
     }
 
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
@@ -145,6 +147,9 @@ actor ControlledStorage: DurableStorage {
     }
     func scanDocuments(_ query: DocumentQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<DocumentRecord, Cursor> {
         try await storage.scanDocuments(query, limit: limit, cursor: cursor, context: context)
+    }
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await storage.publishing(publish, context: context)
     }
     func close(context: ChordContext) async throws { try await storage.close(context: context) }
 }

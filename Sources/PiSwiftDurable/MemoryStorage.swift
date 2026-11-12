@@ -29,12 +29,21 @@ public actor MemoryStorage: DurableStorage {
     /// Creates empty in-memory storage with the reserved root conversation ID.
     public init() {}
 
-    /// Atomically stores the write batch and returns its increasing commit sequence.
-    public func commit(_ writes: [StorageWrite], context: ChordContext) throws -> Seq {
+    /// Stores the accepted prefix and then delivers its durability receipts.
+    public func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) throws -> CommitResult {
         try assertOpen()
-        let plan = try tables.prepare(writes, seq: nextSequence())
-        tables.apply(plan)
-        return plan.seq
+        var receipts: [Seq] = []
+        var refused: (any Error & Sendable)?
+        for writes in batches {
+            let plan: MemoryCommitPlan
+            do { plan = try tables.prepare(writes, seq: nextSequence()) }
+            catch let error as DurableStorageError where error.isCommitRefusal { refused = error; break }
+            catch let error as DocumentCopyFailure { refused = error; break }
+            tables.apply(plan)
+            receipts.append(plan.seq)
+        }
+        for (index, seq) in receipts.enumerated() { receive(index, seq) }
+        return CommitResult(stored: receipts.count, refused: refused)
     }
 
     /// Validates without changing observable state. Persistence wrappers must serialize preparation and application.

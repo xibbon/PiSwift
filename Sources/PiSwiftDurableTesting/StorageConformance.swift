@@ -1,3 +1,4 @@
+import Synchronization
 import PiSwiftChord
 import PiSwiftDurable
 
@@ -63,6 +64,12 @@ public func storageConformanceCases(
         ("keeps indexed string identities lossless", StorageChecks.case22),
         ("keeps one global record ID namespace and rejects exhausted ID minting", StorageChecks.case23),
         ("rejects every operation after close", StorageChecks.case24),
+        ("commits batches in order, each with its seq, checked against the earlier ones", StorageChecks.case25),
+        ("stores the batches before the first one refused, and none after it", StorageChecks.case26),
+        ("refuses a later malformed batch and keeps the earlier batches", StorageChecks.case27),
+        ("resolves a batched copy against the state the earlier batches left", StorageChecks.case28),
+        ("stores continue submissions without an entry or queued state", StorageChecks.case29),
+        ("refuses a creation and change of one document in either order", StorageChecks.case30),
     ]
     return cases.map { name, check in
         StorageConformanceCase(name: name) {
@@ -119,7 +126,37 @@ internal struct StorageChecks: Sendable {
         return id.rawValue
     }
     @discardableResult func commit(_ writes: [JSONValue]) async throws -> Int64 {
-        try await storage.commit(writes.map { try $0.decode(StorageWrite.self) }, context: Self.context).rawValue
+        let (result, receipts) = try await commitBatches([writes])
+        if let refusal = result.refused { throw refusal }
+        try StorageAssertions.strictEqual(result.stored, 1)
+        return receipts[0].seq.rawValue
+    }
+    struct Receipt: Sendable {
+        let index: Int
+        let seq: Seq
+    }
+    func commitBatches(_ batches: [[JSONValue]], onReceive: @Sendable (Int, Seq) -> Void = { _, _ in }) async throws -> (CommitResult, [Receipt]) {
+        struct State: Sendable {
+            var receipts: [Receipt] = []
+            var settled = false
+            var invalid = false
+        }
+        let state = Mutex(State())
+        defer { state.withLock { $0.settled = true } }
+        let decoded = try batches.map { try $0.map { try $0.decode(StorageWrite.self) } }
+        let result = try await storage.commit(decoded, receive: { index, seq in
+            state.withLock { state in
+                if state.settled || index != state.receipts.count || state.receipts.last.map({ seq <= $0.seq }) == true {
+                    state.invalid = true
+                }
+                state.receipts.append(Receipt(index: index, seq: seq))
+            }
+            onReceive(index, seq)
+        }, context: Self.context)
+        let (receipts, invalid) = state.withLock { ($0.receipts, $0.invalid) }
+        try StorageAssertions.ok(!invalid, "Commit receipts must arrive before settlement, in index and sequence order")
+        try StorageAssertions.strictEqual(receipts.count, result.stored)
+        return (result, receipts)
     }
     @discardableResult func root() async throws -> Int64 { try await commit([Self.write("conversation", ["id": 1])]); return 1 }
     static func write(_ type: String, _ value: JSONValue) -> JSONValue { ["type": .string(type), "value": value] }

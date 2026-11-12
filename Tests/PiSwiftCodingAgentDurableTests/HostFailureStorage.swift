@@ -19,7 +19,8 @@ final class HostFailureStorage: DurableStorage {
     var commitCount: Int { state.withLock { $0.commits } }
     var closeCount: Int { state.withLock { $0.closes } }
     func failNextCommit(_ error: any Error) { state.withLock { $0.nextFailure = error } }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
         let failure = state.withLock { state in
             state.commits += 1
             let failure = state.nextFailure
@@ -27,7 +28,7 @@ final class HostFailureStorage: DurableStorage {
             return failure
         }
         if let failure { throw failure }
-        return try await base.commit(writes, context: context)
+        return try await base.commit(batches, receive: receive, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
@@ -89,6 +90,9 @@ final class HostFailureStorage: DurableStorage {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws {
         state.withLock { $0.closes += 1 }
         try await base.close(context: context)

@@ -1,6 +1,32 @@
 import PiSwiftChord
 
 extension JsonlStorage {
+    /// Appends grouped sidecars, then all commit markers in one write.
+    func appendCommits(_ commits: [JsonlEncoded], context: ChordContext) async throws {
+        var contents: [(file: String, content: String)] = []
+        for commit in commits {
+            for sidecar in commit.sidecars {
+                if let index = contents.firstIndex(where: { $0.file == sidecar.file }) {
+                    contents[index].content += sidecar.content
+                } else { contents.append(sidecar) }
+            }
+        }
+        // Resolve every path before the first append.
+        var sidecars: [(file: String, content: String, path: String)] = []
+        for sidecar in contents {
+            sidecars.append((sidecar.file, sidecar.content, try await resolveFile(sidecar.file, context: context)))
+        }
+        for sidecar in sidecars {
+            try jsonlFileResult(await fileSystem.appendFile(sidecar.path, content: .text(sidecar.content), context: context), action: "append to \(sidecar.file)")
+        }
+        if fsync {
+            for sidecar in sidecars {
+                try jsonlFileResult(await fileSystem.flushFile(sidecar.path, context: context), action: "flush of \(sidecar.file)")
+            }
+        }
+        try jsonlFileResult(await fileSystem.appendFile(mainPath, content: .text(commits.map(\.marker).joined()), context: context), action: "append to main.jsonl")
+    }
+
     func encodeCommit(seq: Seq, writes: [StorageWrite]) throws -> JsonlEncoded {
         var mainWrites: [JSONValue] = []
         var fileOrder: [String] = []

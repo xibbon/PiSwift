@@ -86,6 +86,23 @@ public enum DurableStorageError: Error, Sendable, Equatable, CustomStringConvert
     }
 }
 
+extension DurableStorageError {
+    /// Durable's own batch checks return these values as refusals.
+    var isCommitRefusal: Bool {
+        switch self {
+        case .idAlreadyOwned, .idWrittenMoreThanOnce, .idWrittenAsTwoRecordTypes,
+             .unknownDocument, .documentAlreadyExists, .documentRetired,
+             .documentRetiredMoreThanOnce, .documentMultipleContentCommands,
+             .documentDeltaHasNoBase, .documentVersionTransitionRequiresBase,
+             .documentAddressOccupied, .forkSourceChangedInCopyBatch,
+             .forkSourceCannotBeRead, .forkSourceDoesNotMatch:
+            true
+        default:
+            false
+        }
+    }
+}
+
 /// A document copy failed before storage changed.
 struct DocumentCopyFailure: Error, Sendable, CustomStringConvertible {
     let message: String

@@ -313,8 +313,9 @@ final class H6CountingStorage: DurableStorage, Sendable {
     var rows: Int { count.withLock { $0 } }
     init(_ base: any DurableStorage = MemoryStorage()) { self.base = base }
     func holdNextRange(_ gate: SessionTestGate) { holdState.withLock { $0 = gate } }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
-        try await base.commit(writes, context: context)
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        try await base.commit(batches, receive: receive, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
@@ -384,5 +385,8 @@ final class H6CountingStorage: DurableStorage, Sendable {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws { try await base.close(context: context) }
 }

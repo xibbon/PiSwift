@@ -8,13 +8,15 @@ final class HarnessSelectiveStorage: DurableStorage, Sendable {
     private let rejection = Mutex<(@Sendable ([StorageWrite]) -> Bool)?>(nil)
     init(_ base: any DurableStorage = MemoryStorage()) { self.base = base }
     func rejectOnce(_ predicate: @escaping @Sendable ([StorageWrite]) -> Bool) { rejection.withLock { $0 = predicate } }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        let writes = batches.flatMap { $0 }
         let reject = rejection.withLock { predicate -> Bool in
             guard let check = predicate, check(writes) else { return false }
             predicate = nil; return true
         }
         if reject { throw D2TestError("selected write rejected") }
-        return try await base.commit(writes, context: context)
+        return try await base.commit(batches, receive: receive, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
@@ -76,5 +78,8 @@ final class HarnessSelectiveStorage: DurableStorage, Sendable {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws { try await base.close(context: context) }
 }

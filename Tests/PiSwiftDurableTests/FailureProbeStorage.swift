@@ -5,7 +5,8 @@ import PiSwiftDurable
 struct FailureProbeStorage: DurableStorage {
     let base: ControlledStorage
     init(base: ControlledStorage = ControlledStorage()) { self.base = base }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq { try await base.commit(writes, context: context) }
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult { try await base.commit(batches, receive: receive, context: context) }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
     }
@@ -66,5 +67,8 @@ struct FailureProbeStorage: DurableStorage {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws {}
 }

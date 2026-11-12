@@ -11,7 +11,9 @@ final class W3MarkStorage: DurableStorage, Sendable {
     private let target = Mutex<TaskID?>(nil)
     init(_ base: any DurableStorage = MemoryStorage()) { self.base = base }
     func hold(_ id: TaskID) { target.withLock { $0 = id } }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        let writes = batches.flatMap { $0 }
         if let id = target.withLock({ $0 }) {
             for write in writes {
                 if case .task(let task, _) = write, task.id == id, task.abortRequested {
@@ -21,7 +23,7 @@ final class W3MarkStorage: DurableStorage, Sendable {
                 }
             }
         }
-        return try await base.commit(writes, context: context)
+        return try await base.commit(batches, receive: receive, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await base.mintId()
@@ -83,5 +85,8 @@ final class W3MarkStorage: DurableStorage, Sendable {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws { try await base.close(context: context) }
 }

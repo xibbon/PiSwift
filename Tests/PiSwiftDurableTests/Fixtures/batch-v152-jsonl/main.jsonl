@@ -1,0 +1,5 @@
+{"format":1,"type":"commit","seq":1,"writes":[{"type":"conversation","value":{"id":1}}]}
+{"format":1,"type":"commit","seq":2,"writes":[{"type":"entry","value":{"id":10,"conversationId":1,"kind":"batch.entry","data":{"id":10}}},{"type":"document.create","record":{"id":20,"kind":"batch.document","scope":{"kind":"conversation","conversationId":1},"history":"rewindable","fork":"asOf"},"ordinal":0}]}
+{"format":1,"type":"commit","seq":3,"writes":[{"type":"document.change","id":20,"ordinal":0}]}
+{"format":1,"type":"commit","seq":4,"writes":[{"type":"entry","value":{"id":11,"conversationId":1,"kind":"batch.entry","data":{"id":11}}},{"type":"submission","value":{"id":30,"conversationId":1,"requestId":"batch-continue","type":"continue","status":"placed"}}]}
+{"format":1,"type":"commit","seq":5,"writes":[{"type":"entry","value":{"id":12,"conversationId":1,"kind":"batch.entry","data":{"id":12}}}]}

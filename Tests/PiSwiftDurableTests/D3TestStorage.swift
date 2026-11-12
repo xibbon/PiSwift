@@ -21,7 +21,9 @@ final class D3TestStorage: DurableStorage, Sendable {
     func holdConversations(entered: SessionTestGate, release: SessionTestGate) {
         state.withLock { $0.conversationGate = (entered, release) }
     }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    // v1.5.2 D2: mechanical batch forwarding for this storage test double.
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        let writes = batches.flatMap { $0 }
         let statuses = writes.compactMap { write -> String? in
             if case .task(let task, _) = write { return task.state.status }; return nil
         }
@@ -32,9 +34,12 @@ final class D3TestStorage: DurableStorage, Sendable {
             }
             return 0
         }
-        if action == 1 { return try Seq(9_000_000_000) }
+        if action == 1 {
+            for index in batches.indices { receive(index, try Seq(9_000_000_000 + Int64(index))) }
+            return CommitResult(stored: batches.count)
+        }
         if action == 2 { events.append("failed " + statuses.joined(separator: ",")); throw TaskDefinitionError("D3 write failed") }
-        let sequence = try await base.commit(writes, context: context)
+        let sequence = try await base.commit(batches, receive: receive, context: context)
         for status in statuses { events.append("saved " + status) }
         return sequence
     }
@@ -101,5 +106,8 @@ final class D3TestStorage: DurableStorage, Sendable {
         try await base.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await base.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws {}
 }

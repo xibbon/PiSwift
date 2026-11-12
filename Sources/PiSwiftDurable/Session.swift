@@ -185,8 +185,19 @@ public final class Session: Sendable {
         let writes = try await tx.settleSuccess()
         if writes.isEmpty { tx.discard(); return result }
         let seq: Seq
-        do { seq = try await storage.commit(writes, context: context.withoutAbortSignal()) }
-        catch {
+        do {
+            let received = Mutex<Seq?>(nil)
+            let outcome = try await storage.commit([writes], receive: { _, value in
+                received.withLock { $0 = value }
+            }, context: context.withoutAbortSignal())
+            if let refusal = outcome.refused { throw refusal }
+            guard let value = received.withLock({ $0 }) else {
+                throw StorageRequestError("Storage commit did not receive a sequence")
+            }
+            seq = value
+            try assertHealthy()
+        } catch {
+            fail(error)
             tx.discard()
             throw error
         }

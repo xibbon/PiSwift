@@ -61,37 +61,45 @@ public actor JsonlStorage: DurableStorage {
         return try await operation(memory)
     }
 
-    /// Stores all writes before it publishes the new memory state.
-    public func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
+    /// Stores each accepted batch before it sends its receipt.
+    public func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
         await acquire(); defer { release() }
         try assertUsable()
-        let prepared = try await memory.prepareCommit(writes)
-        let encoded = try encodeCommit(seq: prepared.seq, writes: prepared.writes)
-        let replacements = planReclamations(writes: prepared.writes, encoded: encoded)
-        // Resolve all paths before the first append. A path failure has no durable effect.
-        var sidecars: [(file: String, content: String, path: String)] = []
-        for sidecar in encoded.sidecars {
-            sidecars.append((sidecar.file, sidecar.content, try await resolveFile(sidecar.file, context: context)))
-        }
-        for sidecar in sidecars {
-            do {
-                try jsonlFileResult(await fileSystem.appendFile(sidecar.path, content: .text(sidecar.content), context: context), action: "append to \(sidecar.file)")
-            } catch { throw poison(error) }
-        }
-        if fsync {
-            for sidecar in sidecars {
-                do {
-                    try jsonlFileResult(await fileSystem.flushFile(sidecar.path, context: context), action: "flush of \(sidecar.file)")
-                } catch { throw poison(error) }
-            }
-        }
+        var seqs: [Seq] = []
+        var commits: [JsonlEncoded] = []
+        var replacements: [(file: String, content: String)] = []
+        var refused: (any Error & Sendable)?
         do {
-            try jsonlFileResult(await fileSystem.appendFile(mainPath, content: .text(encoded.marker), context: context), action: "append to main.jsonl")
-        } catch { throw poison(error) }
-        let seq = await prepared.apply()
-        adoptSidecarState(writes: prepared.writes)
+            for writes in batches {
+                let prepared: PreparedMemoryCommit
+                do { prepared = try await memory.prepareCommit(writes) }
+                catch let error as DurableStorageError where error.isCommitRefusal { refused = error; break }
+                catch let error as DocumentCopyFailure { refused = error; break }
+                let encoded = try encodeCommit(seq: prepared.seq, writes: prepared.writes)
+                // Keep later records when an earlier batch replaces their sidecar.
+                for sidecar in encoded.sidecars {
+                    if let index = replacements.firstIndex(where: { $0.file == sidecar.file }) {
+                        replacements[index].content += sidecar.content
+                    }
+                }
+                for replacement in planReclamations(writes: prepared.writes, encoded: encoded) {
+                    if let index = replacements.firstIndex(where: { $0.file == replacement.file }) {
+                        replacements[index] = replacement
+                    } else { replacements.append(replacement) }
+                }
+                seqs.append(await prepared.apply())
+                adoptSidecarState(writes: prepared.writes)
+                commits.append(encoded)
+            }
+            if !commits.isEmpty { try await appendCommits(commits, context: context) }
+        } catch {
+            // Reads must not observe memory state that the files did not confirm.
+            if seqs.isEmpty { throw error }
+            throw poison(error)
+        }
+        for (index, seq) in seqs.enumerated() { receive(index, seq) }
         await reclaimSidecars(replacements, context: context)
-        return seq
+        return CommitResult(stored: seqs.count, refused: refused)
     }
 
     /// Allocates an unused positive ID from the shared record namespace.

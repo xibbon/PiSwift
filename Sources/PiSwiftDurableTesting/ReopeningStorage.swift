@@ -1,5 +1,6 @@
 import PiSwiftChord
 import PiSwiftDurable
+import Synchronization
 
 /// Reopens a file after each commit, including a rejected commit.
 /// Use one wrapper per test case. The test must serialize its calls.
@@ -17,13 +18,18 @@ public actor ReopeningStorage: DurableStorage {
     }
 
     /// Atomically stores the write batch and returns its increasing commit sequence.
-    public func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
-        if closed { return try await current.commit(writes, context: context) }
-        let result: Result<Seq, any Error>
-        do { result = .success(try await current.commit(writes, context: context)) }
+    public func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        if closed { return try await current.commit(batches, receive: receive, context: context) }
+        // v1.5.2 D2: make receipt-started reads use the reopened test backend.
+        let receipts = Mutex<[(Int, Seq)]>([])
+        let result: Result<CommitResult, any Error>
+        do { result = .success(try await current.commit(batches, receive: { index, seq in
+            receipts.withLock { $0.append((index, seq)) }
+        }, context: context)) }
         catch { result = .failure(error) }
         try await current.close(context: .background)
         current = try await SqliteStorage.open(path: path, prefix: prefix)
+        for (index, seq) in receipts.withLock({ $0 }) { receive(index, seq) }
         return try result.get()
     }
 
@@ -102,6 +108,10 @@ public actor ReopeningStorage: DurableStorage {
         try await current.scanDocuments(query, limit: limit, cursor: cursor, context: context)
     }
 
+    /// Publishes under the current backend publication scope.
+    public func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await current.publishing(publish, context: context)
+    }
     /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
         if closed { return }

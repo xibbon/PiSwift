@@ -1,0 +1,2245 @@
+{
+  "tag": "v1.5.2",
+  "commits": [
+    {
+      "batches": [
+        [
+          {
+            "type": "conversation",
+            "value": {
+              "id": 1
+            }
+          }
+        ]
+      ],
+      "stored": 1,
+      "refused": null,
+      "receipts": [
+        {
+          "index": 0,
+          "seq": 1
+        }
+      ]
+    },
+    {
+      "batches": [
+        [
+          {
+            "type": "entry",
+            "value": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            }
+          },
+          {
+            "type": "document.create",
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf"
+            },
+            "content": {
+              "kind": "base",
+              "version": 1,
+              "value": {
+                "count": 1
+              }
+            }
+          }
+        ],
+        [
+          {
+            "type": "document.change",
+            "id": 20,
+            "content": {
+              "kind": "delta",
+              "version": 1,
+              "ops": [
+                [
+                  "s",
+                  [
+                    "count"
+                  ],
+                  2
+                ]
+              ]
+            }
+          }
+        ],
+        [
+          {
+            "type": "entry",
+            "value": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            }
+          },
+          {
+            "type": "submission",
+            "value": {
+              "id": 30,
+              "conversationId": 1,
+              "requestId": "batch-continue",
+              "type": "continue",
+              "status": "placed"
+            }
+          }
+        ]
+      ],
+      "stored": 3,
+      "refused": null,
+      "receipts": [
+        {
+          "index": 0,
+          "seq": 2
+        },
+        {
+          "index": 1,
+          "seq": 3
+        },
+        {
+          "index": 2,
+          "seq": 4
+        }
+      ]
+    },
+    {
+      "batches": [
+        [
+          {
+            "type": "entry",
+            "value": {
+              "id": 12,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 12
+              }
+            }
+          }
+        ],
+        [
+          {
+            "type": "entry",
+            "value": {
+              "id": 13,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 13
+              }
+            }
+          },
+          {
+            "type": "entry",
+            "value": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            }
+          }
+        ],
+        [
+          {
+            "type": "entry",
+            "value": {
+              "id": 14,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 14
+              }
+            }
+          }
+        ]
+      ],
+      "stored": 1,
+      "refused": "Error: ID 10 already belongs to entry",
+      "receipts": [
+        {
+          "index": 0,
+          "seq": 5
+        }
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "method": "conversation",
+      "arguments": [
+        1
+      ],
+      "result": {
+        "id": 1
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        10
+      ],
+      "result": {
+        "entry": {
+          "id": 10,
+          "conversationId": 1,
+          "kind": "batch.entry",
+          "data": {
+            "id": 10
+          }
+        },
+        "commitSeq": 2
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        11
+      ],
+      "result": {
+        "entry": {
+          "id": 11,
+          "conversationId": 1,
+          "kind": "batch.entry",
+          "data": {
+            "id": 11
+          }
+        },
+        "commitSeq": 4
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        12
+      ],
+      "result": {
+        "entry": {
+          "id": 12,
+          "conversationId": 1,
+          "kind": "batch.entry",
+          "data": {
+            "id": 12
+          }
+        },
+        "commitSeq": 5
+      }
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        13
+      ],
+      "result": null
+    },
+    {
+      "method": "entry",
+      "arguments": [
+        14
+      ],
+      "result": null
+    },
+    {
+      "method": "document",
+      "arguments": [
+        20,
+        "current"
+      ],
+      "result": {
+        "record": {
+          "id": 20,
+          "kind": "batch.document",
+          "scope": {
+            "kind": "conversation",
+            "conversationId": 1
+          },
+          "history": "rewindable",
+          "fork": "asOf",
+          "createdAt": 2
+        },
+        "version": 1,
+        "value": {
+          "count": 2
+        },
+        "deltasSinceBase": 1
+      }
+    },
+    {
+      "method": "submission",
+      "arguments": [
+        30
+      ],
+      "result": {
+        "id": 30,
+        "conversationId": 1,
+        "requestId": "batch-continue",
+        "type": "continue",
+        "status": "placed"
+      }
+    },
+    {
+      "method": "submissionByRequest",
+      "arguments": [
+        1,
+        "batch-continue"
+      ],
+      "result": {
+        "id": 30,
+        "conversationId": 1,
+        "requestId": "batch-continue",
+        "type": "continue",
+        "status": "placed"
+      }
+    }
+  ],
+  "torn": [
+    {
+      "file": "main.jsonl",
+      "length": 0,
+      "mainLength": 0,
+      "inputMain": "",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": ""
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": ""
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 44,
+      "mainLength": 44,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": ""
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 88,
+      "mainLength": 88,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQ==",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQ=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": ""
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 89,
+      "mainLength": 89,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQo=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQo="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 244,
+      "mainLength": 244,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudA==",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudA=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 398,
+      "mainLength": 398,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": null
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 399,
+      "mainLength": 399,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0K",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0K"
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0K"
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 1
+            },
+            "deltasSinceBase": 0
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 446,
+      "mainLength": 446,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3s=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3s="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0K"
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 1
+            },
+            "deltasSinceBase": 0
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 493,
+      "mainLength": 493,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQ==",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQ=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0K"
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 1
+            },
+            "deltasSinceBase": 0
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 494,
+      "mainLength": 494,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQo=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQo="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 626,
+      "mainLength": 626,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjo=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjo="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 757,
+      "mainLength": 757,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQ==",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQ=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": null
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 758,
+      "mainLength": 758,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQo=",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQo="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": {
+            "entry": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            },
+            "commitSeq": 4
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 828,
+      "mainLength": 828,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6"
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": {
+            "entry": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            },
+            "commitSeq": 4
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 897,
+      "mainLength": 897,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19"
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQo="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": {
+            "entry": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            },
+            "commitSeq": 4
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        }
+      ]
+    },
+    {
+      "file": "main.jsonl",
+      "length": 898,
+      "mainLength": 898,
+      "inputMain": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg==",
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": {
+            "entry": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            },
+            "commitSeq": 4
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": {
+            "entry": {
+              "id": 12,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 12
+              }
+            },
+            "commitSeq": 5
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        }
+      ]
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 0,
+      "inputFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 2"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 72,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3Vt",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 2"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 144,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 2"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 145,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 3"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 221,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCI=",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 3"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 296,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0=",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19Cg==",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": null,
+      "error": {
+        "name": "JsonlCorruptionError",
+        "message": "Missing confirmed sidecar record doc-20.jsonl at sequence 3"
+      }
+    },
+    {
+      "file": "doc-20.jsonl",
+      "length": 297,
+      "inputFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "recoveredFiles": {
+        "doc-20.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJyZWNvcmQiLCJzZXEiOjIsIm9yZGluYWwiOjAsInBheWxvYWQiOnsidHlwZSI6ImRvY3VtZW50IiwiaWQiOjIwLCJjb250ZW50Ijp7ImtpbmQiOiJiYXNlIiwidmVyc2lvbiI6MSwidmFsdWUiOnsiY291bnQiOjF9fX19CnsiZm9ybWF0IjoxLCJ0eXBlIjoicmVjb3JkIiwic2VxIjozLCJvcmRpbmFsIjowLCJwYXlsb2FkIjp7InR5cGUiOiJkb2N1bWVudCIsImlkIjoyMCwiY29udGVudCI6eyJraW5kIjoiZGVsdGEiLCJ2ZXJzaW9uIjoxLCJvcHMiOltbInMiLFsiY291bnQiXSwyXV19fX0K",
+        "main.jsonl": "eyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjEsIndyaXRlcyI6W3sidHlwZSI6ImNvbnZlcnNhdGlvbiIsInZhbHVlIjp7ImlkIjoxfX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6Miwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTAsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMH19fSx7InR5cGUiOiJkb2N1bWVudC5jcmVhdGUiLCJyZWNvcmQiOnsiaWQiOjIwLCJraW5kIjoiYmF0Y2guZG9jdW1lbnQiLCJzY29wZSI6eyJraW5kIjoiY29udmVyc2F0aW9uIiwiY29udmVyc2F0aW9uSWQiOjF9LCJoaXN0b3J5IjoicmV3aW5kYWJsZSIsImZvcmsiOiJhc09mIn0sIm9yZGluYWwiOjB9XX0KeyJmb3JtYXQiOjEsInR5cGUiOiJjb21taXQiLCJzZXEiOjMsIndyaXRlcyI6W3sidHlwZSI6ImRvY3VtZW50LmNoYW5nZSIsImlkIjoyMCwib3JkaW5hbCI6MH1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NCwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTEsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMX19fSx7InR5cGUiOiJzdWJtaXNzaW9uIiwidmFsdWUiOnsiaWQiOjMwLCJjb252ZXJzYXRpb25JZCI6MSwicmVxdWVzdElkIjoiYmF0Y2gtY29udGludWUiLCJ0eXBlIjoiY29udGludWUiLCJzdGF0dXMiOiJwbGFjZWQifX1dfQp7ImZvcm1hdCI6MSwidHlwZSI6ImNvbW1pdCIsInNlcSI6NSwid3JpdGVzIjpbeyJ0eXBlIjoiZW50cnkiLCJ2YWx1ZSI6eyJpZCI6MTIsImNvbnZlcnNhdGlvbklkIjoxLCJraW5kIjoiYmF0Y2guZW50cnkiLCJkYXRhIjp7ImlkIjoxMn19fV19Cg=="
+      },
+      "reads": [
+        {
+          "method": "conversation",
+          "arguments": [
+            1
+          ],
+          "result": {
+            "id": 1
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            10
+          ],
+          "result": {
+            "entry": {
+              "id": 10,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 10
+              }
+            },
+            "commitSeq": 2
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            11
+          ],
+          "result": {
+            "entry": {
+              "id": 11,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 11
+              }
+            },
+            "commitSeq": 4
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            12
+          ],
+          "result": {
+            "entry": {
+              "id": 12,
+              "conversationId": 1,
+              "kind": "batch.entry",
+              "data": {
+                "id": 12
+              }
+            },
+            "commitSeq": 5
+          }
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            13
+          ],
+          "result": null
+        },
+        {
+          "method": "entry",
+          "arguments": [
+            14
+          ],
+          "result": null
+        },
+        {
+          "method": "document",
+          "arguments": [
+            20,
+            "current"
+          ],
+          "result": {
+            "record": {
+              "id": 20,
+              "kind": "batch.document",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 2
+            },
+            "version": 1,
+            "value": {
+              "count": 2
+            },
+            "deltasSinceBase": 1
+          }
+        },
+        {
+          "method": "submission",
+          "arguments": [
+            30
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        },
+        {
+          "method": "submissionByRequest",
+          "arguments": [
+            1,
+            "batch-continue"
+          ],
+          "result": {
+            "id": 30,
+            "conversationId": 1,
+            "requestId": "batch-continue",
+            "type": "continue",
+            "status": "placed"
+          }
+        }
+      ],
+      "error": null
+    }
+  ]
+}

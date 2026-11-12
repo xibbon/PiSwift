@@ -37,7 +37,9 @@ struct JsonlRecoveryTests {
             let reopened = try await jsonlOpen(directory)
             #expect(!jsonlExists(directory, name))
             #expect(try await reopened.task(id, context: .background) == jsonlTask(id, terminal: true))
-            #expect(try await reopened.commit([], context: .background).rawValue == 4)
+            // v1.5.2 D2: jsonl-storage.test.ts:1123-1124 stores a real conversation.
+            let next: ConversationID = try await reopened.mintId()
+            #expect(try await reopened.commit([.conversation(value: ConversationRecord(id: next))], context: .background).rawValue == 4)
             try await reopened.close(context: .background)
         }
     }

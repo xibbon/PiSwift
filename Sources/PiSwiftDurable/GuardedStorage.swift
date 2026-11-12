@@ -82,6 +82,9 @@ internal final class GuardedStorage: DurableStorage {
         try latch.check()
         return result
     }
+    func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async {
+        await backend.publishing(publish, context: context)
+    }
     func close(context: ChordContext) async throws {
         await withCheckedContinuation { continuation in
             let ready = state.withLock { state in
@@ -93,8 +96,21 @@ internal final class GuardedStorage: DurableStorage {
         }
         try await backend.close(context: context)
     }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
-        try await self.call({ try await backend.commit(writes, context: context) })
+    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
+        try state.withLock { state in
+            try latch.check()
+            if state.closing { throw SessionError.closed }
+            state.underway += 1
+        }
+        defer {
+            let waiters = state.withLock { state in
+                state.underway -= 1
+                guard state.underway == 0 else { return [CheckedContinuation<Void, Never>]() }
+                let waiters = state.waiters; state.waiters.removeAll(); return waiters
+            }
+            for waiter in waiters { waiter.resume() }
+        }
+        return try await backend.commit(batches, receive: receive, context: context)
     }
     func mintId<Kind: DurableIDKind>() async throws -> DurableID<Kind> {
         try await self.call({ try await backend.mintId() })
