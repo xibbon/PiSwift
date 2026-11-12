@@ -10,7 +10,9 @@ import PiSwiftDurableTesting
         let entered = SessionTestGate()
         let release = SessionTestGate()
         let ended = SessionTestLog<Bool>()
+        let retained = Mutex<TaskRuntime?>(nil)
         let definition = harnessOneStep("test.close-join") { _, runtime, _ in
+            retained.withLock { $0 = runtime }
             entered.release()
             await release.wait()
             #expect(runtime.signal.aborted)
@@ -23,7 +25,7 @@ import PiSwiftDurableTesting
         try harness.resume()
         await entered.wait()
         let closed = settled { try await harness.close(context: .background) }
-        try await harnessEventually { runtimeSealed(harness) }
+        try await harnessEventually { retained.withLock { $0?.signal.aborted == true } }
         #expect(!closed.isSettled)
         release.release()
         try await harnessEventually { closed.isSettled }
@@ -31,8 +33,6 @@ import PiSwiftDurableTesting
         let writes = await storage.commits.flatMap { $0 }
         #expect(!writes.contains { if case .task(let task, _) = $0 { return task.id == id && task.state.status == "terminal" }; return false })
     }
-
-    private func runtimeSealed(_ harness: Harness) -> Bool { harness.tasks.closing }
 
     // upstream harness-tasks.test.ts:929,973,1010,1067
     @Test func abortMarkRejectsRunCommitsAndJoinsBeforeReturning() async throws {

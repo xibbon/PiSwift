@@ -26,7 +26,8 @@ struct SharedFileCloseoutTests {
         try child.run()
         child.waitUntilExit()
         let output = try String(contentsOf: logURL, encoding: .utf8)
-        try #require(child.terminationStatus == 0, "\(output)")
+        try #require(child.terminationStatus == 0,
+            "Node child reason=\(child.terminationReason), status=\(child.terminationStatus); stderr/stdout:\n\(output)")
         #expect(output.contains(mode == "prepare" ? "Matrix prepared" : "Mirror verified Swift"), "\(output)")
     }
 

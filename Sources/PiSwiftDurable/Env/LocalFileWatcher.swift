@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 import Synchronization
 import PiSwiftChord
 import CryptoKit
@@ -14,7 +15,8 @@ import CoreServices
 /// Internal hooks record native coverage and batches before an actor delivery is queued.
 struct LocalNativeWatchHooks: Sendable {
     var streamStarted: @Sendable ([String]) -> Void = { _ in }
-    var batchDelivered: @Sendable () -> Void = {}
+    var batchDelivered: @Sendable ([String]) -> Void = { _ in }
+    var vnodeLimit: Int? = nil
 }
 
 /// A snapshot watch. Native notifications request a scan; they do not replace it.
@@ -58,6 +60,11 @@ actor LocalFileWatcher: FileWatcher {
     }
     private var stream: NativeWatchStream?
     private var streamRoots: [NativeRoot] = []
+    private var nativeRootChanged = false
+    private var vnodeWatches: [String: NativeVnodeWatch] = [:]
+    private var vnodeMailbox: NativeVnodeMailbox?
+    private var recentFiles: [String] = []
+    private var nativeScanCount = 0
     #endif
     private let nativeHooks: LocalNativeWatchHooks
 
@@ -78,6 +85,8 @@ actor LocalFileWatcher: FileWatcher {
         settleTimer?.cancel()
         #if os(macOS)
         stream?.close()
+        for watch in vnodeWatches.values { watch.close() }
+        vnodeMailbox?.close()
         #endif
     }
 
@@ -136,6 +145,11 @@ actor LocalFileWatcher: FileWatcher {
                     try LocalFS.check(context)
                 }
                 if mode == .polling { snapshot = try scan() }
+                else {
+                    reconcileVnodeWatches()
+                    snapshot = try scan()
+                    reconcileVnodeWatches()
+                }
             }
         }
         #endif
@@ -150,6 +164,7 @@ actor LocalFileWatcher: FileWatcher {
         settleTimer?.cancel(); settleTimer = nil
         #if os(macOS)
         stopNativeStream()
+        stopVnodeWatches()
         #endif
     }
 
@@ -158,6 +173,7 @@ actor LocalFileWatcher: FileWatcher {
         currentMode.withLock { $0 = .polling }
         #if os(macOS)
         stopNativeStream()
+        stopVnodeWatches()
         #endif
         timer?.cancel(); timer = nil
         if !closed { onChange(.overflow) }
@@ -194,15 +210,30 @@ actor LocalFileWatcher: FileWatcher {
 
     private func flush() {
         guard !closed else { return }
+        #if os(macOS)
+        vnodeMailbox?.beginScan()
+        #endif
         do {
             var changed = events
             events.removeAll()
             for _ in 0..<10 {
                 let next = try scan()
+                #if os(macOS)
+                if mode == .native {
+                    let newFiles = next.keys.filter { path in
+                        guard let entry = next[path], entry.file else { return false }
+                        return snapshot[path] == nil || snapshot[path]?.inode != entry.inode
+                    }.sorted()
+                    for path in newFiles {
+                        noteRecentFile(path)
+                    }
+                }
+                #endif
                 for (path, entry) in next where snapshot[path] != entry { changed.insert(reported(path)) }
                 for path in snapshot.keys where next[path] == nil { changed.insert(reported(path)) }
                 snapshot = next
                 #if os(macOS)
+                if mode == .native { reconcileVnodeWatches() }
                 // The new stream starts before the old one stops. This scan after
                 // a rebuild also captures writes made during the start gap.
                 if mode == .native, reconcileNativeStream() { continue }
@@ -210,6 +241,9 @@ actor LocalFileWatcher: FileWatcher {
                 break
             }
             if !changed.isEmpty { onChange(.paths(changed.sorted())) }
+            #if os(macOS)
+            if mode == .native, vnodeMailbox?.finishScan() == true { scheduleFlush() }
+            #endif
         } catch let error as FileError {
             onChange(.error(error)); stop()
         } catch {
@@ -218,6 +252,9 @@ actor LocalFileWatcher: FileWatcher {
     }
 
     private func scan() throws -> [String: Entry] {
+        #if os(macOS)
+        nativeScanCount += 1
+        #endif
         var result: [String: Entry] = [:]
         var counted: Set<String> = []
         var listed: [String: UInt32] = [:]
@@ -367,10 +404,75 @@ actor LocalFileWatcher: FileWatcher {
     }
 
     #if os(macOS)
-    private func nativeEvents(_ paths: [String], overflow: Bool) {
+    private func vnodeEvent() {
+        guard !closed, mode == .native else { return }
+        scheduleFlush()
+    }
+
+    private func noteRecentFile(_ path: String) {
+        recentFiles.removeAll { $0 == path }
+        recentFiles.insert(path, at: 0)
+        if recentFiles.count > 64 { recentFiles.removeLast() }
+    }
+
+    private func reconcileVnodeWatches() {
+        if vnodeMailbox == nil {
+            vnodeMailbox = NativeVnodeMailbox { [weak self] in
+                Task { await self?.vnodeEvent() }
+            }
+        }
+        guard let vnodeMailbox else { return }
+        var ordered: [String] = []
+        var seen: Set<String> = []
+        func add(_ path: String) {
+            if seen.insert(path).inserted { ordered.append(path) }
+        }
+        for root in streamRoots { add(root.path) }
+        for target in targets where snapshot[target.path]?.file == true { add(target.path) }
+        for path in recentFiles where snapshot[path]?.file == true { add(path) }
+        let directories = snapshot.keys.filter { path in
+            snapshot[path]?.directory == true && targets.contains { Self.within(path, $0.path) }
+        }.sorted { left, right in
+            let leftDepth = left.split(separator: "/").count
+            let rightDepth = right.split(separator: "/").count
+            return leftDepth == rightDepth ? left < right : leftDepth < rightDepth
+        }
+        for path in directories { add(path) }
+        let limit = min(64, max(0, nativeHooks.vnodeLimit ?? 64))
+        let needed = Set(ordered.prefix(limit))
+        for path in vnodeWatches.keys.filter({ !needed.contains($0) }) {
+            vnodeWatches.removeValue(forKey: path)?.close()
+        }
+        for path in ordered.prefix(limit) {
+            guard let entry = try? Self.entry(path, follow: true) else {
+                vnodeWatches.removeValue(forKey: path)?.close()
+                continue
+            }
+            if let watch = vnodeWatches[path], watch.device == entry.device, watch.inode == entry.inode { continue }
+            vnodeWatches.removeValue(forKey: path)?.close()
+            if let watch = NativeVnodeWatch(path: path, mailbox: vnodeMailbox) {
+                vnodeWatches[path] = watch
+            }
+        }
+    }
+
+    private func stopVnodeWatches() {
+        vnodeMailbox?.close()
+        for watch in vnodeWatches.values { watch.close() }
+        vnodeWatches.removeAll()
+        vnodeMailbox = nil
+        recentFiles.removeAll()
+    }
+
+    func nativeWatchCountsForTesting() -> (sources: Int, scans: Int, queuedTasks: Int, processLimit: Int) {
+        (vnodeWatches.count, nativeScanCount, vnodeMailbox?.queuedTasks ?? 0, NativeVnodeBudget.shared.limit())
+    }
+
+    private func nativeEvents(_ paths: [String], overflow: Bool, rootChanged: Bool) {
         guard !closed else { return }
         if overflow { onChange(.overflow) }
-        var relevant = overflow
+        if rootChanged { nativeRootChanged = true }
+        var relevant = overflow || rootChanged
         for path in paths {
             if inScope(path) { events.insert(reported(path)); relevant = true }
             // FSEvents reports canonical paths. Preserve the requested path for
@@ -402,9 +504,25 @@ actor LocalFileWatcher: FileWatcher {
                 candidate = parent
                 entry = try? Self.entry(candidate, follow: true)
             }
+            // FSEventStreamCreate accepts directory roots. A file target is
+            // covered by its parent directory, including after it appears.
+            // A symlink target also needs the physical file's parent so a
+            // write through the other path is visible.
+            if let found = entry, !found.directory {
+                if let physical = Self.realPath(candidate) {
+                    let physicalParent = (physical as NSString).deletingLastPathComponent
+                    if let physicalEntry = try? Self.entry(physicalParent, follow: true) {
+                        roots[physicalParent] = NativeRoot(path: physicalParent, recursive: false,
+                            kind: physicalEntry.kind, device: physicalEntry.device, inode: physicalEntry.inode)
+                    }
+                }
+                candidate = (candidate as NSString).deletingLastPathComponent
+                entry = try? Self.entry(candidate, follow: true)
+            }
             guard let entry else { continue }
             let path = Self.realPath(candidate) ?? candidate
-            let recursive = entry.directory && (target.recursive || candidate != target.path)
+            let parent = (target.path as NSString).deletingLastPathComponent
+            let recursive = target.recursive || candidate != target.path && candidate != parent
             let root = NativeRoot(path: path, recursive: recursive || roots[path]?.recursive == true,
                                   kind: entry.kind, device: entry.device, inode: entry.inode)
             roots[path] = root
@@ -421,7 +539,8 @@ actor LocalFileWatcher: FileWatcher {
     private func reconcileNativeStream() -> Bool {
         guard mode == .native else { return false }
         let needed = neededNativeRoots()
-        guard needed != streamRoots else { return false }
+        guard needed != streamRoots || nativeRootChanged else { return false }
+        nativeRootChanged = false
         if needed.isEmpty { stopNativeStream(); return false }
         guard startNativeStream(roots: needed) else {
             switchToPolling()
@@ -436,11 +555,11 @@ actor LocalFileWatcher: FileWatcher {
 
     private func startNativeStream(roots: [NativeRoot]) -> Bool {
         let hooks = nativeHooks
-        let callback = NativeWatchCallback { [weak self] paths, overflow in
+        let callback = NativeWatchCallback { [weak self] paths, overflow, rootChanged in
             // Count before the hop. FlushSync waits for this callback, so the
             // delivery check does not race with tasks waiting for the actor.
-            hooks.batchDelivered()
-            Task { await self?.nativeEvents(paths, overflow: overflow) }
+            hooks.batchDelivered(paths)
+            Task { await self?.nativeEvents(paths, overflow: overflow, rootChanged: rootChanged) }
         }
         var context = FSEventStreamContext(version: 0,
             info: Unmanaged.passUnretained(callback).toOpaque(),
@@ -453,19 +572,33 @@ actor LocalFileWatcher: FileWatcher {
                 Unmanaged<NativeWatchCallback>.fromOpaque(pointer).release()
             }, copyDescription: nil)
         let paths = roots.map(\.path) as CFArray
-        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes |
+        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes |
             kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot)
+        // Use a concrete event ID. SinceNow can skip a write while a new
+        // stream is starting. The scan after start covers earlier changes.
+        let resumeAfter = FSEventsGetCurrentEventId()
         guard let created = FSEventStreamCreate(kCFAllocatorDefault, { _, info, count, paths, flags, _ in
             guard let info else { return }
             let callback = Unmanaged<NativeWatchCallback>.fromOpaque(info).takeUnretainedValue()
             let values = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
+            guard values.count >= count else { callback.deliver([], true, false); return }
             var overflow = false
+            var rootChanged = false
+            var changedPaths: [String] = []
             for index in 0..<count {
                 if flags[index] & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs |
-                    kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped) != 0 { overflow = true }
+                    kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
+                    kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagMount |
+                    kFSEventStreamEventFlagUnmount) != 0 { overflow = true }
+                if flags[index] & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0 { rootChanged = true }
+                if flags[index] != FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) {
+                    changedPaths.append(values[index])
+                }
             }
-            callback.deliver(values, overflow)
-        }, &context, paths, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.05, flags) else { return false }
+            if !changedPaths.isEmpty || overflow || rootChanged {
+                callback.deliver(changedPaths, overflow, rootChanged)
+            }
+        }, &context, paths, resumeAfter, 0.05, flags) else { return false }
         FSEventStreamSetDispatchQueue(created, DispatchQueue(label: "PiSwiftDurable.file-watch"))
         guard FSEventStreamStart(created) else {
             FSEventStreamInvalidate(created); FSEventStreamRelease(created)
@@ -488,6 +621,94 @@ actor LocalFileWatcher: FileWatcher {
 }
 
 #if os(macOS)
+private final class NativeVnodeBudget: Sendable {
+    static let shared = NativeVnodeBudget()
+    private let used = Mutex(0)
+    private init() {}
+    func limit() -> Int {
+        var value = rlimit()
+        guard getrlimit(RLIMIT_NOFILE, &value) == 0 else { return 0 }
+        return Int(min(value.rlim_cur / 8, rlim_t(512)))
+    }
+    func reserve() -> Bool {
+        let maximum = limit()
+        return used.withLock { count in
+            guard count < maximum else { return false }
+            count += 1
+            return true
+        }
+    }
+    func release() { used.withLock { $0 -= 1 } }
+}
+
+private final class NativeVnodeMailbox: Sendable {
+    private struct State: Sendable {
+        var queued = false
+        var dirty = false
+        var closed = false
+        var queuedTasks = 0
+    }
+    private let state = Mutex(State())
+    private let deliver: @Sendable () -> Void
+    init(deliver: @escaping @Sendable () -> Void) { self.deliver = deliver }
+    var queuedTasks: Int { state.withLock { $0.queuedTasks } }
+    func signal() {
+        let start = state.withLock { state in
+            guard !state.closed else { return false }
+            state.dirty = true
+            guard !state.queued else { return false }
+            state.queued = true
+            state.queuedTasks += 1
+            return true
+        }
+        if start { deliver() }
+    }
+    func beginScan() { state.withLock { $0.dirty = false } }
+    func finishScan() -> Bool {
+        state.withLock { state in
+            guard !state.closed else { return false }
+            if state.dirty { return true }
+            state.queued = false
+            return false
+        }
+    }
+    func close() { state.withLock { $0.closed = true; $0.queued = false; $0.dirty = false } }
+}
+
+private final class NativeVnodeWatch: Sendable {
+    private static let queue = DispatchQueue(label: "PiSwiftDurable.file-watch.vnode")
+    let device: UInt64
+    let inode: UInt64
+    private let source: any DispatchSourceFileSystemObject
+    init?(path: String, mailbox: NativeVnodeMailbox) {
+        let budget = NativeVnodeBudget.shared
+        guard budget.reserve() else { return nil }
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { budget.release(); return nil }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            _ = Darwin.close(fd)
+            budget.release()
+            return nil
+        }
+        device = UInt64(info.st_dev)
+        inode = UInt64(info.st_ino)
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd,
+            eventMask: [.write, .delete, .rename, .attrib, .extend],
+            queue: Self.queue)
+        self.source = source
+        source.setEventHandler { mailbox.signal() }
+        source.setCancelHandler {
+            _ = Darwin.close(fd)
+            budget.release()
+            mailbox.signal()
+        }
+        source.resume()
+    }
+    func close() { source.cancel() }
+    deinit { close() }
+}
+
 /// The stream is stopped once, including when the caller drops an open watch.
 private final class NativeWatchStream: Sendable {
     private let address: Mutex<UInt>
@@ -510,7 +731,7 @@ private final class NativeWatchStream: Sendable {
 }
 
 private final class NativeWatchCallback: Sendable {
-    let deliver: @Sendable ([String], Bool) -> Void
-    init(_ deliver: @escaping @Sendable ([String], Bool) -> Void) { self.deliver = deliver }
+    let deliver: @Sendable ([String], Bool, Bool) -> Void
+    init(_ deliver: @escaping @Sendable ([String], Bool, Bool) -> Void) { self.deliver = deliver }
 }
 #endif

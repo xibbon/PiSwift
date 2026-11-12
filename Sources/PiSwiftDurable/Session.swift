@@ -305,7 +305,13 @@ public final class Session: Sendable {
             }
         }
     }
-    internal func fail(_ error: any Error) { failureLatch.fail(error) }
+    internal func fail(_ error: any Error) {
+        // Close seals admission before its listeners seal the scheduler. Work
+        // already queued by the scheduler can get the expected closed result
+        // in that gap. It must not turn a healthy close into a Session failure.
+        if error as? SessionError == .closed, state.withLock({ $0.closing != nil }) { return }
+        failureLatch.fail(error)
+    }
     internal func awaitHealthy<Value: Sendable>(_ work: Task<Value, any Error>, context: ChordContext) async throws -> Value {
         try await failureLatch.awaitHealthy(work, context: context)
     }

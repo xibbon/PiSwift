@@ -50,7 +50,8 @@ struct D4SharedFileResumeTests {
         try child.run()
         child.waitUntilExit()
         let output = try String(contentsOf: url, encoding: .utf8)
-        try #require(child.terminationStatus == 0, "\(output)")
+        try #require(child.terminationStatus == 0,
+            "Node child reason=\(child.terminationReason), status=\(child.terminationStatus); stderr/stdout:\n\(output)")
     }
 
     private func prepare(_ directory: URL, backend: String) throws -> [String: JSONValue] {

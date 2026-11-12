@@ -1,3 +1,4 @@
+import Dispatch
 import PiSwiftChord
 import Synchronization
 import Testing
@@ -72,6 +73,9 @@ private func openTaskWatchWriter() async throws -> TaskWatchWriter {
         try await h.endTask()
         // Join the worker before the weak reference check. closed resolves during worker cleanup.
         if let watch = weak.value { _ = await watch.closed; await watch.waitUntilIdle() }
+        // The task waiter can resume while Session still holds the copied
+        // publication listener. Join the mutation line before testing release.
+        try await h.harness.session.readOnLine { () }
         #expect(weak.value == nil); #expect(h.harness.session.documentCacheSizes.attached == 0)
         try await h.harness.close(context: .background)
     }
@@ -85,8 +89,51 @@ private func openTaskWatchWriter() async throws -> TaskWatchWriter {
             return (watch, SessionObserverWeak(h.harness))
         }
         let (watch, weak) = try await acquire()
-        #expect(await watch.closed == .ended); #expect(throws: WatchError.stopped) { try watch.start { _, _ in } }
+        let end = await watch.closed
+        #expect(end == .ended, "Unstarted watch ended as \(end)")
+        #expect(throws: WatchError.stopped) { try watch.start { _, _ in } }
         #expect(weak.value == nil)
+    }
+
+    @Test("an unstarted watch ends when close overlaps task retirement") func unstartedRetirementCloseOverlap() async throws {
+        let h = try await openTaskWatchWriter()
+        let watch = try #require(try await h.harness.watchDoc(h.token, taskId: h.id, context: .background))
+        let entered = SessionTestGate()
+        let closing = SessionTestGate()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let publication = try h.harness.session.observeCommits { change, _ in
+            guard change.changes.contains(where: {
+                if case .task(let task) = $0 { task.id == h.id } else { false }
+            }) else { return }
+            entered.release()
+            release.wait()
+        }
+        let closeSubscription = try h.harness.session.subscribeClose { closing.release() }
+        h.finish.release()
+        await entered.wait()
+        let close = Task { try await h.harness.close(context: .background) }
+        await closing.wait()
+        release.signal()
+        try await close.value
+        let end = await watch.closed
+        #expect(end == .ended, "Overlapping retirement and close ended as \(end)")
+        #expect(throws: WatchError.stopped) { try watch.start { _, _ in } }
+        withExtendedLifetime((publication, closeSubscription)) {}
+    }
+
+    @Test("a late closed-admission result does not fail an unstarted watch") func closedAdmissionAtClose() async throws {
+        let h = try await openTaskWatchWriter()
+        let lateWork = try h.harness.session.subscribeClose {
+            h.harness.session.fail(SessionError.closed)
+        }
+        let watch = try #require(try await h.harness.watchDoc(h.token, taskId: h.id, context: .background))
+        try await h.endTask()
+        try await h.harness.close(context: .background)
+        let end = await watch.closed
+        #expect(end == .ended, "Closed admission ended watch as \(end)")
+        #expect(h.harness.failure == nil)
+        withExtendedLifetime(lateWork) {}
     }
 
     @Test("an unstarted watch fails with its Harness after the task ends") func unstartedFailure() async throws {

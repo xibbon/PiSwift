@@ -8,16 +8,16 @@ import PiSwiftChord
 private final class NativeScopeLog: Sendable {
     private struct State: Sendable {
         var roots: [[String]] = []
-        var batches = 0
+        var callbacks: [[String]] = []
         var paths: [String] = []
     }
     private let state = Mutex(State())
     var roots: [[String]] { state.withLock { $0.roots } }
-    var batches: Int { state.withLock { $0.batches } }
+    var callbacks: [[String]] { state.withLock { $0.callbacks } }
     var paths: [String] { state.withLock { $0.paths } }
     var hooks: LocalNativeWatchHooks {
         .init(streamStarted: { paths in self.state.withLock { $0.roots.append(paths) } },
-              batchDelivered: { self.state.withLock { $0.batches += 1 } })
+              batchDelivered: { paths in self.state.withLock { $0.callbacks.append(paths) } })
     }
     func append(_ change: WatchChange) {
         if case .paths(let paths) = change { state.withLock { $0.paths += paths } }
@@ -51,6 +51,33 @@ struct LocalExecutionNativeScopeTests {
         await native.flushNativeEventsForTesting()
     }
 
+    @Test("a write during native coverage renewal is found by the next scan")
+    func renewalScansHandoffWrite() async throws {
+        try await withDirectory { env in
+            let target = env.cwd + "/later"
+            let physicalTarget = try await env.canonicalPath(".", context: .background).get() + "/later"
+            let marker = target + "/marker.txt"
+            let log = NativeScopeLog()
+            let wrote = Mutex(false)
+            let hooks = LocalNativeWatchHooks(streamStarted: { paths in
+                guard paths == [physicalTarget] else { return }
+                wrote.withLock { value in
+                    guard !value else { return }
+                    value = true
+                    try? Data("new".utf8).write(to: URL(fileURLWithPath: marker))
+                }
+            })
+            let watcher = try await LocalFileWatcher.start(targets: [.init(path: target, recursive: true)],
+                mode: .native, nativeHooks: hooks, onChange: { log.append($0) }, context: .background).get()
+            do {
+                try await env.createDir("later", options: nil, context: .background).get()
+                try await log.wait { wrote.withLock { $0 } && log.paths.contains(marker) }
+                #expect(watcher.mode == .native)
+                await watcher.close(context: .background)
+            } catch { await watcher.close(context: .background); throw error }
+        }
+    }
+
     @Test("native coverage moves down as a missing target and its parent appear")
     func missingTargetMovesCoverageDown() async throws {
         try await withDirectory { env in
@@ -63,7 +90,10 @@ struct LocalExecutionNativeScopeTests {
                 try await env.createDir("later/deep", options: nil, context: .background).get()
                 try await log.wait { log.roots.last == [root + "/later/deep"] && log.paths.contains(target) }
                 try await env.writeFile("later/deep/file.txt", content: .text("one"), context: .background).get()
-                try await log.wait { log.roots.last == [root + "/later/deep/file.txt"] }
+                try await log.wait { log.paths.contains(target) }
+                // FSEvents accepts directory roots; the file remains covered
+                // by its parent after it appears.
+                #expect(log.roots.last == [root + "/later/deep"])
                 let before = log.paths.count
                 try await env.writeFile("later/deep/file.txt", content: .text("two"), context: .background).get()
                 try await log.wait { log.paths.dropFirst(before).contains(target) }
@@ -95,7 +125,7 @@ struct LocalExecutionNativeScopeTests {
         }
     }
 
-    @Test("file changes outside all native stream paths queue no actor batches")
+    @Test("file changes outside native stream paths stay outside callbacks")
     func unrelatedChangesDoNotDeliverNativeBatches() async throws {
         try await withDirectory { env in
             try await env.createDir("project", options: nil, context: .background).get()
@@ -105,17 +135,14 @@ struct LocalExecutionNativeScopeTests {
             let watcher = try await watch([.init(path: project, recursive: true)], log: log)
             let observer = try await watch([.init(path: outside, recursive: true)], log: other)
             do {
-                try await env.writeFile("project/probe", content: .text("ready"), context: .background).get()
-                try await log.wait { log.paths.contains(project + "/probe") }
-                try await flush(watcher)
-                let before = log.batches
+                let before = log.callbacks.count
                 for index in 0..<64 {
                     try await env.writeFile("unrelated/file-\(index)", content: .text("outside"), context: .background).get()
                 }
                 // A live observer proves the native event service delivered the outside writes.
                 try await other.wait { other.paths.contains(outside + "/file-63") }
                 try await flush(watcher)
-                #expect(log.batches == before)
+                #expect(!log.callbacks.dropFirst(before).joined().contains { $0.hasPrefix(outside + "/") })
                 #expect(!log.paths.contains { $0.hasPrefix(outside + "/") })
                 await watcher.close(context: .background)
                 await observer.close(context: .background)
