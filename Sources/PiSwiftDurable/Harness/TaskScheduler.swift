@@ -190,10 +190,15 @@ internal final class TaskScheduler: Sendable {
         // The callback reads after all admitted marks and reservations have settled.
         try? await session.writeAtClose({ tx in
             let stopped = state.withLock { $0.stopped }.union(invocations.map(\.taskId))
+            var pending: [TaskRecord] = []
             for id in stopped.sorted() {
-                guard let record = current(id), case .running(let checkpoint, _) = record.state else { continue }
-                try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint)))
+                // v1.5.2 scheduler.ts:592–599: take the record after all
+                // admitted marks. Swift's close listener has detached the
+                // scheduler observer, so its live map can lag publication.
+                guard let record = try await tx.task(id), case .running(let checkpoint, _) = record.state else { continue }
+                pending.append(record.replacing(state: .pending(checkpoint: checkpoint)))
             }
+            for record in pending { try tx.setTask(record) }
         }, context: context)
     }
     private func seal() {

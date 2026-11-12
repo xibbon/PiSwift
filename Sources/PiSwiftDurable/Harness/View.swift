@@ -160,10 +160,11 @@ internal final class ConversationViews: Sendable {
             throw SessionError.message("Conversation \(id.rawValue) does not exist")
         }
         // This structural read does not decode model messages.
-        let tail = try await storage.scanEntries(.init(conversationId: id), limit: 1, cursor: nil, context: context).items.first?.id
+        // View.attach already owns the Session line while it builds this mount.
+        let tail = try await session.latestEntryId(id, context: context)
         var entries: [EntryRecord] = []
         if let tail {
-            let head = try await storage.findLatestHeadMarker(id, atOrBeforeEntryId: tail, context: context)
+            let head = try await session.latestHeadMarker(id, atOrBefore: tail, context: context)
             let range = try await scanAll { try await storage.scanEntries(.init(conversationId: id, minEntryId: head?.head, maxEntryId: tail, order: .ascending), limit: 256, cursor: $0, context: context) }
             entries = head.map { [$0] + range.filter { $0.head == nil } } ?? range
         }

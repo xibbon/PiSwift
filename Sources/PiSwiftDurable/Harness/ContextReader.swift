@@ -24,10 +24,10 @@ internal func readContextFrom(session: Session, storage: any DurableStorage, id:
             }
             tail = at
         } else {
-            guard let found = try await storage.scanEntries(.init(conversationId: id), limit: 1, cursor: nil, context: context).items.first else { return nil }
-            tail = found.id
+            guard let found = try await session.latestEntryId(id, context: context) else { return nil }
+            tail = found
         }
-        return ContextBounds(head: try await storage.findLatestHeadMarker(id, atOrBeforeEntryId: tail, context: context), tail: tail)
+        return ContextBounds(head: try await session.latestHeadMarker(id, atOrBefore: tail, context: context), tail: tail)
     }
     guard let bounds else { return (ContextView(), nil) }
     let range: ContextRange

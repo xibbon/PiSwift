@@ -67,15 +67,14 @@ extension Transaction {
     /// v1.5.2 session-group-commit.test.ts:259–260.
     public func latestEntryId(_ conversationId: ConversationID) async throws -> EntryID? {
         try await operation(tableRead: "latestEntryId") {
-            try await storage.scanEntries(.init(conversationId: conversationId, order: .descending),
-                                          limit: 1, cursor: nil, context: context).items.first?.id
+            try await session.latestEntryId(conversationId, context: context)
         }
     }
 
     /// Returns the newest visible entry that sets a context lower bound.
     public func latestHeadMarker(_ conversationId: ConversationID) async throws -> EntryRecord? {
         try await operation(tableRead: "latestHeadMarker") {
-            try await storage.findLatestHeadMarker(conversationId, atOrBeforeEntryId: nil, context: context)
+            try await session.latestHeadMarker(conversationId, atOrBefore: nil, context: context)
         }
     }
 

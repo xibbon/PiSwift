@@ -40,19 +40,21 @@ struct SessionWriterD3aTests {
         let gate = await harness.storage.holdCommits()
         let first = append(harness.session, writing, "held")
         await gate.waitUntilEntered()
-        let before = await harness.storage.conversationReadCount
+        let completed = SessionTestLog<ConversationID>()
         let read = Task {
             try await harness.session.commit({ tx in
-                try await tx.conversation(reading)
+                let record = try await tx.conversation(reading)
+                if let record { completed.append(record.id) }
+                return record
             }, context: .background)
         }
         for _ in 0..<50_000 {
-            if await harness.storage.conversationReadCount > before { break }
+            if completed.count > 0 { break }
             await Task.yield()
         }
-        // v1.5.2 D3a group-commit.md:144–148: the callback and its read
-        // reach Storage while an unrelated commit is still in flight.
-        #expect(await harness.storage.conversationReadCount > before)
+        // v1.5.2 D3b cached-storage.ts:131–137: this published conversation
+        // is answered by the cache while an unrelated commit is in flight.
+        #expect(completed.values == [reading])
         await gate.release()
         _ = try await first.value
         #expect(try await read.value?.id == reading)

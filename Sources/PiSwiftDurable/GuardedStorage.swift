@@ -61,7 +61,8 @@ internal final class GuardedStorage: DurableStorage {
     /// These built-in backends use DurableStorage's immediate default scope.
     /// Keep custom storage wrappers on their own async publishing path.
     var publishesImmediately: Bool {
-        backend is MemoryStorage || backend is SqliteStorage || backend is JsonlStorage
+        backend is MemoryStorage || backend is SqliteStorage || backend is JsonlStorage ||
+            (backend as? SessionCachedStorage)?.publishesImmediately == true
     }
     func installWriter(_ value: SessionWriter) { writer.withLock { $0.value = value } }
     private func touch(_ key: String) async throws {

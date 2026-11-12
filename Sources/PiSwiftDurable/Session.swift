@@ -23,7 +23,17 @@ public struct DefaultSessionHooks: SessionHooks {
 
 /// One mutation line over one storage backend.
 public final class Session: Sendable {
+    internal struct CacheBounds: Sendable {
+        let conversations: Int
+        let tasks: Int
+        let submissions: Int
+        init(conversations: Int = 4096, tasks: Int = 256, submissions: Int = 256) {
+            self.conversations = conversations; self.tasks = tasks; self.submissions = submissions
+        }
+    }
     internal let storage: any DurableStorage
+    private let cached: SessionCachedStorage
+    private let tails = SessionConversationTails()
     private let failureLatch: SessionFailureLatch
     internal let onReport: @Sendable (any Error, ReportInfo) -> Void
     internal func report(_ error: any Error, _ info: ReportInfo = .listenerError) { onReport(error, info) }
@@ -90,6 +100,8 @@ public final class Session: Sendable {
     // v1.5.2 session-adoption.test.ts:115–125 fault injection. This seam is
     // internal to the debug build and consumed once by Transaction.adopt.
     private let adoptionFailure = Mutex<(any Error)?>(nil)
+    private let cachePublicationFailure = Mutex<(any Error)?>(nil)
+    internal func failNextCachePublication(_ error: any Error) { cachePublicationFailure.withLock { $0 = error } }
     internal func failNextAdoption(_ error: any Error) { adoptionFailure.withLock { $0 = error } }
     internal func checkAdoptionFault() throws {
         let error = adoptionFailure.withLock { failure -> (any Error)? in
@@ -101,19 +113,22 @@ public final class Session: Sendable {
     deinit { state.withLock { $0.documentSweep?.timer?.cancel() } }
     private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
                  documentRetentionMs: @escaping @Sendable () throws -> Double?, documentTimer: SessionDocumentTimer,
-                 cacheNow: (@Sendable () throws -> Int64)?, hooks: any SessionHooks, report: @escaping @Sendable (any Error, ReportInfo) -> Void) {
+                 cacheNow: (@Sendable () throws -> Int64)?, cacheBounds: CacheBounds,
+                 hooks: any SessionHooks, report: @escaping @Sendable (any Error, ReportInfo) -> Void) {
         let latch = SessionFailureLatch()
         self.failureLatch = latch
         self.documentRetentionMs = documentRetentionMs; self.documentTimer = documentTimer
         self.cacheNow = cacheNow ?? now
-        let guarded = GuardedStorage(storage, latch: latch)
+        let cached = SessionCachedStorage(storage, conversationCapacity: cacheBounds.conversations,
+                                          taskCapacity: cacheBounds.tasks, submissionCapacity: cacheBounds.submissions)
+        let guarded = GuardedStorage(cached, latch: latch)
         let writer = SessionWriter(storage: guarded, latch: latch,
             fail: { [weak guarded] error in
                 if error as? SessionError == .closed, guarded?.closing == true { return }
                 latch.fail(error)
             }, report: { error in report(error, .listenerError) })
         guarded.installWriter(writer)
-        self.storage = guarded; self.writer = writer
+        self.storage = guarded; self.cached = cached; self.writer = writer
         self.now = now; self.hooks = hooks; self.onReport = report
     }
     /// Creates a session over the supplied storage without reading persisted records.
@@ -156,11 +171,13 @@ public final class Session: Sendable {
                             documentRetentionMs: @escaping @Sendable () throws -> Double?,
                             documentTimer: SessionDocumentTimer? = nil,
                             cacheNow: (@Sendable () throws -> Int64)? = nil,
+                            cacheBounds: CacheBounds = CacheBounds(),
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         let session = Session(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
-            documentTimer: documentTimer ?? .host(HarnessTimers(now: now, report: onReport)), cacheNow: cacheNow, hooks: hooks, report: onReport)
+            documentTimer: documentTimer ?? .host(HarnessTimers(now: now, report: onReport)), cacheNow: cacheNow,
+            cacheBounds: cacheBounds, hooks: hooks, report: onReport)
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
@@ -184,6 +201,27 @@ public final class Session: Sendable {
         await writer.gate(key)
         try assertHealthy()
     }
+    /// The newest visible entry, updated when this Session publishes an append.
+    internal func latestEntryId(_ id: ConversationID, context: ChordContext) async throws -> EntryID? {
+        try await touch(SessionKeys.conversationKey(id))
+        try await touch(SessionKeys.appendKey(id))
+        return try await tails.latest(id) {
+            try await storage.scanEntries(.init(conversationId: id, order: .descending),
+                                          limit: 1, cursor: nil, context: context).items.first?.id
+        }
+    }
+    internal func latestHeadMarker(_ id: ConversationID, atOrBefore cutoff: EntryID?,
+                                   context: ChordContext) async throws -> EntryRecord? {
+        try await touch(SessionKeys.conversationKey(id))
+        try await touch(SessionKeys.appendKey(id))
+        return try await tails.marker(id, atOrBefore: cutoff) {
+            try await storage.findLatestHeadMarker(id, atOrBeforeEntryId: cutoff, context: context)
+        }
+    }
+    internal var recordCacheSizes: SessionCachedStorage.Sizes { cached.sizes }
+    internal func evictCachedConversation(_ id: ConversationID) { cached.evictConversation(id) }
+    internal func evictCachedSubmission(_ id: SubmissionID) { cached.evictSubmission(id) }
+    internal var tailCacheSizes: (latest: Int, markers: Int) { (tails.size, tails.markers) }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T,
                           context: ChordContext) async throws -> T {
@@ -264,6 +302,21 @@ public final class Session: Sendable {
     /// v1.5.2 session/session.ts `#adopt` and `#publish`.
     private func publishCommit(_ tx: Transaction, writes: [StorageWrite], seq: Seq,
                                context: ChordContext) -> WriterPublishFailure? {
+        // v1.5.2 writer.ts:252–260: write-through precedes adoption.
+        #if DEBUG
+        let cacheError = cachePublicationFailure.withLock { failure -> (any Error)? in
+            let error = failure; failure = nil; return error
+        }
+        if let cacheError { return .adoption(cacheError) }
+        #endif
+        if writes.count == 1, case .entry(let entry, _) = writes[0] {
+            // Single-entry appends are the common publication path. They
+            // cannot change a cached record, only this conversation's tail.
+            tails.publishedEntry(entry)
+        } else {
+            cached.published(writes)
+            tails.apply(writes)
+        }
         let documents: [DocumentCommitChange]
         do { documents = try committedRead.withLock { _ in try tx.adopt(seq) } }
         catch { return .adoption(error) }

@@ -49,6 +49,7 @@ actor ControlledStorage: DurableStorage {
     private var publicationCount = 0
     var publicationCalls: Int { publicationCount }
     private var findGate: Held?
+    private var taskReadGate: Held?
     private var commitFailure: (any Error)?
     private var publicationScopeFailure: (any Error)?
     private var taskReadFailure: (any Error)?
@@ -67,6 +68,8 @@ actor ControlledStorage: DurableStorage {
     private(set) var findDocumentReadCount = 0
     private(set) var entryScanCount = 0
     private(set) var headMarkerReadCount = 0
+    private(set) var taskReadCount = 0
+    private(set) var submissionReadCount = 0
     private(set) var conversationScanCount = 0
 
     func holdCommits() -> Gate {
@@ -81,6 +84,16 @@ actor ControlledStorage: DurableStorage {
         let held = Held(id: nextGateID)
         findGate = held
         return Gate(entered: held.entered) { await self.releaseFind(held) }
+    }
+    func holdTaskRead() -> Gate {
+        nextGateID += 1
+        let held = Held(id: nextGateID)
+        taskReadGate = held
+        return Gate(entered: held.entered) { await self.releaseTaskRead(held) }
+    }
+    private func releaseTaskRead(_ held: Held) async {
+        if taskReadGate?.id == held.id { taskReadGate = nil }
+        await held.gate.resolve()
     }
     func holdPublication() -> Gate {
         nextGateID += 1
@@ -215,17 +228,24 @@ actor ControlledStorage: DurableStorage {
         return try await storage.scanEntries(query, limit: limit, cursor: cursor, context: context)
     }
     func task(_ id: TaskID, context: ChordContext) async throws -> TaskRecord? {
+        taskReadCount += 1
         if let error = taskReadFailure {
             taskReadFailure = nil
             throw error
         }
-        return try await storage.task(id, context: context)
+        let value = try await storage.task(id, context: context)
+        if let held = taskReadGate {
+            await held.entered.resolve()
+            await held.gate.wait()
+        }
+        return value
     }
     func scanTasks(_ query: TaskQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<TaskRecord, Cursor> {
         try await storage.scanTasks(query, limit: limit, cursor: cursor, context: context)
     }
     func submission(_ id: SubmissionID, context: ChordContext) async throws -> SubmissionRecord? {
-        try await storage.submission(id, context: context)
+        submissionReadCount += 1
+        return try await storage.submission(id, context: context)
     }
     func scanSubmissions(_ query: SubmissionQuery, limit: Int, cursor: Cursor?, context: ChordContext) async throws -> Page<SubmissionRecord, Cursor> {
         try await storage.scanSubmissions(query, limit: limit, cursor: cursor, context: context)

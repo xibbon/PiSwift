@@ -283,6 +283,9 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         await busy.reached.wait()
         let release = SessionTestGate()
         storage.holdSubmissionRead(release)
+        // v1.5.2 D3b cached-storage.ts:193–198: force the storage read
+        // that this close-race test holds after a published submission.
+        opened.harness.session.evictCachedSubmission(input.id)
         let pending = Task { try await input.wait(context: .background) }
         await storage.submissionReadStarted.wait()
         let closing = Task { try await opened.harness.close(context: .background) }

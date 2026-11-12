@@ -85,7 +85,8 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
         }
         try registry.install(Extension(name: "range", tasks: [AnyTaskDefinition(definition)]))
         #expect(try await harness.waitForTask(id: harnessStart(root, definition), context: .background).outcome == .completed(result: 1))
-        #expect(rows.values == [4, 2, 0])
+        // v1.5.2 D3b conversation-tails.ts:28–37 saves the newest-entry scan.
+        #expect(rows.values == [3, 1, 0])
         try await harness.close(context: .background)
     }
 
@@ -108,12 +109,13 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
             try await eventually { clock.pendingSleeperCount == 1 }
             _ = try await harness.waitForTask(id: harnessStart(root, definition), context: .background)
             try await root.waitForIdle(context: .background)
-            #expect(rows.values == [22, 1])
+            // v1.5.2 D3b conversation-tails.ts:28–37 saves one scan per context read.
+            #expect(rows.values == [21, 0])
             clock.advance(by: retention)
             try await eventually { clock.pendingSleeperCount == 0 }
         }
         _ = try await harness.waitForTask(id: harnessStart(root, definition), context: .background)
-        #expect(rows.values.last == 22)
+        #expect(rows.values.last == 21)
         try await harness.close(context: .background)
     }
 
@@ -155,7 +157,8 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
         try await root.waitForIdle(context: .background)
         clock.advance(by: 600000)
         _ = try await harness.waitForTask(id: harnessStart(root, probe), context: .background)
-        #expect(rows.values == [22, 2, 1, 1, 23])
+        // v1.5.2 D3b conversation-tails.ts:28–37 saves the newest-entry scan.
+        #expect(rows.values == [21, 1, 0, 0, 22])
         try await harness.close(context: .background)
     }
 
@@ -201,7 +204,8 @@ private func h6ContextSetup(settings: HarnessSettings = .init(), clock: any Dura
         _ = try? await operation.value
         probeGate.release()
         _ = try await harness.waitForTask(id: probeId, context: .background)
-        #expect(rows.values == [22])
+        // v1.5.2 D3b conversation-tails.ts:28–37 saves the newest-entry scan.
+        #expect(rows.values == [21])
         try await harness.close(context: .background)
     }
 

@@ -4,8 +4,8 @@ import PiSwiftChord
 @testable import PiSwiftDurable
 
 private enum StressLineEvent: Sendable {
-    case write(EntryRecord)
-    case read(ConversationID, [EntryID])
+    case write(EntryRecord, TaskRecord?)
+    case read(ConversationID, [EntryID], ConversationRecord?, TaskRecord?, SubmissionRecord?)
 }
 
 // v1.5.2 D3a: run this load test alone with PI_D3A_STRESS=1. Running it
@@ -30,13 +30,31 @@ struct SessionWriterStressD3aTests {
         let backend = try await storage(kind, path: directory.appendingPathComponent(kind == "sqlite" ? "store.sqlite" : "store").path)
         let controlled = ControlledStorage(backend)
         await controlled.enableCommitGateDelays(seed: 0x5a17c0de)
-        let session = try await Session.open(storage: controlled, now: { 1_000 }, context: .background)
+        let session = try await Session.openWithDocumentRetention(storage: controlled, now: { 1_000 },
+            documentRetentionMs: { nil }, cacheBounds: .init(conversations: 4, tasks: 4, submissions: 4),
+            context: .background)
         var conversations: [ConversationID] = []
         for _ in 0..<8 {
             conversations.append(try await session.commit({ tx in
                 try await tx.createConversation(ownership: .ownerless()).id
             }, context: .background))
         }
+        let taskKind = TaskKind<Int, Int>(name: "stress.task", version: 1, initial: { $0 })
+        var taskIDs: [TaskID] = []
+        var submissionIDs: [SubmissionID] = []
+        for conversation in conversations {
+            let pair = try await session.commit({ tx in
+                let task = try await tx.createTask(taskKind, input: 0,
+                    options: .init(ownership: .conversation(), conversationId: conversation))
+                let submission = try await tx.createSubmission(.write(conversationId: conversation))
+                return (task, submission.id)
+            }, context: .background)
+            taskIDs.append(pair.0); submissionIDs.append(pair.1)
+        }
+        var initialTasks: [TaskRecord?] = []
+        var initialSubmissions: [SubmissionRecord?] = []
+        for id in taskIDs { initialTasks.append(try await session.storage.task(id, context: .background)) }
+        for id in submissionIDs { initialSubmissions.append(try await session.storage.submission(id, context: .background)) }
         let line = SessionTestLog<StressLineEvent>()
         let publications = SessionTestLog<EntryID>()
         let subscription = try session.subscribeCommits { publication, _ in
@@ -49,7 +67,7 @@ struct SessionWriterStressD3aTests {
         let first = Task {
             try await session.commit({ tx in
                 let entry = try await tx.appendEntry(preflightIDs[0], value: EntryDraft(kind: "preflight.0"))
-                line.append(.write(entry))
+                line.append(.write(entry, nil))
                 return entry
             }, context: .background)
         }
@@ -59,7 +77,7 @@ struct SessionWriterStressD3aTests {
             queued.append(Task {
                 try await session.commit({ tx in
                     let entry = try await tx.appendEntry(preflightIDs[index], value: EntryDraft(kind: "preflight.\(index)"))
-                    line.append(.write(entry))
+                    line.append(.write(entry, nil))
                     return entry
                 }, context: .background)
             })
@@ -73,6 +91,8 @@ struct SessionWriterStressD3aTests {
         _ = try await first.value
         for part in queued { _ = try await part.value }
         let ids = conversations
+        let tasks = taskIDs
+        let submissions = submissionIDs
         try await withThrowingTaskGroup(of: Void.self) { group in
             for taskIndex in 0..<16 {
                 group.addTask {
@@ -83,17 +103,26 @@ struct SessionWriterStressD3aTests {
                     }
                     for operation in 0..<1_250 {
                         let choice = next()
-                        let conversation = ids[Int((choice >> 8) % UInt32(ids.count))]
+                        let index = Int((choice >> 8) % UInt32(ids.count))
+                        let conversation = ids[index]
                         if choice % 4 == 0 {
                             _ = try await session.commit({ tx in
                                 let page = try await tx.scanEntries(.init(conversationId: conversation, order: .descending), limit: 64)
-                                line.append(.read(conversation, page.items.map(\.id)))
+                                let record = try await tx.conversation(conversation)
+                                let task = try await tx.task(tasks[index])
+                                let submission = try await tx.submission(submissions[index])
+                                line.append(.read(conversation, page.items.map(\.id), record, task, submission))
                             }, context: .background)
                         } else {
                             _ = try await session.commit({ tx in
+                                let current = try #require(try await tx.task(tasks[index]))
                                 let entry = try await tx.appendEntry(conversation,
                                     value: EntryDraft(kind: "stress.\(taskIndex).\(operation)"))
-                                line.append(.write(entry))
+                                let next = TaskRecord(id: current.id, conversationId: current.conversationId,
+                                    kind: current.kind, version: current.version, input: current.input,
+                                    state: .pending(checkpoint: .number(Double(operation + taskIndex * 1_250))))
+                                try tx.setTask(next)
+                                line.append(.write(entry, next))
                                 return entry
                             }, context: .background)
                         }
@@ -103,16 +132,22 @@ struct SessionWriterStressD3aTests {
             try await group.waitForAll()
         }
         var replay: [ConversationID: [EntryRecord]] = [:]
+        var taskReplay = Dictionary(uniqueKeysWithValues: zip(taskIDs, initialTasks).compactMap { id, value in value.map { (id, $0) } })
         var order: [EntryRecord] = []
         var reads = 0
         for event in line.values {
             switch event {
-            case .write(let entry):
+            case .write(let entry, let task):
                 replay[entry.conversationId, default: []].append(entry)
                 order.append(entry)
-            case .read(let conversation, let observed):
+                if let task { taskReplay[task.id] = task }
+            case .read(let conversation, let observed, let record, let task, let submission):
                 let expected = Array((replay[conversation] ?? []).suffix(64).reversed().map(\.id))
                 #expect(observed == expected)
+                #expect(record?.id == conversation)
+                let index = try #require(conversations.firstIndex(of: conversation))
+                #expect(task == taskReplay[taskIDs[index]])
+                #expect(submission == initialSubmissions[index])
                 reads += 1
             }
         }
@@ -137,8 +172,11 @@ struct SessionWriterStressD3aTests {
             #expect(stored == (replay[conversation] ?? []))
         }
         let calls = await controlled.callBatchCounts
-        #expect(calls.count < order.count + conversations.count)
+        #expect(calls.count < order.count + conversations.count + taskIDs.count)
         print("D3A-STRESS \(kind) operations=20000 writes=\(order.count) reads=\(reads) storageCalls=\(calls.count)")
+        #expect(session.recordCacheSizes.conversations <= 4)
+        #expect(session.recordCacheSizes.tasks <= 4)
+        #expect(session.recordCacheSizes.submissions <= 4)
         subscription.cancel()
         try await session.close(context: .background)
     }

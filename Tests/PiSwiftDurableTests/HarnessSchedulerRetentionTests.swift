@@ -35,7 +35,8 @@ import PiSwiftChord
         let child = try await retentionStart(conversation, control.hold, name: "d")
         control.open("p")
         try await w3State(harness, tree.p, "completing")
-        #expect(storage.reads > loaded)
+        // v1.5.2 D3b cached-storage.ts:173–188 keeps the live task record.
+        #expect(storage.reads == loaded)
         control.open("d")
         #expect(try await harness.waitForTask(id: child, context: .background).outcome.status == "completed")
         #expect(try await harness.waitForTask(id: tree.p, context: .background).outcome.status == "completed")
@@ -113,14 +114,14 @@ import PiSwiftChord
         control.open("b")
         _ = try await harness.waitForTask(id: tree.0, context: .background)
         let conversation = try #require(try await harness.conversation(id: tree.1, context: .background))
-        storage.holdSecondRead(of: tree.1)
+        // v1.5.2 D3b cached-storage.ts:121–137: the conversation read is
+        // answered from the published record, so no second backend read occurs.
         _ = try await retentionStart(conversation, control.hold, name: "d")
-        await storage.reached.wait()
         let settled = Mutex(false)
         let idle = Task { try await harness.waitForIdle(context: .background); settled.withLock { $0 = true } }
         try await Task.sleep(for: .milliseconds(20))
         #expect(!settled.withLock { $0 })
-        storage.release.release(); control.open("d")
+        control.open("d")
         try await idle.value
         try await harness.close(context: .background)
     }

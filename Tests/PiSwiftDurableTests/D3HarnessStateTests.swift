@@ -140,6 +140,9 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
             state.edges.removeValue(forKey: rootConversationID)
             state.unloaded.insert(id)
         }
+        // v1.5.2 D3b cached-storage.ts:121–137: evict the published
+        // conversation too, so this test's backend read gate is reached.
+        harness.session.evictCachedConversation(rootConversationID)
         try harness.resume(); await entered.wait()
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
