@@ -103,7 +103,7 @@ public actor MemoryStorage: DurableStorage {
     /// Reads the entry identified by ID, or nil when it is absent.
     public func entry(_ conversationId: ConversationID, id: EntryID, context: ChordContext) throws -> EntryLookup? {
         try assertOpen()
-        return try visibleEntries(conversationId, minimum: id.rawValue, maximum: id.rawValue, order: .descending).first.map {
+        return try visibleEntries(conversationId, minimum: id.rawValue, maximum: id.rawValue, order: .descending, limit: 1).first.map {
             EntryLookup(entry: $0, commitSeq: tables.entryCommitSeqs[id]!)
         }
     }
@@ -129,7 +129,8 @@ public actor MemoryStorage: DurableStorage {
             if start.order == .descending { maximum = min(maximum, after - 1) }
             else { minimum = max(minimum, after + 1) }
         }
-        let values = try visibleEntries(query.conversationId, minimum: minimum, maximum: maximum, order: start.order)
+        let values = try visibleEntries(query.conversationId, minimum: minimum, maximum: maximum,
+                                        order: start.order, limit: limit < Int.max ? Swift.max(0, limit) + 1 : Int.max)
         return page(values, limit: limit, order: start.order, id: { $0.id.rawValue })
     }
 
@@ -203,8 +204,10 @@ public actor MemoryStorage: DurableStorage {
     private func checkConversation(_ id: ConversationID) throws {
         if tables.conversations[id] == nil { throw StorageRequestError(DurableStorageError.unknownConversation(id).description) }
     }
-    private func visibleEntries(_ conversationId: ConversationID, minimum: Int64, maximum: Int64, order: ScanOrder) throws -> [EntryRecord] {
+    private func visibleEntries(_ conversationId: ConversationID, minimum: Int64, maximum: Int64,
+                                order: ScanOrder, limit: Int) throws -> [EntryRecord] {
         try checkConversation(conversationId)
+        guard limit > 0 else { return [] }
         var segments: [(ConversationID, Int64)] = []
         var current = conversationId
         var upper = maximum
@@ -216,11 +219,38 @@ public actor MemoryStorage: DurableStorage {
             current = parent.conversationId
         }
         if order == .ascending { segments.reverse() }
-        return segments.flatMap { conversation, cap in
-            let ids = (tables.entryIds[conversation] ?? []).filter { $0.rawValue >= minimum && $0.rawValue <= cap }
-            let ordered = order == .ascending ? ids : Array(ids.reversed())
-            return ordered.map { tables.entries[$0]! }
+        // v1.5.2 D4: view.ts:281–310 requests only min/max+1 entries.
+        // Search each sorted segment by ID and stop at the page boundary.
+        var result: [EntryRecord] = []
+        result.reserveCapacity(Swift.min(limit, 256))
+        for (conversation, cap) in segments {
+            guard let ids = tables.entryIds[conversation] else { continue }
+            var low = 0, high = ids.count
+            while low < high {
+                let middle = low + (high - low) / 2
+                if ids[middle].rawValue < minimum { low = middle + 1 } else { high = middle }
+            }
+            let first = low
+            low = first; high = ids.count
+            while low < high {
+                let middle = low + (high - low) / 2
+                if ids[middle].rawValue <= cap { low = middle + 1 } else { high = middle }
+            }
+            let end = low
+            if first >= end { continue }
+            if order == .ascending {
+                for index in first..<end {
+                    result.append(tables.entries[ids[index]]!)
+                    if result.count == limit { return result }
+                }
+            } else {
+                for index in stride(from: end - 1, through: first, by: -1) {
+                    result.append(tables.entries[ids[index]]!)
+                    if result.count == limit { return result }
+                }
+            }
         }
+        return result
     }
     private func scan<Kind>(_ ids: [DurableID<Kind>], start: ScanStart) -> [DurableID<Kind>] {
         let ordered = start.order == .ascending ? ids : Array(ids.reversed())

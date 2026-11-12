@@ -1,6 +1,16 @@
 import PiSwiftChord
 import PiSwiftAI
 
+/// Inclusive entry bounds for a conversation's fork-aware transcript.
+public struct ConversationEntryQuery: Sendable, Equatable {
+    public let minEntryId: EntryID?
+    public let maxEntryId: EntryID?
+    public let order: ScanOrder?
+    public init(minEntryId: EntryID? = nil, maxEntryId: EntryID? = nil, order: ScanOrder? = nil) {
+        self.minEntryId = minEntryId; self.maxEntryId = maxEntryId; self.order = order
+    }
+}
+
 /// A handle for one durable conversation. Compare handles by ID.
 public final class Conversation: Sendable {
     /// The stable identifier of this record or handle.
@@ -67,6 +77,12 @@ public final class Conversation: Sendable {
                 try await harness.storage.scanEntries(EntryQuery(conversationId: id, minEntryId: minEntryId, maxEntryId: maxEntryId, order: order), limit: limit, cursor: cursor, context: context)
             }
         }
+    }
+    /// Reads one page of the fork-aware transcript for a query.
+    public func entries(query: ConversationEntryQuery, limit: Int, cursor: Cursor? = nil,
+                        context: ChordContext) async throws -> Page<EntryRecord, Cursor> {
+        try await entries(minEntryId: query.minEntryId, maxEntryId: query.maxEntryId,
+                          order: query.order, limit: limit, cursor: cursor, context: context)
     }
     /// Creates a conversation that inherits history through the selected entry.
     public func fork(at: EntryID, options: ConversationCreateOptions, context: ChordContext) async throws -> Conversation {

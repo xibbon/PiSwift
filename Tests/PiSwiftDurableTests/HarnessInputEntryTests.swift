@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-input-entries.test.ts:283,287 reads appended entries and run inputs from the view.
 import Foundation
 import Synchronization
 import Testing
@@ -137,7 +138,7 @@ private func inputPlaced(_ record: SubmissionRecord) -> EntryID? {
     @Test func displayWriteDuringToolRunSettlesInTimeOrderAndDoesNotChangeRequests() async throws {
         let setup = HarnessChatSetup(), gate = HarnessChatSignal(), requests = SessionTestLog<[String]>()
         setup.models.setResponses([inputLog(requests, try inputHold(setup, gate)), inputLog(requests, chatAssistant("done"))])
-        let opened = try await openChat(setup: setup), (stream, log) = try await eventListen(opened)
+        let opened = try await openChat(setup: setup)
         let input = try await opened.root.submit(.input(content: .text("a")), context: .background)
         try await inputToolRunning(opened)
         let entry = EntryDraft(kind: "chat.message", data: ["author": "bob", "text": "lunch?"])
@@ -145,14 +146,15 @@ private func inputPlaced(_ record: SubmissionRecord) -> EntryID? {
         let settled = try await write.status(context: .background)
         #expect(settled.status == "done"); #expect(try await inputInbox(opened).isEmpty)
         #expect(try inputTranscript(await allEntries(opened.root)) == [["pi.user", "a"], ["pi.assistant"], ["chat.message", ["author": "bob", "text": "lunch?"]]])
-        try await eventually { log.events.contains { $0["type"] == "entry_appended" } }
-        #expect(log.events.first { $0["type"] == "entry_appended" }?["entry"]?["id"] == .number(Double(try #require(inputPlaced(settled)).rawValue)))
-        #expect(!log.types.contains("run_end"))
+        let view = try await opened.root.watch(context: .background)
+        #expect(view.value.entries.contains { $0.id == inputPlaced(settled) })
+        #expect(view.value.docs["pi.live"]?["run"] != nil)
+        _ = await view.stop()
         #expect(try await opened.root.submit(.write(entry: entry, requestId: "bob:1"), context: .background).id == write.id)
         gate.signal(); _ = try await input.wait(context: .background)
         #expect(try inputTranscript(await allEntries(opened.root)) == [["pi.user", "a"], ["pi.assistant"], ["chat.message", ["author": "bob", "text": "lunch?"]], ["pi.tool-result"], ["pi.assistant", "done"]])
         #expect(requests.values == [["system:", "user:a"], ["system:", "user:a", "assistant:", "toolResult:held"]])
-        _ = await stream.stop(); try await opened.harness.close(context: .background)
+        try await opened.harness.close(context: .background)
     }
 
     @Test func displayWriteWaitsBehindQueuedResetAndRemainsVisible() async throws {

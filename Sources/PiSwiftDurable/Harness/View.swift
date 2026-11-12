@@ -1,23 +1,46 @@
 import PiSwiftChord
 import Synchronization
 
-/// The active entries and the built-in documents of one conversation.
+/// A bounded window over the full transcript and the built-in documents.
 public struct ConversationView: Sendable, Equatable, Codable {
     /// The conversation handle returned by the test setup.
     public let conversation: ConversationRecord
-    /// Visible entries in conversation order.
+    /// Transcript entries in ID order, including summaries and resets.
     public let entries: [EntryRecord]
+    /// The ID of the transcript entry immediately before this window.
+    public let before: EntryID?
     /// The current built-in document objects indexed by document kind.
     public let docs: [String: JSONObject]
     // Only Watch values carry this cache. It belongs to the same immutable revision as the fields.
     internal var watchJSON: JSONValue?
-    private enum CodingKeys: String, CodingKey { case conversation, entries, docs }
+    private enum CodingKeys: String, CodingKey { case conversation, entries, before, docs }
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.conversation == rhs.conversation && lhs.entries == rhs.entries && lhs.docs == rhs.docs
+        lhs.conversation == rhs.conversation && lhs.entries == rhs.entries && lhs.before == rhs.before && lhs.docs == rhs.docs
     }
-    /// Pairs conversation metadata with its active entries and built-in documents.
-    public init(conversation: ConversationRecord, entries: [EntryRecord], docs: [String: JSONObject]) {
-        self.conversation = conversation; self.entries = entries; self.docs = docs
+    /// Pairs conversation metadata with one window and its documents.
+    public init(conversation: ConversationRecord, entries: [EntryRecord], before: EntryID? = nil, docs: [String: JSONObject]) {
+        self.conversation = conversation; self.entries = entries; self.before = before; self.docs = docs
+    }
+}
+
+/// Initial inclusive position and the bounds of a conversation view.
+public struct ConversationWindow: Sendable, Equatable {
+    public let from: EntryID?
+    public let min: Int?
+    public let max: Int?
+    public init(from: EntryID? = nil, min: Int? = nil, max: Int? = nil) {
+        self.from = from; self.min = min; self.max = max
+    }
+    internal func resolved() throws -> (from: EntryID?, min: Int, max: Int) {
+        let lower = min ?? 50
+        guard lower >= 1, lower <= Int(EntryID.maximumRawValue) else {
+            throw SessionError.message("Window min must be an integer >= 1, got \(lower)")
+        }
+        let upper = max ?? 2 * lower
+        guard upper >= lower, upper <= Int(EntryID.maximumRawValue) else {
+            throw SessionError.message("Window max must be an integer >= min (\(lower)), got \(upper)")
+        }
+        return (from, lower, upper)
     }
 }
 
@@ -27,26 +50,37 @@ public typealias ConversationWatch = Watch<ConversationView>
 /// Callbacks run on the Session line. They must not call Session operations.
 internal final class ConversationViewObserver: Sendable {
     let advance: (@Sendable (ConversationView, [Delta.Op], ChordContext) -> Void)?
-    let publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, ChordContext) -> Void)?
     let closeSession: @Sendable () -> Void
     init(advance: (@Sendable (ConversationView, [Delta.Op], ChordContext) -> Void)? = nil,
-         publication: (@Sendable (ConversationView, ConversationView, [Delta.Op], CommitPublication, ChordContext) -> Void)? = nil,
          closeSession: @escaping @Sendable () -> Void) {
-        self.advance = advance; self.publication = publication; self.closeSession = closeSession
+        self.advance = advance; self.closeSession = closeSession
     }
 }
 
 private final class ConversationMount: Sendable {
     struct Incarnation: Sendable { let id: DocumentID; let version: Int }
     struct State {
-        var value: ConversationView
+        let conversation: ConversationRecord
+        var docs: [String: JSONObject]
         var tree: JSONValue
-        var docs: [String: Incarnation]
-        var observers: [ObjectIdentifier: ConversationViewObserver] = [:]
+        var incarnations: [String: Incarnation]
+        var observers: [ObjectIdentifier: WindowedView] = [:]
     }
     let state: Mutex<State>
-    init(value: ConversationView, docs: [String: Incarnation]) throws {
-        state = Mutex(State(value: value, tree: try JSONValue(encoding: value), docs: docs))
+    init(conversation: ConversationRecord, docs: [String: JSONObject], incarnations: [String: Incarnation]) {
+        let values = JSONObject(docs.map { ($0.key, JSONValue.object($0.value)) })
+        state = Mutex(State(conversation: conversation, docs: docs, tree: ["docs": .object(values)], incarnations: incarnations))
+    }
+}
+
+private final class WindowedView: Sendable {
+    struct State { var value: ConversationView }
+    let min: Int
+    let max: Int
+    let observer: ConversationViewObserver
+    let state: Mutex<State>
+    init(value: ConversationView, min: Int, max: Int, observer: ConversationViewObserver) {
+        self.min = min; self.max = max; self.observer = observer; state = Mutex(State(value: value))
     }
 }
 
@@ -77,23 +111,28 @@ internal final class ConversationViews: Sendable {
     deinit { for subscription in state.withLock({ $0.subscriptions }) { subscription.cancel() } }
 
     /// Hydrate and register atomically, so no committed revision can be missed.
-    func attach(id: ConversationID, context: ChordContext,
-                create: @Sendable (ConversationView, @escaping @Sendable () -> Void, any DurableStorage) async throws -> ConversationViewObserver
+    func attach(id: ConversationID, context: ChordContext, window: ConversationWindow? = nil,
+                create: @Sendable (ConversationView, @escaping @Sendable () -> Void) async throws -> ConversationViewObserver
     ) async throws -> ConversationViewObserver {
-        try await session.readOnLine {
+        let bounds = try (window ?? ConversationWindow()).resolved()
+        return try await session.readOnLine {
             try context.abortSignal?.throwIfAborted()
             let mount: ConversationMount
             if let existing = state.withLock({ $0.mounts[id] }) { mount = existing }
             else { mount = try await build(id: id, context: context) }
+            let loaded = try await loadWindow(id: id, bounds: bounds, context: context)
+            let value = mount.state.withLock {
+                ConversationView(conversation: $0.conversation, entries: loaded.entries, before: loaded.before, docs: $0.docs)
+            }
             let identity = ViewObserverIdentity()
             let release: @Sendable () -> Void = { [weak self] in self?.detach(id: id, mount: mount, identity: identity) }
-            let observer = try await create(mount.state.withLock { $0.value }, release, storage)
+            let observer = try await create(value, release)
             identity.value.withLock { $0 = ObjectIdentifier(observer) }
             do {
                 try context.abortSignal?.throwIfAborted()
                 try state.withLock { state in
                     guard !state.closed else { throw closedError() }
-                    mount.state.withLock { $0.observers[ObjectIdentifier(observer)] = observer }
+                    mount.state.withLock { $0.observers[ObjectIdentifier(observer)] = WindowedView(value: value, min: bounds.min, max: bounds.max, observer: observer) }
                     state.mounts[id] = mount
                 }
                 return observer
@@ -101,9 +140,9 @@ internal final class ConversationViews: Sendable {
         }
     }
     // v1.5.2 CH3: The context controls attachment only. Host callbacks run on the Session line.
-    func observe(id: ConversationID, observer: Observer<ConversationView>, context: ChordContext) async throws -> Observation<ConversationView> {
+    func observe(id: ConversationID, observer: Observer<ConversationView>, context: ChordContext, window: ConversationWindow? = nil) async throws -> Observation<ConversationView> {
         let result = Mutex<(ConversationView, GuardedObserver<WatchCall<ConversationView>>)?>(nil)
-        _ = try await attach(id: id, context: context) { value, release, _ in
+        _ = try await attach(id: id, context: context, window: window) { value, release in
             let guarded = GuardedObserver(advance: observer.advance, end: observer.end,
                 detach: release, report: { self.session.report($0) })
             result.withLock { $0 = (value, guarded) }
@@ -116,9 +155,9 @@ internal final class ConversationViews: Sendable {
         catch { guarded.detach(); throw error }
         return Observation(value: value, detach: { guarded.detach() })
     }
-    func watch(id: ConversationID, context: ChordContext) async throws -> Watch<ConversationView> {
+    func watch(id: ConversationID, context: ChordContext, window: ConversationWindow? = nil) async throws -> Watch<ConversationView> {
         let result = Mutex<Watch<ConversationView>?>(nil)
-        _ = try await attach(id: id, context: context) { value, release, _ in
+        _ = try await attach(id: id, context: context, window: window) { value, release in
             var initial = value
             initial.watchJSON = try JSONValue(encoding: value)
             let watch = Watch(value: initial, replacement: { $0.watchJSON! }, detach: release, report: { self.session.report($0) })
@@ -139,9 +178,9 @@ internal final class ConversationViews: Sendable {
             return watch
         } catch { watch.abort(); throw error }
     }
-    func attachedState(id: ConversationID, context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
+    func attachedState(id: ConversationID, context: ChordContext, window: ConversationWindow? = nil) async throws -> AttachedReplicatedState<ConversationView> {
         let result = Mutex<CommittedStateSource<ConversationView>?>(nil)
-        _ = try await attach(id: id, context: context) { value, release, _ in
+        _ = try await attach(id: id, context: context, window: window) { value, release in
             let source = CommittedStateSource(value: value, release: release)
             result.withLock { $0 = source }
             return ConversationViewObserver(advance: { value, ops, context in source.advance(value: value, ops: ops, context: context) },
@@ -159,15 +198,6 @@ internal final class ConversationViews: Sendable {
         guard let conversation = try await storage.conversation(id, context: context) else {
             throw SessionError.message("Conversation \(id.rawValue) does not exist")
         }
-        // This structural read does not decode model messages.
-        // View.attach already owns the Session line while it builds this mount.
-        let tail = try await session.latestEntryId(id, context: context)
-        var entries: [EntryRecord] = []
-        if let tail {
-            let head = try await session.latestHeadMarker(id, atOrBefore: tail, context: context)
-            let range = try await scanAll { try await storage.scanEntries(.init(conversationId: id, minEntryId: head?.head, maxEntryId: tail, order: .ascending), limit: 256, cursor: $0, context: context) }
-            entries = head.map { [$0] + range.filter { $0.head == nil } } ?? range
-        }
         var docs: [String: JSONObject] = [:]
         var incarnations: [String: ConversationMount.Incarnation] = [:]
         for definition in Self.mounted {
@@ -177,7 +207,43 @@ internal final class ConversationViews: Sendable {
             docs[definition.kind] = loaded.tracker.value.objectValue!
             incarnations[definition.kind] = .init(id: loaded.record.id, version: loaded.valueVersion)
         }
-        return try ConversationMount(value: .init(conversation: conversation, entries: entries, docs: docs), docs: incarnations)
+        return ConversationMount(conversation: conversation, docs: docs, incarnations: incarnations)
+    }
+
+    private func loadWindow(
+        id: ConversationID, bounds: (from: EntryID?, min: Int, max: Int), context: ChordContext
+    ) async throws -> (entries: [EntryRecord], before: EntryID?) {
+        if let from = bounds.from {
+            let since = try await scanUpTo(.init(conversationId: id, minEntryId: from, order: .ascending),
+                                           count: bounds.max + 1, context: context)
+            if since.count <= bounds.max {
+                let previous: EntryRecord?
+                if from.rawValue > 1 {
+                    previous = try await storage.scanEntries(
+                        .init(conversationId: id, maxEntryId: try EntryID(from.rawValue - 1)),
+                        limit: 1, cursor: nil, context: context).items.first
+                } else {
+                    previous = nil
+                }
+                return (since, previous?.id)
+            }
+        }
+        var newest = try await scanUpTo(.init(conversationId: id), count: bounds.min + 1, context: context)
+        let before = newest.count > bounds.min ? newest.removeLast().id : nil
+        newest.reverse()
+        return (newest, before)
+    }
+
+    private func scanUpTo(_ query: EntryQuery, count: Int, context: ChordContext) async throws -> [EntryRecord] {
+        var entries: [EntryRecord] = []
+        var cursor: Cursor?
+        repeat {
+            let page = try await storage.scanEntries(query, limit: Swift.min(256, count - entries.count),
+                                                     cursor: cursor, context: context)
+            entries += page.items
+            cursor = page.next
+        } while cursor != nil && entries.count < count
+        return entries
     }
     private func detach(id: ConversationID, mount: ConversationMount, identity: ViewObserverIdentity) {
         guard let identity = identity.value.withLock({ $0 }) else { return }
@@ -192,65 +258,69 @@ internal final class ConversationViews: Sendable {
         }
         for mount in mounts {
             let observers = mount.state.withLock { Array($0.observers.values) }
-            for observer in observers { observer.closeSession() }
+            for observer in observers { observer.observer.closeSession() }
         }
     }
     private func advance(_ publication: CommitPublication, context: ChordContext) throws {
         let mounts = state.withLock { Array($0.mounts) }
         for (id, mount) in mounts {
-            do {
-                let next = try mount.state.withLock { state -> (ConversationView, ConversationView, [Delta.Op], [ConversationViewObserver]) in
-                    let before = state.value
-                    var entries = before.entries
-                    var docOps: [Delta.Op] = []; var entryOps: [Delta.Op] = []
-                    for change in publication.changes {
-                        if case .entry(let entry) = change, entry.conversationId == id {
-                            let value = try JSONValue(encoding: entry)
-                            if let target = entry.head {
-                                let kept = entries.firstIndex { $0.head == nil && $0.id >= target } ?? entries.count
-                                entryOps.append(.splice(["entries"], index: 0, remove: kept, items: [value]))
-                                entries = [entry] + Array(entries[kept...])
-                            } else {
-                                entryOps.append(.splice(["entries"], index: entries.count, remove: 0, items: [value])); entries.append(entry)
-                            }
-                            continue
-                        }
-                        guard case .document(let change) = change, change.source == nil,
-                              change.conversationId == id, change.record.key == nil,
-                              Self.mounted.contains(where: { $0.kind == change.record.kind }) else { continue }
-                        let kind = change.record.kind; let path: Delta.Path = ["docs", .key(kind)]
-                        let mounted = state.docs[kind]
-                        if let value = change.value {
-                            if mounted?.id == change.record.id, mounted?.version == change.version {
-                                docOps += change.ops.map { prefixedViewOp($0, prefix: path) }
-                            } else {
-                                state.docs[kind] = .init(id: change.record.id, version: change.version!)
-                                docOps.append(.set(path, .object(value)))
-                            }
-                        } else if mounted?.id == change.record.id {
-                            state.docs.removeValue(forKey: kind); docOps.append(.delete(path))
-                        }
+            let next = try mount.state.withLock { state -> ([EntryRecord], [Delta.Op], [String: JSONObject], [WindowedView]) in
+                var appended: [EntryRecord] = []
+                var docOps: [Delta.Op] = []
+                for change in publication.changes {
+                    if case .entry(let entry) = change, entry.conversationId == id {
+                        appended.append(entry)
+                        continue
                     }
-                    let ops = docOps + entryOps
-                    if !ops.isEmpty {
-                        state.tree = try Delta.applyImmutable(state.tree, ops)!
-                        var docs = before.docs
-                        if !docOps.isEmpty {
-                            let mountedDocs = state.tree.objectValue!["docs"]!.objectValue!
-                            for definition in Self.mounted {
-                                let value = mountedDocs[definition.kind]?.objectValue
-                                if docs[definition.kind] != value { docs[definition.kind] = value }
-                            }
+                    guard case .document(let change) = change, change.source == nil,
+                          change.conversationId == id, change.record.key == nil,
+                          Self.mounted.contains(where: { $0.kind == change.record.kind }) else { continue }
+                    let kind = change.record.kind
+                    let path: Delta.Path = ["docs", .key(kind)]
+                    let mounted = state.incarnations[kind]
+                    if let value = change.value {
+                        if mounted?.id == change.record.id, mounted?.version == change.version {
+                            docOps += change.ops.map { prefixedViewOp($0, prefix: path) }
+                        } else {
+                            state.incarnations[kind] = .init(id: change.record.id, version: change.version!)
+                            docOps.append(.set(path, .object(value)))
                         }
-                        state.value = .init(conversation: before.conversation, entries: entries, docs: docs)
+                    } else if mounted?.id == change.record.id {
+                        state.incarnations.removeValue(forKey: kind)
+                        docOps.append(.delete(path))
                     }
-                    return (before, state.value, ops, Array(state.observers.values))
                 }
-                let frameContext = context.withoutAbortSignal()
-                if !next.2.isEmpty { for observer in next.3 { observer.advance?(next.1, next.2, frameContext) } }
-                for observer in next.3 { observer.publication?(next.0, next.1, next.2, publication, frameContext) }
-            } catch {
-                throw error
+                if !docOps.isEmpty {
+                    state.tree = try Delta.applyImmutable(state.tree, docOps)!
+                    let mountedDocs = state.tree.objectValue!["docs"]!.objectValue!
+                    state.docs = Dictionary(uniqueKeysWithValues: mountedDocs.map { ($0.0, $0.1.objectValue!) })
+                }
+                return (appended, docOps, state.docs, Array(state.observers.values))
+            }
+            if next.0.isEmpty && next.1.isEmpty { continue }
+            let inserted = try next.0.map { try JSONValue(encoding: $0) }
+            let frameContext = context.withoutAbortSignal()
+            for windowed in next.3 {
+                let revision = windowed.state.withLock { state -> (ConversationView, [Delta.Op]) in
+                    let previous = state.value
+                    var entries = previous.entries
+                    var before = previous.before
+                    var ops = next.1
+                    if !next.0.isEmpty {
+                        ops.append(.splice(["entries"], index: entries.count, remove: 0, items: inserted))
+                        entries += next.0
+                        if entries.count > windowed.max {
+                            let drop = entries.count - windowed.min
+                            before = entries[drop - 1].id
+                            entries.removeFirst(drop)
+                            ops.append(.splice(["entries"], index: 0, remove: drop, items: []))
+                            ops.append(.set(["before"], .number(Double(before!.rawValue))))
+                        }
+                    }
+                    state.value = .init(conversation: previous.conversation, entries: entries, before: before, docs: next.2)
+                    return (state.value, ops)
+                }
+                windowed.observer.advance?(revision.0, revision.1, frameContext)
             }
         }
     }
@@ -272,25 +342,25 @@ internal func prefixedViewOp(_ op: Delta.Op, prefix: Delta.Path) -> Delta.Op {
 
 extension Conversation {
     /// Attaches the conversation view to committed changes. Cancel it to release the observer.
-    public func viewState(context: ChordContext) async throws -> AttachedReplicatedState<ConversationView> {
+    public func viewState(context: ChordContext, window: ConversationWindow? = nil) async throws -> AttachedReplicatedState<ConversationView> {
         try await withTaskCancellationContext(try bound(context)) { context in
-            try harness.assertOpen(); return try await harness.views.attachedState(id: id, context: context)
+            try harness.assertOpen(); return try await harness.views.attachedState(id: id, context: context, window: window)
         }
     }
     /// Attaches a stream of committed conversation views. Call stop() on the watch to release it.
-    public func watch(context: ChordContext) async throws -> ConversationWatch {
+    public func watch(context: ChordContext, window: ConversationWindow? = nil) async throws -> ConversationWatch {
         try await withTaskCancellationContext(try bound(context)) { context in
-            try harness.assertOpen(); return try await harness.views.watch(id: id, context: context)
+            try harness.assertOpen(); return try await harness.views.watch(id: id, context: context, window: window)
         }
     }
 }
 
 extension Harness {
     /// Observe each conversation change on the Session line. Detach to release the observer.
-    public func observeConversation(_ id: ConversationID, observer: Observer<ConversationView>, context: ChordContext) async throws -> Observation<ConversationView> {
+    public func observeConversation(_ id: ConversationID, observer: Observer<ConversationView>, context: ChordContext, window: ConversationWindow? = nil) async throws -> Observation<ConversationView> {
         try await withTaskCancellationContext(context) { context in
             try assertOpen()
-            return try await views.observe(id: id, observer: observer, context: context)
+            return try await views.observe(id: id, observer: observer, context: context, window: window)
         }
     }
 }

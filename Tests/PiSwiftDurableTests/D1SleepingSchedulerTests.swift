@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness/view.ts:36–48 replaces the deleted event translation test with state observation.
 import Foundation
 import Synchronization
 import Testing
@@ -32,23 +33,6 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
 }
 
 @Suite struct D1SleepingSchedulerTests {
-    @Test func sleepingToolCheckpointRetainsEventArguments() throws {
-        let id = try TaskID(20), conversation = ConversationRecord(id: rootConversationID)
-        let arguments: JSONObject = ["path": "saved.txt", "opaque": ["retained": true]]
-        let record = TaskRecord(id: id, conversationId: rootConversationID, kind: "pi.tool", version: 1,
-            input: .null, state: .sleeping(checkpoint: ["phase": "execute", "arguments": .object(arguments)], until: 10.5))
-        let before = ConversationView(conversation: conversation, entries: [], docs: [:])
-        let live = LiveState(tools: [ToolSlot(callId: "call", name: "read", taskId: id, status: .running)])
-        let after = ConversationView(conversation: conversation, entries: [],
-            docs: ["pi.live": try JSONValue(encoding: live).decode(JSONObject.self)])
-        var held = Set<TaskID>()
-        let events = try translateDurableEvents(conversationId: rootConversationID, before: before, after: after,
-            viewOps: [], publication: CommitPublication(seq: Seq(1), changes: [.task(record)]), held: &held)
-        let event = try #require(events.first)
-        let json = try JSONValue(encoding: event)
-        #expect(json["type"] == "tool_execution_start" && json["args"] == .object(arguments))
-    }
-
     // v1.4.0 scheduler.ts:1358,1430,1482: a stored due sleep resumes at its checkpoint.
     @Test(arguments: [0.0, 100.0, 100.25])
     func dueRecoveryRetainsRecordFields(until: Double) async throws {

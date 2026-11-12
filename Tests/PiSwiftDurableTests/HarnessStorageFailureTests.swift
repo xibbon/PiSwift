@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view.test.ts:299–321 uses conversation watch end state.
 import Synchronization
 import Testing
 import PiSwiftChord
@@ -17,7 +18,7 @@ import PiSwiftDurableTesting
         let idle = Task { try await harness.waitForIdle(context: .background) }
         try await harnessEventually { harness.tasks.taskWaiters.keys.contains(id) && !harness.tasks.idleWaiters.keys.isEmpty }
         let watch = try #require(try await harness.watchDoc(LiveDoc, conversationId: root.id, context: .background))
-        let stream = try await harness.watchEvents(conversationId: root.id, context: .background)
+        let stream = try await root.watch(context: .background)
         try stream.start { _, _ in }
         let failure = HarnessStorageFailure()
         await storage.failNextCommit(failure)

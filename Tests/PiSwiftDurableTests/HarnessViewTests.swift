@@ -91,7 +91,7 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         #expect(recorder.frames[1].value.docs == recorder.frames[0].value.docs)
         await recorder.stop(); try await chat.harness.close(context: .background)
     }
-    @Test func headMarkerCutsEntriesAndKeepsSuffix() async throws {
+    @Test func headMarkersStayInTranscriptOrder() async throws {
         let chat = try await openChat(setup: HarnessChatSetup())
         _ = try await viewNote(chat.root, "a"); let b = try await viewNote(chat.root, "b"); _ = try await viewNote(chat.root, "c")
         let recorder = try await ViewTestRecorder(chat.root)
@@ -100,25 +100,28 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         await recorder.drain()
         _ = try await viewNote(chat.root, "d"); await recorder.drain()
         try await chat.root.reset(context: .background); await recorder.drain()
-        #expect(recorder.frames.map { $0.value.entries.map(\.kind) } == [["summary", "b", "c"], ["summary", "b", "c", "d"], ["pi.reset"]])
-        #expect(recorder.frames[0].ops == [.splice(["entries"], index: 0, remove: 1, items: [try JSONValue(encoding: summary)])])
+        // v1.5.2 D4: harness-view.test.ts:178 keeps summary and reset markers in ID order.
+        #expect(recorder.frames.map { $0.value.entries.map(\.kind) } == [["a", "b", "c", "summary"], ["a", "b", "c", "summary", "d"], ["a", "b", "c", "summary", "d", "pi.reset"]])
+        #expect(recorder.frames[0].ops == [.splice(["entries"], index: 3, remove: 0, items: [try JSONValue(encoding: summary)])])
         #expect(try await recorder.replay() == viewFresh(chat.root))
         await recorder.stop(); try await chat.harness.close(context: .background)
     }
-    @Test func rawHeadBeforeMountedRangeKeepsOnlyMountedEntries() async throws {
+    @Test func rawHeadDoesNotCutTranscript() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), old = try await viewNote(chat.root, "old")
         try await chat.root.reset(context: .background); let recorder = try await ViewTestRecorder(chat.root)
         _ = try await viewNote(chat.root, "summary", head: old.id); await recorder.drain()
-        #expect(recorder.frames[0].value.entries.map(\.kind) == ["summary"])
-        await recorder.stop(); #expect(try await viewFresh(chat.root).entries.map(\.kind) == ["summary", "old"])
+        // v1.5.2 D4: harness-view.test.ts:178 preserves every marker in the full transcript.
+        #expect(recorder.frames[0].value.entries.map(\.kind) == ["old", "pi.reset", "summary"])
+        await recorder.stop(); #expect(try await viewFresh(chat.root).entries.map(\.kind) == ["old", "pi.reset", "summary"])
         try await chat.harness.close(context: .background)
     }
-    @Test func forkHeadCutsInheritedEntries() async throws {
+    @Test func forkHeadKeepsInheritedEntries() async throws {
         let chat = try await openChat(setup: HarnessChatSetup()), a = try await viewNote(chat.root, "a"), b = try await viewNote(chat.root, "b")
         let fork = try await chat.root.fork(at: b.id, options: .init(ownership: .ownerless()), context: .background)
         let recorder = try await ViewTestRecorder(fork); _ = try await viewNote(fork, "summary", head: b.id); await recorder.drain()
         #expect(recorder.initial.entries.map(\.id) == [a.id, b.id])
-        #expect(recorder.frames[0].value.entries.map(\.kind) == ["summary", "b"])
+        // v1.5.2 D4: harness-view.test.ts:204 keeps a fork's head marker in place.
+        #expect(recorder.frames[0].value.entries.map(\.kind) == ["a", "b", "summary"])
         #expect(try await recorder.frames[0].value == viewFresh(fork))
         await recorder.stop(); try await chat.harness.close(context: .background)
     }
@@ -158,7 +161,9 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         // v1.5.2 CH3: harness-view.test.ts:251–268 folds pending commits without a root replacement.
         if case .replace = frame.ops.first { Issue.record("Pending changes must retain delta operations") }
         #expect(try Delta.applyImmutable(JSONValue(encoding: initial), frame.ops) == JSONValue(encoding: frame.value))
-        #expect(frame.value.entries.count == 101)
+        // v1.5.2 D4: harness-view.test.ts:251–269 trims the default 50/100 window.
+        #expect(frame.value.entries.count == 50)
+        #expect(frame.value.before != nil)
         _ = await watch.stop(); try await chat.harness.close(context: .background)
     }
     @Test func independentStateAndWatchRemountAfterLastRelease() async throws {
@@ -240,7 +245,8 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         #expect(context.head?.kind == "pi.compaction" && context.head?.head == u3.id && context.head?.conversationId == fork.id)
         #expect(context.messages.dropFirst().map(textOf) == [compactionText("u3", 100), compactionText("a3", 100)])
         #expect(try await !compactionKinds(chat.root).contains("pi.compaction"))
-        #expect(state.value.entries == context.entries)
+        // v1.5.2 D4: harness-view.test.ts:204 and view.ts:40–42 keep the fork's full transcript.
+        #expect(try await state.value.entries == allEntries(fork))
         state.dispose(); try await chat.harness.close(context: .background)
     }
     // H8 harness-compaction.test.ts:1804.
@@ -249,8 +255,9 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let state = try await chat.root.viewState(context: .background)
         chat.script.appendSummary([.message(chatAssistant("SUMMARY"))])
         _ = try await compactionOutcome(chat, chat.root.compact(context: .background))
-        try await eventually { state.value.entries.first?.kind == "pi.compaction" }
-        #expect(try await state.value.entries == chat.root.context(context: .background).entries)
+        // v1.5.2 D4: harness-view.test.ts:178 and view.ts:40–42 append a summary in ID order.
+        try await eventually { state.value.entries.contains { $0.kind == "pi.compaction" } }
+        #expect(try await state.value.entries == allEntries(chat.root))
         state.dispose(); try await chat.harness.close(context: .background)
     }
     // H5/H6 harness-lifecycle.test.ts:393, view operations.

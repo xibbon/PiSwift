@@ -170,19 +170,26 @@ Import Synchronization for `Mutex`.
 let observed = Mutex<[ConversationView]>([])
 let watch = try await root.watch(context: context)
 let initial = watch.value
-try watch.start { value, ops, _ in
-    // A UI can render value. A remote observer can apply the exact ops.
+try watch.start { call, _ in
+    guard case .value(let value, let ops, _) = call else { return }
+    // A UI can render value. A remote observer can apply the operations.
     observed.withLock { $0.append(value) }
     print(ops.count)
 }
 ```
 
 Call `await watch.stop()` when observation ends. Callbacks are async, Sendable, and serial
-for each watch. Operations are the exact committed Chord operations. A slow watch holds
-at most 100 pending frames. Overflow replaces them with a current snapshot.
-A late observer starts at current state (example 21). `viewState` supplies an attached
-read-only Chord state. Call `dispose` when finished. `watchEvents` and task-graph watches
-supply other committed views. Use `Submission.wait` for a submission's exact outcome.
+for each watch. Pending operations are folded into one callback with the newest value.
+More than 10,000 pending operations become a root replacement.
+
+A conversation watch starts with the newest 50 transcript entries. Its window grows to
+100 entries, then drops the oldest entries to keep 50. `before` identifies the entry
+before the window. Use `ConversationTranscript` to merge windows, load earlier entries,
+and fill gaps. Use `Conversation.context` for the model context.
+
+Render live progress from `pi.live`, queued input from `pi.inbox`, agent settings from
+`pi.agent`, and usage from `pi.usage`. Task-graph watches supply task state. Use
+`Submission.wait` for a submission's exact outcome.
 
 ## Storage
 

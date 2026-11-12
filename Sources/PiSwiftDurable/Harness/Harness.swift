@@ -111,9 +111,9 @@ public final class Harness: Sendable {
             try assertOpen(); return try await session.commit(change, context: context)
         }
     }
-    /// Adds a listener on the session mutation line after commit adoption; it must not call session operations.
-    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
-        try assertOpen(); return try session.subscribeCommits(listener)
+    /// Attaches a synchronous observer of committed changes.
+    public func observeCommits(_ observer: CommitObserver) throws -> CommitObservation {
+        try assertOpen(); return try session.observeCommits(observer)
     }
     /// Adds a listener called when close seals session admission; it must not call session operations.
     public func subscribeClose(_ listener: @escaping @Sendable () -> Void) throws -> SessionSubscription {

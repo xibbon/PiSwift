@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view-run.test.ts:336–375 observes task results instead of event ends.
 import Foundation
 import Synchronization
 import Testing
@@ -84,11 +85,9 @@ private func nestedRestartWorker(_ name: String, started: HarnessChatSignal,
         await started.wait(); await gated.wait()
         try await first.harness.close(context: .background)
         let second = try await nestedRestartOpen(path, setup)
-        let (stream, log) = try await eventListen(second)
         try second.harness.resume()
         #expect(try await nestedRestartWait(second, id).status == "done")
         try await second.harness.waitForIdle(context: .background)
-        _ = await stream.stop()
         #expect(runs.values == ["started"])
         let nested = try await nestedRestartTasks(second)
         #expect(nested.count == 2)
@@ -97,12 +96,6 @@ private func nestedRestartWorker(_ name: String, started: HarnessChatSignal,
             guard case .terminal(let outcome, _) = task.state else { Issue.record("Expected terminal nested call"); continue }
             #expect(outcome.status == "aborted")
         }
-        let ends = log.events.filter { $0["type"] == "tool_execution_end" }
-        let interrupted = try #require(ends.first { $0["toolCallId"] == "c1/1" }?["result"])
-        #expect(interrupted["diagnostics"]?[0]?["code"] == "interrupted")
-        #expect(interrupted["isError"] == true && interrupted["details"] == ["step": 1])
-        #expect(interrupted["structuredOutput"] == nil)
-        #expect(ends.first { $0["toolCallId"] == "c1/2" }?["result"]?["diagnostics"]?[0]?["code"] == "abandoned")
         let results = try await nestedRestartResults(second)
         #expect(results.count == 1 && results[0].toolCallId == "c1" && results[0].isError)
         #expect(try await second.harness.snapshot(LiveDoc, conversationId: second.root.id, context: .background) == LiveState())

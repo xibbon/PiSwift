@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness/view.ts:36–48 replaces the deleted event example output with view state.
 import Foundation
 import Synchronization
 import Testing
@@ -136,48 +137,17 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
             let live = try value.docs["pi.live"].map { try JSONValue.object($0).decode(LiveState.self) }
             if let slot = live?.tools?.first, slot.status == .running { viewOutputs.append(slot.output ?? "") }
         }
-        let stream = try await chat.harness.watchEvents(conversationId: chat.root.id, context: .background)
-        #expect(stream.snapshot.tools.map { "\($0.name) \($0.status.rawValue)" } == ["count running"])
-        #expect(stream.snapshot.tools.first?.output == prefix)
-        let output = Mutex(prefix), events = AdvancedExampleLog<DurableAgentEvent>()
-        let streamedText = Mutex<[Int: String]>([:]), partialText = AdvancedExampleLog<String>()
-        try stream.start { batch, _ in
-            for event in batch {
-                events.append(event)
-                switch event {
-                case .messageStart(let message) where message["role"] == "assistant":
-                    streamedText.withLock { $0 = advancedTextBlocks(message) }
-                case .messageEnd(let entry):
-                    // The final entry replaces the partial. The progress throttle
-                    // can omit the last partial update before this event.
-                    if let message = entry.model?.first?.objectValue, message["role"] == "assistant" {
-                        streamedText.withLock { $0 = advancedTextBlocks(message) }
-                    }
-                case .messageUpdate(_, let changes):
-                    for change in changes {
-                        streamedText.withLock { blocks in
-                            switch change {
-                            case .textStart(let index, let block):
-                                blocks[index] = block["text"]?.stringValue ?? ""
-                            case .block(let index, let block) where block["type"] == "text":
-                                blocks[index] = block["text"]?.stringValue ?? ""
-                            case .textDelta(let index, let delta): blocks[index, default: ""] += delta
-                            case .message(let message): blocks = advancedTextBlocks(message)
-                            default: break
-                            }
-                        }
-                        partialText.append(streamedText.withLock { blocks in blocks.keys.sorted().map { blocks[$0] ?? "" }.joined() })
-                    }
-                default: break
-                }
-                if case .toolExecutionUpdate(_, _, let change?, _, _, _, _, _) = event {
-                    output.withLock { value in
-                        switch change {
-                        case .set(let text): value = text
-                        case .delta(let trim, let append): value = String(value.dropFirst(trim ?? 0)) + (append ?? "")
-                        }
-                    }
-                }
+        let stream = try await chat.root.watch(context: .background)
+        let initial = try JSONValue.object(#require(stream.value.docs["pi.live"])).decode(LiveState.self)
+        #expect(initial.tools?.map { "\($0.name) \($0.status.rawValue)" } == ["count running"])
+        #expect(initial.tools?.first?.output == prefix)
+        let partialText = AdvancedExampleLog<String>()
+        try stream.start { call, _ in
+            guard case .value(let value, _, _) = call else { return }
+            let live = try value.docs["pi.live"].map { try JSONValue.object($0).decode(LiveState.self) }
+            if let message = live?.generation?.message {
+                let blocks = advancedTextBlocks(message)
+                partialText.append(blocks.keys.sorted().map { blocks[$0] ?? "" }.joined())
             }
         }
         release.signal()
@@ -192,14 +162,10 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
         #expect(try await input.wait(context: .background).status == "done")
         try await chat.harness.waitForIdle(context: .background)
         await stream.waitUntilIdle()
-        #expect(output.withLock { $0 } == full)
         #expect(viewOutputs.values.contains(full))
-        #expect(streamedText.withLock { blocks in blocks.keys.sorted().map { blocks[$0] ?? "" }.joined() } == answer)
+        #expect(stream.value.entries.contains { (try? textOf($0.messages()?.first)) == answer })
         #expect(!partialText.values.isEmpty)
         #expect(partialText.values.allSatisfy { answer.hasPrefix($0) })
-        #expect(events.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == answer }; return false })
-        #expect(!events.values.contains { if case .toolExecutionStart = $0 { return true }; return false })
-        #expect(events.values.contains { if case .messageUpdate(_, let changes) = $0 { return changes.contains { if case .textDelta = $0 { return true }; return false } }; return false })
         _ = await stream.stop(); subscription.cancel(); view.dispose()
         try await chat.harness.close(context: .background)
     }
@@ -207,8 +173,8 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
     // 22-subagent-foreground.ts: the tool owns the child and returns its answer.
     @Test func foregroundSubagent() async throws {
         let setup = HarnessChatSetup()
-        let childIDs = AdvancedExampleLog<ConversationID>(), childEvents = AdvancedExampleLog<DurableAgentEvent>()
-        let childWatches = AdvancedExampleLog<DurableAgentEventWatch>()
+        let childIDs = AdvancedExampleLog<ConversationID>(), childViews = AdvancedExampleLog<ConversationView>()
+        let childWatches = AdvancedExampleLog<Watch<ConversationView>>()
         let harnessCell = Mutex<Harness?>(nil)
         let extensionName = "subagent"
         let tool = try advancedTool("subagent", replay: .safe) { arguments, api, context in
@@ -223,8 +189,9 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
             childIDs.append(child)
             try await api.details(["conversationId": .number(Double(child.rawValue))], context)
             let harness = try #require(harnessCell.withLock { $0 })
-            let watch = try await harness.watchEvents(conversationId: child, context: context)
-            try watch.start { events, _ in for event in events { childEvents.append(event) } }
+            let childHandle = try #require(try await harness.conversation(id: child, context: context))
+            let watch = try await childHandle.watch(context: context)
+            try watch.start { call, _ in if case .value(let value, _, _) = call { childViews.append(value) } }
             childWatches.append(watch)
             let handle = try #require(try await api.conversation(id: child, context: context))
             let submission = try await handle.submit(.input(content: .text(taskText), requestId: "subagent:\(api.taskId.rawValue)"), context: context)
@@ -242,23 +209,21 @@ private func advancedShow(_ conversation: Conversation, label: String) async thr
             .message(chatAssistant("2, 3, and 5.")), .message(chatAssistant("The subagent says: 2, 3, and 5."))])
         let chat = try await openChat(setup: setup)
         harnessCell.withLock { $0 = chat.harness }
-        let parentEvents = AdvancedExampleLog<DurableAgentEvent>()
-        let watch = try await chat.harness.watchEvents(conversationId: chat.root.id, context: .background)
-        try watch.start { events, _ in for event in events { parentEvents.append(event) } }
+        let parentViews = AdvancedExampleLog<ConversationView>()
+        let watch = try await chat.root.watch(context: .background)
+        try watch.start { call, _ in if case .value(let value, _, _) = call { parentViews.append(value) } }
         let input = try await chat.root.submit(.input(content: .text("Use the subagent tool to find three prime numbers, then tell me what it said.")), context: .background)
         #expect(try await input.wait(context: .background).status == "done")
         try await chat.harness.waitForIdle(context: .background)
         await watch.waitUntilIdle()
         for childWatch in childWatches.values { await childWatch.waitUntilIdle(); _ = await childWatch.stop() }
-        #expect(parentEvents.values.contains { if case .toolExecutionStart(_, "subagent", let args, _, _, _) = $0 { return args["task"] == "Name three prime numbers." }; return false })
-        #expect(parentEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "The subagent says: 2, 3, and 5." }; return false })
-        #expect(childEvents.values.contains { if case .messageEnd(let entry) = $0 { return (try? textOf(entry.messages()?.first)) == "2, 3, and 5." }; return false })
+        #expect(watch.value.entries.contains { (try? textOf($0.messages()?.first)) == "The subagent says: 2, 3, and 5." })
+        #expect(childViews.values.contains { value in value.entries.contains { (try? textOf($0.messages()?.first)) == "2, 3, and 5." } })
         let childID = try #require(childIDs.values.first)
-        #expect(parentEvents.values.contains {
-            if case .toolExecutionUpdate(_, "subagent", _, let details, _, _, _, _) = $0 {
-                return details?["conversationId"] == .number(Double(childID.rawValue))
-            }
-            return false
+        #expect(parentViews.values.contains { value in
+            value.docs["pi.live"]?["tools"]?.arrayValue?.contains {
+                $0["details"]?["conversationId"] == .number(Double(childID.rawValue))
+            } == true
         })
         let child = try #require(try await chat.harness.conversation(id: childID, context: .background))
         #expect(try await child.agent(context: .background).tools.isEmpty)

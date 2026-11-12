@@ -128,9 +128,12 @@ internal func openDurable(_ options: OpenDurableOptions,
         let summaries = try await runtimeSummaries(opened)
         // v1.5.2 CH3: Durable's view source is now a Chord Watch (harness/view.ts:200-218).
         let attached = try await root.watch(context: .background)
+        // v1.5.2 D4: the library watch is bounded (harness/view.ts:277-299).
+        // Until D10 adds transcript paging to the host, seed the existing full display from pages.
+        let displayed = try await runtimeFullConversationView(root, window: attached.value)
         let source = RuntimeViewSource(DurableView(
             session: .init(id: location.id, directory: location.directory, cwd: location.cwd),
-            conversation: attached.value, conversations: summaries,
+            conversation: displayed, conversations: summaries,
             models: models.available.map {
                 ModelSummary(provider: $0.provider, modelId: $0.id, name: $0.name, contextWindow: $0.contextWindow)
             }))
@@ -172,6 +175,19 @@ internal func openDurable(_ options: OpenDurableOptions,
         }.value
         throw error
     }
+}
+
+/// Seeds this host's existing full transcript display from storage pages.
+private func runtimeFullConversationView(_ conversation: Conversation, window: ConversationView) async throws -> ConversationView {
+    var entries: [EntryRecord] = []
+    var cursor: Cursor?
+    repeat {
+        let page = try await conversation.entries(limit: 256, cursor: cursor, context: .background)
+        entries += page.items
+        cursor = page.next
+    } while cursor != nil
+    entries.reverse()
+    return ConversationView(conversation: window.conversation, entries: entries, docs: window.docs)
 }
 
 private func runtimeSummaries(_ harness: Harness) async throws -> [ConversationSummary] {
@@ -264,7 +280,7 @@ private actor DurableRuntime {
     let source: RuntimeViewSource
     var current: Conversation
     var conversation: ConversationWatch
-    var commits: SessionSubscription?
+    var commits: CommitObservation?
     var tasks: TaskGraphWatch?
     var tasksVisible = false
     var conversationGeneration = 0
@@ -287,9 +303,9 @@ private actor DurableRuntime {
         let graph = try await harness.watchTaskGraph(context: .background)
         guard !closed else { _ = await graph.stop(); return }
         tasks = graph
-        commits = try harness.subscribeCommits { [source, graph] publication, _ in
-            source.record(publication, graph: graph.value)
-        }
+        commits = try harness.observeCommits(CommitObserver(
+            advance: { [source, graph] publication, _ in source.record(publication, graph: graph.value) },
+            end: { _ in }))
         for node in graph.value.tasks.values.sorted(by: { $0.id < $1.id }) {
             if let record = try await harness.getTask(id: node.id, context: .background) {
                 source.recordRestarts(record)
@@ -431,16 +447,18 @@ private actor DurableRuntime {
         }
         let nextState = try await next.watch(context: .background)
         guard !closed else { _ = await nextState.stop(); return }
+        let displayed = try await runtimeFullConversationView(next, window: nextState.value)
         conversationGeneration += 1
         _ = await conversation.stop()
         current = next; conversation = nextState
+        source.replaceConversation(displayed)
         try attachConversation()
     }
     func close() async {
         if let closing { await closing.value; return }
         closed = true
         conversationGeneration += 1
-        commits?.cancel(); commits = nil
+        commits?.detach(); commits = nil
         _ = await conversation.stop()
         await closeTasks()
         let pending = Array(watches.values)

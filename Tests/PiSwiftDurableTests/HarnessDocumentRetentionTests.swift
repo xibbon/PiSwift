@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view-run.test.ts:122–173 observes tool output in the live view.
 import Testing
 import PiSwiftChord
 @testable import PiSwiftDurable
@@ -66,12 +67,12 @@ import PiSwiftDurableTesting
 
     // Upstream session-document-retention.test.ts: case 19.
     @Test func immediateEvictionPreservesStreamedToolEvents() async throws {
-        let evicted = try await streamedEvents(retention: 0)
-        let retained = try await streamedEvents(retention: 600000)
+        let evicted = try await streamedViews(retention: 0)
+        let retained = try await streamedViews(retention: 600000)
         #expect(evicted == retained)
     }
 
-    private func streamedEvents(retention: Double) async throws -> [JSONValue] {
+    private func streamedViews(retention: Double) async throws -> [JSONValue] {
         let setup = HarnessChatSetup(settings: .init(progress: .init(outputIntervalMs: 0), documentRetentionMs: retention))
         let releases = (0..<3).map { _ in HarnessChatSignal() }
         try installHarnessTool(harnessTestTool("steps", execute: { _, api, _ in
@@ -83,24 +84,27 @@ import PiSwiftDurableTesting
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("steps", [:], "s1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup)
-        let (stream, log) = try await eventListen(opened)
+        let stream = try await opened.root.watch(context: .background)
+        let outputs = SessionTestLog<JSONValue>()
+        try stream.start { call, _ in
+            guard case .value(let value, _, _) = call,
+                  let output = value.docs["pi.live"]?["tools"]?[0]?["output"] else { return }
+            if outputs.values.last != output { outputs.append(output) }
+        }
         let input = try await generationSubmit(opened)
         for index in releases.indices {
-            try await log.waitForType("tool_execution_update", count: index + 1)
+            let expected = ["a\n", "a\nb\n", "a\nb\nc\n"][index]
+            try await eventually { outputs.values.contains(.string(expected)) }
             releases[index].signal()
         }
         _ = try await input.wait(context: .background)
         try await opened.harness.waitForIdle(context: .background)
-        try await log.waitForDone(input.id)
+        await stream.waitUntilIdle()
+        let entries = stream.value.entries
+        #expect(entries.contains { $0.model?.first?["content"]?[0]?["text"] == "done" })
         _ = await stream.stop()
         try await opened.harness.close(context: .background)
-        let events = log.events
-        #expect(events.filter { $0["type"] == "tool_execution_update" }.count == 3)
-        #expect(events.contains { $0["type"] == "message_end" && $0["entry"]?["model"]?[0]?["content"]?[0]?["text"] == "done" })
-        return events.map { event in
-            event["type"] == "tool_execution_update"
-                ? ["type": event["type"]!, "output": event["output"] ?? .null]
-                : event["type"] ?? .null
-        }
+        return outputs.values
+
     }
 }

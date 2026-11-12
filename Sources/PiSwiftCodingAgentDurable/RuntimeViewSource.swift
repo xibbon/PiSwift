@@ -54,6 +54,20 @@ internal final class RuntimeViewSource: DurableViewSource {
 
     func updateConversation(_ value: ConversationView) {
         update { view in
+            // v1.5.2 D4: retain the transcript already shown by this host while the watch trims.
+            var entries = view.conversation.conversation.id == value.conversation.id ? view.conversation.entries : []
+            let known = Set(entries.map(\.id))
+            entries += value.entries.filter { !known.contains($0.id) }
+            entries.sort { $0.id < $1.id }
+            let displayed = ConversationView(conversation: value.conversation, entries: entries, docs: value.docs)
+            view = DurableView(session: view.session, conversation: displayed,
+                               conversations: view.conversations, models: view.models,
+                               notices: view.notices, tasks: view.tasks, terminal: view.terminal)
+        }
+    }
+
+    func replaceConversation(_ value: ConversationView) {
+        update { view in
             view = DurableView(session: view.session, conversation: value,
                                conversations: view.conversations, models: view.models,
                                notices: view.notices, tasks: view.tasks, terminal: view.terminal)

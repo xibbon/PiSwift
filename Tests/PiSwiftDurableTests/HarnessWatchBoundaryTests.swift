@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view.test.ts:251–269 folds pending view operations.
 import Testing
 import PiSwiftChord
 import PiSwiftDurableTesting
@@ -24,17 +25,19 @@ import PiSwiftDurableTesting
         _ = await watch.stop(); try await opened.harness.close(context: .background)
     }
 
-    @Test(.timeLimit(.minutes(1))) func eventAdapterDeliversAll100PendingBatchesOnceInOrder() async throws {
+    @Test(.timeLimit(.minutes(1))) func conversationWatchFoldsPendingEntriesIntoOneValue() async throws {
         let opened = try await openChat(setup: HarnessChatSetup())
-        let watch = try await opened.harness.watchEvents(conversationId: opened.root.id, context: .background)
-        var entries: [EntryID] = []
-        for _ in 0..<100 { entries.append(try await failureNote(opened.root).id) }
-        let log = HarnessEventLog()
-        try log.start(watch)
+        let watch = try await opened.root.watch(context: .background)
+        let initial = try JSONValue(encoding: watch.value)
+        for _ in 0..<100 { _ = try await failureNote(opened.root) }
+        let calls = SessionTestLog<WatchCall<ConversationView>>()
+        try watch.start { call, _ in calls.append(call) }
         await watch.waitUntilIdle()
-        #expect(log.batches.count == 100)
-        #expect(log.types == Array(repeating: "entry_appended", count: 100))
-        #expect(log.events.compactMap { $0["entry"]?["id"]?.intValue } == entries.map { Int($0.rawValue) })
+        #expect(calls.count == 1)
+        guard case .value(let value, let ops, _) = try #require(calls.values.first) else { return }
+        #expect(value == watch.value)
+        #expect(try Delta.applyImmutable(initial, ops) == JSONValue(encoding: value))
+        #expect(!ops.isEmpty)
         _ = await watch.stop(); try await opened.harness.close(context: .background)
     }
 }

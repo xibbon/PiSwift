@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view-run.test.ts:174–206 observes retry and failure in pi.live.
 import Foundation
 import Testing
 import PiSwiftAI
@@ -30,31 +31,24 @@ private struct CompactionHookFailure: Error, CustomStringConvertible {
     }
 
     // Upstream harness-compaction.test.ts:1008–1042; intake D19.
-    @Test func failureRemainsInLiveSnapshotAndEndEventUntilSummary() async throws {
+    @Test func failureRemainsInLiveViewUntilSummary() async throws {
         let chat = try await compactionOpen(contextWindow: 2000)
         try await compactionHistory(chat)
         compactionSetPolicy(chat, compactionBackgroundPolicy)
-        let (stream, log) = try await eventListen(chat.opened)
         chat.script.appendSummary([.message(compactionFailure("bad request"))])
         try await compactionTurn(chat, compactionText("u4", 100), compactionText("a4", 100))
-        try await log.waitForType("compaction_end")
+        try await eventually { try await compactionLive(chat).compactionFailure != nil }
         let failure = try #require(await compactionLive(chat).compactionFailure)
         #expect(failure.reason == .threshold && failure.error == "Summarization failed: bad request")
-        #expect(log.events.first { $0["type"] == "compaction_end" } == [
-            "type": "compaction_end", "taskId": .number(Double(failure.taskId.rawValue)),
-            "reason": "threshold", "error": "Summarization failed: bad request"])
-        let late = try await chat.harness.watchEvents(conversationId: chat.root.id, context: .background)
-        #expect(late.snapshot.compactionFailure == failure)
-        #expect(try JSONValue(encoding: late.snapshot).decode(DurableAgentSnapshot.self).compactionFailure == failure)
+        let late = try await chat.root.watch(context: .background)
+        let live = try JSONValue.object(#require(late.value.docs["pi.live"])).decode(LiveState.self)
+        #expect(live.compactionFailure == failure)
         _ = await late.stop()
         compactionSetPolicy(chat, compactionManualPolicy)
         chat.script.appendSummary([.message(chatAssistant("SUMMARY"))])
         let manual = try await chat.root.compact(context: .background)
         #expect(try await compactionOutcome(chat, manual).status == "completed")
         #expect(try await compactionLive(chat).compactionFailure == nil)
-        try await log.waitForType("compaction_end", count: 2)
-        #expect(log.events.first { $0["type"] == "compaction_end" && $0["taskId"] == .number(Double(manual.rawValue)) }?["error"] == nil)
-        _ = await stream.stop()
         try await chat.harness.close(context: .background)
     }
 
@@ -169,7 +163,6 @@ private struct CompactionHookFailure: Error, CustomStringConvertible {
         #expect(blockingCompactionFailure(.faulted(error: .init(message: "fault"))) == "Compaction failed: fault")
         #expect(blockingCompactionFailure(.orphaned(reason: "unknown")) == "Compaction failed: unknown")
         #expect(blockingCompactionFailure(.aborted()) == "Compaction was aborted")
-        let end = DurableAgentEvent.compactionEnd(taskId: try TaskID(7), reason: .threshold, error: "failed")
-        #expect(try JSONValue(encoding: end).decode(DurableAgentEvent.self) == end)
+
     }
 }

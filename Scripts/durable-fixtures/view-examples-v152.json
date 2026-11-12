@@ -1,0 +1,91 @@
+{
+  "tag": "v1.5.2",
+  "provenance": {
+    "source": "Unmodified tagged examples and tagged library source from mirror-v152.mjs",
+    "dependencies": "typebox@1.3.27, partial-json@0.1.7, diff@8.0.4 from the offline npm cache",
+    "capture": "Original stdout and JSON snapshots of console.log arguments; no example edits"
+  },
+  "swiftLimitations": {
+    "36-durable-views": "PiSwiftChord has no local, defineFacet, createHost, openStore, sqliteBackend, self.open, self.follow, self.derive, or member watch API. PiSwiftDurable has no StoreStorage adapter. The Swift test checks Durable observer values and commit counts only; it does not claim host member, derive batching, host close, or host-store adoption parity."
+  },
+  "examples": [
+    {
+      "name": "31-transcript",
+      "source": "packages/durable/test/examples/31-transcript.ts",
+      "stdout": "attach                       [load earlier] 191..200\n15 more, live                [load earlier] 191..215\nload earlier                 [load earlier] 171..215\nresume after 40 missed       [load earlier] 171..215 [load more] 246..255\nfill gap                     [load earlier] 171..235 [load more] 246..255\nfill gap                     [load earlier] 171..255\nresume after 3 missed        window: 3 entries\n                             [load earlier] 171..258\n",
+      "lines": [
+        "attach                       [load earlier] 191..200",
+        "15 more, live                [load earlier] 191..215",
+        "load earlier                 [load earlier] 171..215",
+        "resume after 40 missed       [load earlier] 171..215 [load more] 246..255",
+        "fill gap                     [load earlier] 171..235 [load more] 246..255",
+        "fill gap                     [load earlier] 171..255",
+        "resume after 3 missed        window: 3 entries",
+        "                             [load earlier] 171..258"
+      ],
+      "calls": [
+        [
+          "attach                       [load earlier] 191..200"
+        ],
+        [
+          "15 more, live                [load earlier] 191..215"
+        ],
+        [
+          "load earlier                 [load earlier] 171..215"
+        ],
+        [
+          "resume after 40 missed       [load earlier] 171..215 [load more] 246..255"
+        ],
+        [
+          "fill gap                     [load earlier] 171..235 [load more] 246..255"
+        ],
+        [
+          "fill gap                     [load earlier] 171..255"
+        ],
+        [
+          "resume after 3 missed        window: 3 entries"
+        ],
+        [
+          "                             [load earlier] 171..258"
+        ]
+      ]
+    },
+    {
+      "name": "36-durable-views",
+      "source": "packages/durable/test/examples/36-durable-views.ts",
+      "stdout": "frame: [ 'example.first' ] [[\"p\",[\"kinds\"],0,0,[\"example.first\"]]]\nframe: [ 'example.first', 'example.second' ] [[\"p\",[\"kinds\"],1,0,[\"example.second\"]]]\nmember value: { kinds: [ 'example.first', 'example.second' ], tasks: 0 }\n",
+      "lines": [
+        "frame: [ 'example.first' ] [[\"p\",[\"kinds\"],0,0,[\"example.first\"]]]",
+        "frame: [ 'example.first', 'example.second' ] [[\"p\",[\"kinds\"],1,0,[\"example.second\"]]]",
+        "member value: { kinds: [ 'example.first', 'example.second' ], tasks: 0 }"
+      ],
+      "calls": [
+        [
+          "frame:",
+          [
+            "example.first"
+          ],
+          "[[\"p\",[\"kinds\"],0,0,[\"example.first\"]]]"
+        ],
+        [
+          "frame:",
+          [
+            "example.first",
+            "example.second"
+          ],
+          "[[\"p\",[\"kinds\"],1,0,[\"example.second\"]]]"
+        ],
+        [
+          "member value:",
+          {
+            "kinds": [
+              "example.first",
+              "example.second"
+            ],
+            "tasks": 0
+          }
+        ]
+      ]
+    }
+  ]
+}

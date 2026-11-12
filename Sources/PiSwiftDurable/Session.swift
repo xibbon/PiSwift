@@ -372,17 +372,6 @@ public final class Session: Sendable {
         defer { line.release() }
         state.withLock { clearDocumentCache(&$0) }
     }
-    /// The listener runs on the line after adoption. It must not block or call Session operations.
-    public func subscribeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) -> Void) throws -> SessionSubscription {
-        let id = try state.withLock { state in
-            try failureLatch.check()
-            if state.closing != nil { throw SessionError.closed }
-            state.nextListener += 1
-            let id = state.nextListener
-            state.commits.append(CommitListener(id: id, call: listener)); return id
-        }
-        return SessionSubscription { [weak self] in self?.state.withLock { $0.commits.removeAll { $0.id == id } } }
-    }
     /// The listener runs when close seals admission. It must not block or call Session operations.
     public func subscribeClose(_ listener: @escaping @Sendable () -> Void) throws -> SessionSubscription {
         let id = try state.withLock { state in

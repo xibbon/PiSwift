@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-structured-output.test.ts:203–269 observes returned and stored results.
 import Foundation
 import PiSwiftAI
 import PiSwiftChord
@@ -29,14 +30,12 @@ private func nestedValueCall(_ name: String) -> AssistantMessage {
 private struct NestedValues {
     var received: [NestedToolExecutionResult]
     var stored: [NestedToolExecutionResult]
-    var ends: [NestedToolExecutionResult]
     var entries: [EntryRecord]
 }
 
 private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value"], hooks: ToolHooks? = nil) async throws -> NestedValues {
     let setup = HarnessChatSetup()
     let received = Mutex<[NestedToolExecutionResult]>([]), stored = Mutex<[NestedToolExecutionResult]>([])
-    let ends = Mutex<[NestedToolExecutionResult]>([])
     let probe = try ToolRegistration(name: "probe", description: "probe", parameters: ["type": "object"]) { _, api, context in
         for name in names {
             let result = try await api.executeTool(name, arguments: [:], context: context)
@@ -59,23 +58,13 @@ private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value
             } catch { Issue.record(error) }
         }
     }
-    let stream = try await watchEvents(opened.harness, conversationId: opened.root.id, context: .background)
-    try stream.start { events, _ in
-        for event in events {
-            if case .toolExecutionEnd(_, _, _, _, let parent, _, let result) = event, parent != nil, let result {
-                ends.withLock { $0.append(result) }
-            }
-        }
-    }
     let input = try await opened.root.submit(.input(content: .text("go")), context: .background)
     #expect(try await input.wait(context: .background).status == "done")
     try await opened.harness.waitForIdle(context: .background)
-    await stream.waitUntilIdle()
-    _ = await stream.stop()
     subscription.cancel()
     let entries = try await allEntries(opened.root)
     try await opened.harness.close(context: .background)
-    return .init(received: received.withLock { $0 }, stored: stored.withLock { $0 }, ends: ends.withLock { $0 }, entries: entries)
+    return .init(received: received.withLock { $0 }, stored: stored.withLock { $0 }, entries: entries)
 }
 
 @Suite(.timeLimit(.minutes(1))) struct HarnessNestedStructuredOutputTests {
@@ -102,8 +91,8 @@ private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value
         #expect(result.diagnostics.map(\.code) == [nil, "truncated"])
     }
 
-    // :133. The exact stored value also reaches the caller and the event stream.
-    @Test func storedCallerAndEventResultsMatchAndKeepNull() async throws {
+    // :133. The exact stored value also reaches the caller.
+    @Test func storedCallerResultsMatchAndKeepNull() async throws {
         let run = try await nestedValues([
             nestedReturning("plain", .init(output: [.text(.init(text: "a"))])),
             nestedReturning("nothing", .init(structuredOutput: .null), schema: ["type": "null"])
@@ -112,7 +101,6 @@ private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value
         #expect(run.received[0].structuredOutput == "a")
         #expect(run.received[1].structuredOutput == .null)
         #expect(run.stored == run.received)
-        #expect(run.ends == run.received)
         for result in run.received {
             let value = try JSONValue(encoding: result)
             #expect(value["output"] == nil)

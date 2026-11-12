@@ -1,3 +1,4 @@
+// v1.5.2 D4: harness-view.test.ts:128–152 replays view operations instead of event batches.
 import Foundation
 import Synchronization
 import Testing
@@ -34,7 +35,7 @@ private final class HostExamplePartialPrint: Sendable {
     }
 }
 
-enum HostExampleMode: String, CaseIterable, Sendable { case events, ops }
+enum HostExampleMode: String, CaseIterable, Sendable { case views, ops }
 enum HostExampleStorage: String, CaseIterable, Sendable { case memory, sqlite, jsonl }
 
 private func hostExampleDirectory() throws -> URL {
@@ -151,25 +152,20 @@ private func hostExampleJSONRun(directory: URL, models: any DurableModels, model
     do {
         let root = try await harness.root(options: .init(agent: .init(
             model: .set(model))), context: .background)
-        let events: DurableAgentEventWatch?, watch: Watch<ConversationView>?
-        switch mode {
-        case .events:
-            let stream = try await harness.watchEvents(conversationId: root.id, context: .background)
-            try print.json(stream.snapshot)
-            try stream.start { values, _ in for value in values { try print.json(value) } }
-            events = stream; watch = nil
-        case .ops:
-            let stream = try await root.watch(context: .background)
-            try print.json(["view": JSONValue(encoding: stream.value)])
-            try stream.start { call, _ in if case .value(_, let ops, _) = call { try print.json(["ops": JSONValue(encoding: ops)]) } }
-            events = nil; watch = stream
+        let watch = try await root.watch(context: .background)
+        try print.json(["view": JSONValue(encoding: watch.value)])
+        try watch.start { call, _ in
+            guard case .value(let value, let ops, _) = call else { return }
+            switch mode {
+            case .views: try print.json(["view": JSONValue(encoding: value)])
+            case .ops: try print.json(["ops": JSONValue(encoding: ops)])
+            }
         }
         let submission = try await root.submit(.input(content: .text("What is in this directory?")), context: .background)
         let settled = try await submission.wait(context: .background)
         try await harness.waitForIdle(context: .background)
         // Drain committed frames instead of using the upstream zero-delay timer.
-        if let events { await events.waitUntilIdle(); _ = await events.stop() }
-        if let watch { await watch.waitUntilIdle(); _ = await watch.stop() }
+        await watch.waitUntilIdle(); _ = await watch.stop()
         let entry = try await hostExampleAnswerEntry(root, settled: settled)
         if verifyFaux {
             #expect(try hostExampleAnswerText(entry) == hostExampleAnswer)
@@ -178,25 +174,14 @@ private func hostExampleJSONRun(directory: URL, models: any DurableModels, model
         let lines = try print.parsed()
         #expect(lines.count > 1)
         switch mode {
-        case .events:
-            let snapshot = try #require(lines.first)
-            #expect(snapshot["type"] == "snapshot")
-            #expect(snapshot["entries"] == [])
-            #expect(snapshot["agent"]?["model"] == ["provider": .string(model.provider), "modelId": .string(model.modelId)])
-            for line in lines { _ = try line.decode(DurableAgentEvent.self) }
-            let types = lines.compactMap { $0["type"]?.stringValue }
-            for type in ["run_start", "turn_start", "message_start", "message_end", "turn_end", "run_end", "submission", "usage_changed"] {
-                #expect(types.contains(type))
-            }
-            if verifyFaux {
-                #expect(types.contains("tool_execution_end"))
-                let tool = try #require(lines.first { $0["type"] == "tool_execution_start" })
-                #expect(tool["toolCallId"] == "call-1")
-                #expect(tool["toolName"] == "bash")
-                #expect(tool["args"] == ["command": "ls"])
-            }
-            #expect(lines.contains { $0["type"] == "message_end" && $0["entry"]?["id"] == .number(Double(entry.id.rawValue)) })
-            #expect(lines.contains { $0["type"] == "submission" && $0["record"]?["id"] == .number(Double(submission.id.rawValue)) && $0["record"]?["status"] == "done" })
+        case .views:
+            let first = try #require(lines.first?["view"]).decode(ConversationView.self)
+            #expect(first.entries.isEmpty)
+            #expect(first.docs["pi.agent"]?["model"] == ["provider": .string(model.provider), "modelId": .string(model.modelId)])
+            let final = try #require(lines.last?["view"]).decode(ConversationView.self)
+            #expect(final == watch.value)
+            #expect(final.entries.last == entry)
+            #expect(final.docs["pi.live"]?["run"] == nil)
         case .ops:
             var value = try #require(lines.first?["view"])
             #expect(lines.first?.objectValue?.count == 1)
@@ -208,7 +193,7 @@ private func hostExampleJSONRun(directory: URL, models: any DurableModels, model
                 value = try #require(try Delta.applyImmutable(value, ops))
             }
             let replay = try value.decode(ConversationView.self)
-            #expect(replay == watch?.value)
+            #expect(replay == watch.value)
             #expect(replay.entries.last == entry)
             #expect(replay.docs["pi.live"]?["run"] == nil)
             #expect(replay.docs["pi.live"]?["generation"] == nil)
@@ -315,7 +300,7 @@ private func hostExampleRealModelRun(directory: URL, models: any DurableModels, 
             model: .init(provider: "faux", modelId: "faux-1"), mode: mode, storageKind: storageKind, verifyFaux: true)
         let values = try printed.lines.map { try JSONValue(jsonText: $0) }
         #expect(values.count > 1)
-        #expect(values.first?[mode == .events ? "type" : "view"] != nil)
+        #expect(values.first?["view"] != nil)
         #expect(printed.diagnostics.count == (storageKind == .memory ? 0 : 1))
         #expect(models.state().callCount == 2)
     }
