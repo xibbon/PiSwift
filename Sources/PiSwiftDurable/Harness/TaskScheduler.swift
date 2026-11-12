@@ -64,7 +64,7 @@ internal final class TaskScheduler: Sendable {
     let context: ChordContext
     let settleOutcome: @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void
     let withdrawInputs: @Sendable (Transaction, ConversationID) async throws -> Void
-    struct KeptContext: Sendable { let range: ContextRange; var idleSince: Int64? }
+    struct KeptContext: Sendable { let range: ContextRange; var idleSince: Int64?; var expiresAt: Int64? = nil }
     struct State: Sendable {
         var publicationVersion: UInt64 = 0
         var live: [TaskID: TaskRecord] = [:]
@@ -112,6 +112,8 @@ internal final class TaskScheduler: Sendable {
         var subscriptions: [SessionSubscription] = []
         var unsubscribe: (@Sendable () -> Void)?
         var contexts: [ConversationID: KeptContext] = [:]
+        var idleOrder = ContextIdleIndex<ConversationID>()
+        var unknownsChanged = false
         var expiry: HarnessDisarm?
         var expiryAt: Int64?
         var expiryID = UUID()
@@ -194,7 +196,7 @@ internal final class TaskScheduler: Sendable {
     }
     private func seal() {
         let (expiry, sleep, unsubscribe) = state.withLock { state in
-            state.closing = true; state.contexts = [:]
+            state.closing = true; state.contexts = [:]; state.idleOrder.clear()
             state.stopped.formUnion(state.invocations.keys)
             let expiry = state.expiry; state.expiry = nil; state.expiryAt = nil
             let sleep = state.sleepDisarm; state.sleepDisarm = nil; state.sleepAt = nil
@@ -206,9 +208,11 @@ internal final class TaskScheduler: Sendable {
         let error: any Error = session.failure.map { SessionFailed($0) } ?? closedError()
         taskWaiters.rejectAll(error); idleWaiters.rejectAll(error)
     }
-    private func observe(_ publication: CommitPublication) {
+    private func observe(_ publication: ObservedCommit) {
+        if case .memory = publication { return } // v1.5.2 D7 scheduler.ts:783-785
         var aborts: [TaskInvocation] = [], settled: [TaskRecord] = [], updated: [TaskRecord] = []
         var failed = Set<TaskID>(), repair = false, changed = false
+        var idleChanges: [TaskRecord] = []
         // v1.5.2 context.ts:199–212; scheduler.ts publication handling:
         // extend retained current ranges from the committed entries in order.
         var appended: [ConversationID: [EntryRecord]] = [:]
@@ -219,12 +223,18 @@ internal final class TaskScheduler: Sendable {
             state.publicationVersion &+= 1
             for (id, entries) in appended {
                 guard let kept = state.contexts[id] else { continue }
+                // v1.5.2 D7 scheduler.ts:903-912: only a range in this commit's scope is checked.
+                if let expiresAt = kept.expiresAt, expiresAt <= now() {
+                    state.contexts.removeValue(forKey: id); state.idleOrder.remove(id)
+                    continue
+                }
                 // If derivation fails, drop the cached range. The next read
                 // reconstructs it from committed storage.
                 do {
                     let advanced = try advanceContextRange(kept.range, appended: entries)
-                    state.contexts[id] = advanced.map { KeptContext(range: $0, idleSince: kept.idleSince) }
-                } catch { state.contexts.removeValue(forKey: id) }
+                    if let advanced { state.contexts[id] = KeptContext(range: advanced, idleSince: kept.idleSince, expiresAt: kept.expiresAt) }
+                    else { state.contexts.removeValue(forKey: id); state.idleOrder.remove(id) }
+                } catch { state.contexts.removeValue(forKey: id); state.idleOrder.remove(id) }
             }
             // Install conversation edges before the tasks that need them.
             for change in publication.changes {
@@ -234,6 +244,7 @@ internal final class TaskScheduler: Sendable {
                 guard case .task(let record) = change else { continue }
                 changed = true
                 let previous = state.live[record.id]
+                if previous == nil || record.state.status == "terminal" { idleChanges.append(record) }
                 if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
                 state.track(record)
                 if record.state.status == "terminal" {
@@ -281,9 +292,25 @@ internal final class TaskScheduler: Sendable {
         }
         for invocation in aborts { invocation.controller.abort() }
         if repair || state.withLock({ $0.cascadePending }) { scheduleReconcile() }
-        state.withLock { $0.sweep() }
         for record in settled { taskWaiters.resolve(record.id, value: SettledTask(record: record)) }
-        if changed { settleIdle(); kick() }
+        if changed {
+            var scopes: Set<ConversationID>? = []
+            for record in idleChanges {
+                for step in above(record.parent) {
+                    switch step {
+                    case .conversation(let id): scopes?.insert(id)
+                    case .unknown: scopes = nil
+                    case .task: break
+                    }
+                    if scopes == nil { break }
+                }
+                if scopes == nil { break }
+            }
+            state.withLock { $0.sweep() }
+            settleIdle(scopes: scopes); kick()
+        } else {
+            state.withLock { $0.sweep() }
+        }
     }
     /// A Task is created under the lock. It cannot enter the pump until the lock is released.
     func kick(offerWake: Bool = true) {
@@ -307,7 +334,7 @@ internal final class TaskScheduler: Sendable {
                     for reservation in reservations { start(reservation) }
                 }
             } catch { if !closing { session.fail(error) } }
-            settleIdle()
+            settleIdle(scopes: [])
         }
     }
     /// Repair durable intent separately from handler scheduling, including while paused.
@@ -321,7 +348,7 @@ internal final class TaskScheduler: Sendable {
                 self.state.withLock { $0.reconcileScheduled = false }
                 do { try await self.reconcile() }
                 catch { if !self.closing { self.session.fail(error) } }
-                self.settleIdle()
+                self.settleIdle(scopes: [])
                 _ = self.state.withLock { $0.reconciles.removeValue(forKey: id) }
                 self.scheduleWake()
             }

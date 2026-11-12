@@ -18,7 +18,8 @@ import PiSwiftDurableTesting
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         for text in ["hel", "hello", "hello world"] {
             generationPartial(models, text: text)
-            try await eventually { clock.pendingSleeperCount > 0 }
+            // v1.5.2 D7 generation.ts:717-730: await the throttle in addition to the held-commit timer.
+            try await eventually { clock.pendingSleeperCount >= 2 }
             clock.advance(by: 100)
             try await eventually {
                 values.values.contains { $0.docs["pi.live"]?["generation"]?["message"]?["content"]?[0]?["text"] == .string(text) }

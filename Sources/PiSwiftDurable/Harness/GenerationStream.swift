@@ -51,7 +51,7 @@ private actor GenerationPartialThrottle {
                     if try live.child("generation") == nil { try live.set("generation", .object(["attempt": .number(Double(attempt))])) }
                     try await changes.commit(live.child("generation")!, message: batch.message, taken: batch.commit)
                     return nil
-                }, context: context)
+                }, context: context, persistence: .deferred()) // v1.5.2 D7 generation.ts:717-730
             } catch {
                 if let taken { await changes.restore(taken) }
                 if !runtime.signal.aborted { runtime.reportTaskError(error) }

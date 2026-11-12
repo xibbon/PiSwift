@@ -1,13 +1,20 @@
 import Foundation
 import Testing
 import PiSwiftChord
+import PiSwiftDurableTesting
 @testable import PiSwiftDurable
+
+private struct D7StressDocument: Codable, Sendable, Equatable { var text = "" }
+private struct D7StressMismatch: Error {}
 
 private enum StressLineEvent: Sendable {
     case write(EntryRecord, TaskRecord?)
     case read(ConversationID, [EntryID], ConversationRecord?, TaskRecord?, SubmissionRecord?)
+    case deferred(ConversationID, String)
 }
 
+// v1.5.2 D7 session-deferred-commits.test.ts:521-596,638-652: include deferred
+// progress, watches, stored publications, dependent reads, close and crash.
 // v1.5.2 D3a: run this load test alone with PI_D3A_STRESS=1. Running it
 // alongside deadline-sensitive harness suites starves their gate witnesses.
 @Suite("PiSwiftDurableTests.SessionWriterStressD3a", .serialized,
@@ -30,8 +37,11 @@ struct SessionWriterStressD3aTests {
         let backend = try await storage(kind, path: directory.appendingPathComponent(kind == "sqlite" ? "store.sqlite" : "store").path)
         let controlled = ControlledStorage(backend)
         await controlled.enableCommitGateDelays(seed: 0x5a17c0de)
-        let session = try await Session.openWithDocumentRetention(storage: controlled, now: { 1_000 },
-            documentRetentionMs: { nil }, cacheBounds: .init(conversations: 4, tasks: 4, submissions: 4),
+        let clock = TestClock(now: 1_000)
+        let session = try await Session.openWithDocumentRetention(storage: controlled, now: { clock.now() },
+            documentRetentionMs: { nil }, documentTimer: .init(now: { clock.now() }, sleep: { try await clock.sleep(until: $0) }),
+            cacheBounds: .init(conversations: 4, tasks: 4, submissions: 4),
+            persistWithinMs: { 1_000 },
             context: .background)
         var conversations: [ConversationID] = []
         for _ in 0..<8 {
@@ -40,6 +50,8 @@ struct SessionWriterStressD3aTests {
             }, context: .background))
         }
         let taskKind = TaskKind<Int, Int>(name: "stress.task", version: 1, initial: { $0 })
+        let progress = try ConversationDocToken<D7StressDocument>(kind: "stress.d7.progress", version: 1,
+            fork: .initial, initial: { D7StressDocument() }, checkpointWhen: { _, _, _ in false })
         var taskIDs: [TaskID] = []
         var submissionIDs: [SubmissionID] = []
         for conversation in conversations {
@@ -47,6 +59,7 @@ struct SessionWriterStressD3aTests {
                 let task = try await tx.createTask(taskKind, input: 0,
                     options: .init(ownership: .conversation(), conversationId: conversation))
                 let submission = try await tx.createSubmission(.write(conversationId: conversation))
+                _ = try await tx.doc(progress, conversationId: conversation)
                 return (task, submission.id)
             }, context: .background)
             taskIDs.append(pair.0); submissionIDs.append(pair.1)
@@ -57,7 +70,29 @@ struct SessionWriterStressD3aTests {
         for id in submissionIDs { initialSubmissions.append(try await session.storage.submission(id, context: .background)) }
         let line = SessionTestLog<StressLineEvent>()
         let publications = SessionTestLog<EntryID>()
+        let heldMemory = SessionTestLog<(ConversationID, String)>()
+        let watchFrames = SessionTestLog<(ConversationID, String)>()
+        let storedSeqs = SessionTestLog<Seq>()
+        let storedCallBefore = await controlled.callBatchCounts.count
+        var watches: [Watch<D7StressDocument>] = []
+        for id in conversations {
+            let watch = try #require(try await session.watchDoc(progress, conversationId: id, context: .background))
+            try watch.start { call, _ in
+                if case .value(let value, _, _) = call { watchFrames.append((id, value.text)) }
+            }
+            watches.append(watch)
+        }
+        let own = try session.observeCommits { (publication: ObservedCommit, _: ChordContext) in
+            if case .memory(let documents) = publication {
+                for document in documents where document.record.kind == "stress.d7.progress" {
+                    if let id = document.conversationId, let text = document.value?["text"]?.stringValue {
+                        heldMemory.append((id, text))
+                    }
+                }
+            }
+        }
         let subscription = try session.subscribeCommits { publication, _ in
+            storedSeqs.append(publication.seq)
             for change in publication.changes {
                 if case .entry(let entry) = change { publications.append(entry.id) }
             }
@@ -105,8 +140,17 @@ struct SessionWriterStressD3aTests {
                         let choice = next()
                         let index = Int((choice >> 8) % UInt32(ids.count))
                         let conversation = ids[index]
-                        if choice % 4 == 0 {
+                        if choice % 8 == 1 {
+                            let value = "\(taskIndex).\(operation)"
+                            try await session.commit({ tx in
+                                try await tx.doc(progress, conversationId: conversation).set("text", .string(value))
+                                line.append(.deferred(conversation, value))
+                            }, context: .background, persistence: .deferred(withinMs: Double((choice >> 16) % 500 + 1)))
+                        } else if choice % 4 == 0 {
                             _ = try await session.commit({ tx in
+                                let observed = try await tx.doc(progress, conversationId: conversation).get("text")?.stringValue ?? ""
+                                let latest = heldMemory.values.last { $0.0 == conversation }?.1 ?? ""
+                                if observed != latest { throw D7StressMismatch() }
                                 let page = try await tx.scanEntries(.init(conversationId: conversation, order: .descending), limit: 64)
                                 let record = try await tx.conversation(conversation)
                                 let task = try await tx.task(tasks[index])
@@ -126,6 +170,7 @@ struct SessionWriterStressD3aTests {
                                 return entry
                             }, context: .background)
                         }
+                        clock.advance(by: 1)
                     }
                 }
             }
@@ -134,7 +179,8 @@ struct SessionWriterStressD3aTests {
         var replay: [ConversationID: [EntryRecord]] = [:]
         var taskReplay = Dictionary(uniqueKeysWithValues: zip(taskIDs, initialTasks).compactMap { id, value in value.map { (id, $0) } })
         var order: [EntryRecord] = []
-        var reads = 0
+        var reads = 0, deferred = 0
+        var expectedFrames: [(ConversationID, String)] = []
         for event in line.values {
             switch event {
             case .write(let entry, let task):
@@ -149,10 +195,14 @@ struct SessionWriterStressD3aTests {
                 #expect(task == taskReplay[taskIDs[index]])
                 #expect(submission == initialSubmissions[index])
                 reads += 1
+            case .deferred(let conversation, let value):
+                expectedFrames.append((conversation, value)); deferred += 1
             }
         }
-        #expect(order.count + reads == 20_005)
+        #expect(order.count + reads + deferred == 20_005)
         #expect(publications.values == order.map(\.id))
+        for watch in watches { await watch.waitUntilIdle() }
+        #expect(watchFrames.values.map { "\($0.0.rawValue):\($0.1)" } == expectedFrames.map { "\($0.0.rawValue):\($0.1)" })
         var prior: Seq?
         for entry in order {
             let stored = try #require(try await backend.entry(entry.id, context: .background))
@@ -172,12 +222,35 @@ struct SessionWriterStressD3aTests {
             #expect(stored == (replay[conversation] ?? []))
         }
         let calls = await controlled.callBatchCounts
-        #expect(calls.count < order.count + conversations.count + taskIDs.count)
-        print("D3A-STRESS \(kind) operations=20000 writes=\(order.count) reads=\(reads) storageCalls=\(calls.count)")
+        #expect(calls.count < order.count + deferred + conversations.count + taskIDs.count)
+        print("D3A-STRESS-D7 \(kind) operations=20000 writes=\(order.count) reads=\(reads) deferred=\(deferred) storageCalls=\(calls.count)")
         #expect(session.recordCacheSizes.conversations <= 4)
         #expect(session.recordCacheSizes.tasks <= 4)
         #expect(session.recordCacheSizes.submissions <= 4)
-        subscription.cancel()
+        own.cancel()
         try await session.close(context: .background)
+        #expect(storedSeqs.count == (await controlled.callBatchCounts.dropFirst(storedCallBefore)).reduce(0, +))
+        #expect(zip(storedSeqs.values, storedSeqs.values.dropFirst()).allSatisfy { $0.0 < $0.1 })
+        subscription.cancel()
+        for watch in watches { _ = await watch.stop() }
+        if kind != "memory" {
+            // v1.5.2 D7 session-deferred-commits.test.ts:638-652: clean close keeps the last watch value.
+            let path = directory.appendingPathComponent(kind == "sqlite" ? "store.sqlite" : "store").path
+            let resumed = try await Session.open(storage: storage(kind, path: path), context: .background)
+            for id in conversations {
+                let expected = expectedFrames.last { $0.0 == id }?.1 ?? ""
+                #expect(try await resumed.snapshot(progress, conversationId: id, context: .background)?.text == expected)
+            }
+            let first = conversations[0]
+            let stored = try #require(try await resumed.snapshot(progress, conversationId: first, context: .background))
+            try await resumed.commit({ tx in
+                try await tx.doc(progress, conversationId: first).set("text", "crash-only")
+            }, context: .background, persistence: .deferred(withinMs: .infinity))
+            resumed.fail(D7StressMismatch())
+            _ = await resumed.closed
+            let afterCrash = try await Session.open(storage: storage(kind, path: path), context: .background)
+            #expect(try await afterCrash.snapshot(progress, conversationId: first, context: .background) == stored)
+            try await afterCrash.close(context: .background)
+        }
     }
 }

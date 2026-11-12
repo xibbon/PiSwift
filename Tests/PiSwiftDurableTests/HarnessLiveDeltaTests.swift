@@ -6,12 +6,13 @@ import PiSwiftChord
 @testable import PiSwiftDurable
 import PiSwiftDurableTesting
 
-@Suite struct HarnessLiveDeltaTests {
+@Suite(.timeLimit(.minutes(1))) struct HarnessLiveDeltaTests {
     @Test func generationHandoverAndToolStartUseFieldWrites() async throws {
         let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("noop"), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("noop", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog()
-        let subscription = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        // v1.5.2 D7 harness-live-deltas.test.ts:56-60 follows held changes.
+        let subscription = try opened.harness.session.observeCommits { publication, _ in log.append(publication) }
         let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)
         let tasks = try await opened.root.commit({ tx in try await tx.scanTasks(.init(conversationId: opened.root.id), limit: 20).items }, context: .background)
         let generations = tasks.filter { $0.kind == "pi.generation" }.map(\.id).sorted { $0.rawValue < $1.rawValue }, tool = try #require(tasks.first { $0.kind == "pi.tool" })
@@ -86,10 +87,15 @@ import PiSwiftDurableTesting
 
     @Test func committedPartialTextUsesLiteralAppendTuples() async throws {
         let clock = TestClock(), setup = HarnessChatSetup(clock: clock), models = HarnessManualModels(base: FakeDurableModels()), opened = try await openChat(setup: setup, models: models), log = HarnessLiveDeltaLog()
-        let subscription = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        // v1.5.2 D7 harness-live-deltas.test.ts:56-60 follows held partials.
+        let subscription = try opened.harness.session.observeCommits { publication, _ in log.append(publication) }
         let input = try await generationSubmit(opened); try await eventually { models.seen.withLock { !$0.isEmpty } }
         for text in ["word", "word word", "word word word", "word word word word"] {
-            generationPartial(models, text: text); try await eventually { clock.pendingSleeperCount > 0 }; clock.advance(by: 100)
+            generationPartial(models, text: text)
+            // v1.5.2 D7 generation.ts:717-730: one sleeper is the held-store deadline.
+            // Wait for the throttle's sleeper before moving the fake clock.
+            try await eventually { clock.pendingSleeperCount >= 2 }
+            clock.advance(by: 100)
             try await eventually { try await generationLive(opened)?.generation?.message?["content"]?[0]?["text"] == .string(text) }
         }
         generationFinal(models); _ = try await input.wait(context: .background)
@@ -100,17 +106,50 @@ import PiSwiftDurableTesting
     }
 
     @Test func storageWritesBaseExactlyWhenNoGenerationOrRunningTool() async throws {
-        let storage = ControlledStorage(), setup = HarnessChatSetup(settings: .init(toolExecution: .sequential)), log = HarnessLiveDeltaLog()
-        for name in ["first", "second"] { try installHarnessTool(harnessTestTool(name, execute: { _, api, context in try api.output(.text("\(name) output\n"), nil); try await api.details(["n": 1], context); return .init(output: []) }), setup: setup) }
+        let clock = TestClock(now: 1_000)
+        // v1.5.2 D7 harness-live-deltas.test.ts:323-340: leave each tool
+        // running past the 50 ms hold deadline so Storage receives deltas.
+        let storage = ControlledStorage()
+        let setup = HarnessChatSetup(settings: .init(progress: .init(persistWithinMs: 50), toolExecution: .sequential), clock: clock)
+        let stored = SessionTestLog<CommitPublication>()
+        for name in ["first", "second"] { try installHarnessTool(harnessTestTool(name, execute: { _, api, context in
+            try api.output(.text("\(name) output\n"), nil)
+            try await api.details(["n": 1], context)
+            try await clock.sleep(until: clock.now() + 150)
+            return .init(output: [])
+        }), setup: setup) }
         setup.models.setResponses([.message(try toolCalls([("first", [:], "a"), ("second", [:], "b")])), .message(chatAssistant("done"))])
-        let opened = try await openChat(storage: storage, setup: setup), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        let opened = try await openChat(storage: storage, setup: setup), listener = try opened.harness.subscribeCommits { publication, _ in stored.append(publication) }
         let doc = try #require(await storage.findDocument(.init(kind: "pi.live", scope: .conversation(conversationId: opened.root.id)), at: .current, context: .background))
-        let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)
-        let contents = await storage.commits.flatMap { writes in writes.compactMap { write -> DocumentContent? in if case .documentChange(let id, let content, _) = write, id == doc.id { content } else { nil } } }
-        #expect(contents.count == log.values.count)
+        let before = await storage.commits.count
+        let input = try await generationSubmit(opened)
+        let finished = SessionTestLog<Bool>()
+        let wait = Task {
+            let result = try await input.wait(context: .background)
+            finished.append(true)
+            return result
+        }
+        for _ in 0..<30 where finished.count == 0 {
+            try await eventually { clock.pendingSleeperCount > 0 || finished.count > 0 }
+            clock.advance(by: 50)
+            await Task.yield()
+        }
+        _ = try await wait.value
+        // v1.5.2 D7 harness-live-deltas.test.ts:342-352: observe after the final
+        // stored publication has reached the listener, including its held fold.
+        try await opened.harness.session.touch(SessionKeys.allKeys)
+        let contents = await storage.commits.dropFirst(before).flatMap { writes in writes.compactMap { write -> DocumentContent? in if case .documentChange(let id, let content, _) = write, id == doc.id { content } else { nil } } }
+        // v1.5.2 D7 harness-live-deltas.test.ts:286-360 records stored values,
+        // including a base whose publication has no Chord operations.
+        let values = stored.values.flatMap { publication in publication.changes.compactMap { change -> JSONObject? in
+            guard case .document(let document) = change, document.record.kind == "pi.live",
+                  document.record.createdAt != publication.seq else { return nil }
+            return document.value
+        } }
+        #expect(contents.count == values.count)
         var bases = 0, deltas = 0
-        for (content, publication) in zip(contents, log.values) {
-            let state = try JSONValue.object(publication.2).decode(LiveState.self), noRunning = state.generation == nil && !(state.tools ?? []).contains { $0.status == .running }
+        for (content, value) in zip(contents, values) {
+            let state = try JSONValue.object(value).decode(LiveState.self), noRunning = state.generation == nil && !(state.tools ?? []).contains { $0.status == .running }
             if case .base = content { bases += 1; #expect(noRunning) } else { deltas += 1; #expect(!noRunning) }
         }
         #expect(bases >= 5 && deltas > 0)

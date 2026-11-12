@@ -46,6 +46,25 @@ public struct CommitPublication: Sendable, Equatable {
     public init(seq: Seq, changes: [CommitChange]) { self.seq = seq; self.changes = changes }
 }
 
+/// Storage policy for one commit. An eligible deferred change is visible in memory at once.
+public enum CommitPersistence: Sendable, Equatable {
+    case immediate
+    case deferred(withinMs: Double? = nil)
+}
+
+/// What Session components observe when memory advances.
+internal enum ObservedCommit: Sendable {
+    case stored(CommitPublication)
+    case memory([DocumentCommitChange])
+
+    var changes: [CommitChange] {
+        switch self {
+        case .stored(let publication): publication.changes
+        case .memory(let documents): documents.map(CommitChange.document)
+        }
+    }
+}
+
 /// Call cancel to remove the listener. Release of this value does not remove it.
 public struct SessionSubscription: Sendable {
     private let remove: @Sendable () -> Void

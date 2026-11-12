@@ -22,7 +22,9 @@ private func recoveryInstall(_ setup: HarnessChatSetup, tool: ToolRegistration) 
 private func recoveryOpen(_ storage: any DurableStorage, setup: HarnessChatSetup, env: HarnessEnvFactory? = nil,
                           resume: Bool = true) async throws -> OpenChatResult {
     let harness = try await Harness.open(storage: storage, options: HarnessOptions(models: setup.models,
-        registry: setup.registry, settings: setup.settingsProvider, env: env, onReport: { setup.reports.append($0) }), context: .background)
+        // v1.5.2 D7 harness-deferred-progress.test.ts:341-364: drive progress deadlines with the supplied clock.
+        registry: setup.registry, settings: setup.settingsProvider, env: env, clock: setup.clock,
+        onReport: { setup.reports.append($0) }), context: .background)
     let root = try await harness.root(options: .init(agent: AgentChange(model: .set(ModelRef(provider: "faux", modelId: "faux-1")))), context: .background)
     if resume { try harness.resume() }
     return OpenChatResult(harness: harness, root: root)
@@ -43,6 +45,13 @@ private func recoveryWait(_ opened: OpenChatResult, id: SubmissionID) async thro
     let submission = try #require(try await opened.harness.submission(id: id, context: .background))
     return try await submission.wait(context: .background)
 }
+private func recoveryStoredOutput(_ opened: OpenChatResult) async throws -> String? {
+    guard let record = try await opened.harness.session.storage.findDocument(
+        .init(kind: "pi.live", scope: .conversation(conversationId: opened.root.id)),
+        at: .current, context: .background) else { return nil }
+    return try await opened.harness.session.storage.document(record.id, at: .current, context: .background)?
+        .value["tools"]?[0]?["output"]?.stringValue
+}
 private func recoveryAborted(_ context: ChordContext) async throws {
     let signal = try #require(context.abortSignal)
     let reached = HarnessChatSignal()
@@ -52,6 +61,7 @@ private func recoveryAborted(_ context: ChordContext) async throws {
     await reached.wait()
     try signal.throwIfAborted()
 }
+private struct RecoveryD7Crash: Error {}
 private final class RecoveryBlockingTool: Sendable {
     let started = HarnessChatSignal()
     let runs = Mutex(0)
@@ -68,6 +78,88 @@ private final class RecoveryBlockingTool: Sendable {
 }
 
 @Suite struct HarnessToolRecoveryTests {
+    @Test(.timeLimit(.minutes(1))) func unsafeToolAnswersWithOutputStoredBeforeCrash() async throws {
+        // v1.5.2 D7 harness-deferred-progress.test.ts:341-364.
+        let directory = try sqliteTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("unsafe-deferred-crash.sqlite").path
+        let clock = TestClock(now: 1_000)
+        let setup = HarnessChatSetup(settings: .init(progress: .init(outputIntervalMs: 100, persistWithinMs: 150)), clock: clock)
+        let runs = Mutex(0)
+        try recoveryInstall(setup, tool: recoveryTool { _, api, context in
+            runs.withLock { $0 += 1 }
+            try api.output(.text("stored output\n"), nil)
+            try await api.details(.object(["run": 1]), context)
+            try await recoveryAborted(context)
+            return ToolExecutionResult()
+        })
+        setup.models.setResponses([.message(recoveryCall("work")), .message(chatAssistant("done"))])
+        let first = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        let input = try await generationSubmit(first, "go")
+        try await eventually { runs.withLock { $0 } == 1 }
+        try await eventually { clock.pendingSleeperCount > 0 }
+        clock.advance(by: 100)
+        try await eventually { try await generationLive(first)?.tools?.first?.output == "stored output\n" }
+        clock.advance(by: 150)
+        try await eventually {
+            guard let record = try await first.harness.session.storage.findDocument(
+                .init(kind: "pi.live", scope: .conversation(conversationId: first.root.id)),
+                at: .current, context: .background) else { return false }
+            let value = try await first.harness.session.storage.document(record.id, at: .current, context: .background)
+            return value?.value["tools"]?[0]?["output"] == .string("stored output\n")
+        }
+        first.harness.session.fail(RecoveryD7Crash()); _ = await first.harness.closed
+        let second = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        let waiter = settled { try await recoveryWait(second, id: input.id) }
+        try await eventually { waiter.isSettled }
+        #expect(try waiter.result?.get().status == "done")
+        #expect(runs.withLock { $0 } == 1)
+        #expect(recoveryText(try await recoveryResults(second).first) ==
+            "stored output\n|<harness>\n[error] Tool work was interrupted and may have partially run\n</harness>")
+        try await second.harness.close(context: .background)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func safeToolClearsStoredProgressThroughTwoCrashes() async throws {
+        // v1.5.2 D7 harness-deferred-progress.test.ts:302-339,366-395.
+        let directory = try sqliteTestDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("safe-deferred-crashes.sqlite").path
+        let clock = TestClock(now: 1_000)
+        let setup = HarnessChatSetup(settings: .init(progress: .init(outputIntervalMs: 100, persistWithinMs: 150)), clock: clock)
+        let runs = Mutex(0)
+        try recoveryInstall(setup, tool: recoveryTool(replay: .safe) { _, api, context in
+            let run = runs.withLock { $0 += 1; return $0 }
+            if run == 3 { return ToolExecutionResult(output: [.text(.init(text: "rerun 3\n"))]) }
+            try api.output(.text("run \(run)\n"), nil)
+            try await api.details(.object(["run": .number(Double(run))]), context)
+            try await recoveryAborted(context)
+            return ToolExecutionResult()
+        })
+        setup.models.setResponses([.message(recoveryCall("work")), .message(chatAssistant("done"))])
+        let first = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        let input = try await generationSubmit(first, "go")
+        try await eventually { runs.withLock { $0 } == 1 }
+        clock.advance(by: 100)
+        try await eventually { try await generationLive(first)?.tools?.first?.output == "run 1\n" }
+        clock.advance(by: 150)
+        try await eventually { try await recoveryStoredOutput(first) == "run 1\n" }
+        first.harness.session.fail(RecoveryD7Crash()); _ = await first.harness.closed
+
+        let second = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        try await eventually { runs.withLock { $0 } == 2 }
+        try await eventually { try await recoveryStoredOutput(second) == nil }
+        let secondTask = try await recoveryToolID(second)
+        #expect(try await second.harness.getTask(id: secondTask, context: .background)?.storedRestarts == 1)
+        second.harness.session.fail(RecoveryD7Crash()); _ = await second.harness.closed
+
+        let third = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)
+        let waiter = settled { try await recoveryWait(third, id: input.id) }
+        try await eventually { waiter.isSettled }
+        #expect(try waiter.result?.get().status == "done")
+        #expect(runs.withLock { $0 } == 3)
+        #expect(recoveryText(try await recoveryResults(third).first) == "rerun 3\n")
+        try await third.harness.close(context: .background)
+    }
     @Test("does not charge a generation that sleeps in a retry or waits for its tools", .timeLimit(.minutes(1)))
     func toolWaitRestartDoesNotChargeGeneration() async throws {
         // v1.5.2 D5b harness-restart-failure.test.ts:275–328. The sleeping
@@ -385,7 +477,8 @@ private final class RecoveryBlockingTool: Sendable {
         #expect(try await recoveryWait(second, id: id).status == "done")
         #expect(runs.withLock { $0 } == 1)
         let result = try #require(try await recoveryResults(second).first)
-        #expect(recoveryText(result) == "partial\n|<harness>\n[error] Tool work was interrupted and may have partially run\n</harness>")
+        // v1.5.2 D7 tool.ts:611-654: the held output is lost when the process crashes before its first store.
+        #expect(recoveryText(result) == "<harness>\n[error] Tool work was interrupted and may have partially run\n</harness>")
         try await second.harness.close(context: .background)
     }
 }

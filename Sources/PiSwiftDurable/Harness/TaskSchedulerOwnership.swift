@@ -185,7 +185,18 @@ extension TaskScheduler {
         // A known node is read from scheduler memory. Publish every earlier
         // write before using that memory to decide where this chain ends.
         try await session.touch(SessionKeys.allKeys)
-        var at: OwnershipUp? = start, passed: [TaskID] = []
+        var at: OwnershipUp? = start, passed: [TaskID] = [], installed = false
+        defer {
+            // v1.5.2 D7 scheduler.ts:1297-1307: only a resolved live chain can change unknown idleness.
+            let changed = state.withLock { state in
+                let changed = passed.contains { state.live[$0] != nil } ||
+                    (installed && state.unloaded.contains { state.live[$0] != nil })
+                if changed { state.unknownsChanged = true }
+                state.unloaded.subtract(passed)
+                return changed
+            }
+            if changed { scheduleReconcile() }
+        }
         while let step = at {
             switch step {
             case .task(let id):
@@ -195,7 +206,7 @@ extension TaskScheduler {
                 if node == nil {
                     guard let record = try await storage.task(id, context: context) else { return }
                     node = TaskNode(record)
-                    if record.state.status == "terminal" { state.withLock { $0.settle(record) }; scheduleSweep() }
+                    if record.state.status == "terminal" { state.withLock { $0.settle(record) }; installed = true; scheduleSweep() }
                     scheduleReconcile()
                 }
                 passed.append(id); at = node?.parent
@@ -204,14 +215,13 @@ extension TaskScheduler {
                 if edge == nil {
                     if let record = try await storage.conversation(id, context: context) {
                         edge = TaskOwnershipEdge(record)
-                        state.withLock { $0.setEdge(record) }; scheduleSweep()
+                        state.withLock { $0.setEdge(record) }; installed = true; scheduleSweep()
                     }
                     scheduleReconcile()
                 }
                 at = edge?.owner.map(OwnershipUp.task)
             }
         }
-        state.withLock { $0.unloaded.subtract(passed) }
     }
     func loadScopes() async throws {
         // Capture the unloaded set after earlier publications. The region's
@@ -283,13 +293,13 @@ extension TaskScheduler {
         while let at = pending.popLast() {
             let children = state.withLock { state -> Set<OwnershipUp> in
                 let children = state.below[at] ?? []
-                state.candidateEntries += children.count
                 return children
             }
             let staged = links[at] ?? []
-            state.withLock { $0.candidateEntries += staged.count }
             for group in [children, staged] {
                 for child in group {
+                    // v1.5.2 D7 scheduler.ts:935-959: count entries visited, including an early idle check.
+                    state.withLock { $0.candidateEntries += 1 }
                     switch child {
                     case .conversation: pending.append(child)
                     case .task(let id):

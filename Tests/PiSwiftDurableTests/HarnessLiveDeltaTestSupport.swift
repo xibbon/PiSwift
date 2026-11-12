@@ -7,10 +7,11 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 
 final class HarnessLiveDeltaLog: Sendable {
-    private let state = Mutex<[(CommitPublication, [Delta.Op], JSONObject)]>([])
-    var values: [(CommitPublication, [Delta.Op], JSONObject)] { state.withLock { $0 } }
+    private let state = Mutex<[(ObservedCommit, [Delta.Op], JSONObject)]>([])
+    var values: [(ObservedCommit, [Delta.Op], JSONObject)] { state.withLock { $0 } }
     var commits: [[Delta.Op]] { values.map { $0.1 } }
-    func append(_ publication: CommitPublication) {
+    func append(_ publication: CommitPublication) { append(.stored(publication)) }
+    func append(_ publication: ObservedCommit) {
         for change in publication.changes {
             if case .document(let document) = change, document.record.kind == "pi.live", !document.ops.isEmpty, let value = document.value {
                 state.withLock { $0.append((publication, document.ops, value)) }
@@ -36,7 +37,8 @@ struct HarnessLiveDeltaDriver: Sendable {
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("drive", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog()
-        let subscription = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        // v1.5.2 D7 harness-live-deltas.test.ts:56-60 follows memory publications.
+        let subscription = try opened.harness.session.observeCommits { publication, _ in log.append(publication) }
         let input = try await generationSubmit(opened)
         try await eventually { try await generationLive(opened)?.tools?.first?.status == .running && log.commits.contains([.set(["tools", 0, "status"], "running")]) }
         return Self(opened: opened, input: input, log: log, clock: clock, queue: actions.continuation, subscription: subscription)

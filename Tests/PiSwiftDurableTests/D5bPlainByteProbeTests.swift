@@ -61,15 +61,18 @@ struct D5bPlainByteProbeTests {
         let baseline = root.appendingPathComponent("Scripts/durable-fixtures/d5b-plain-pre/plain-\(backend).json")
         if FileManager.default.fileExists(atPath: baseline.path) {
             let before = try JSONValue(jsonData: Data(contentsOf: baseline))
-            // v1.5.2 D5b generation.ts:774–776,790 and :1172–1184.
-            #expect(Set(changedPaths(before, current)) == Set([
-                "$[1][3].content.value.run.first", "$[5][0].value.model[0].thinkingLevel",
-                "$[6][3].content.value.run.first", "$[10][0].value.model[0].thinkingLevel"
+            // v1.5.2 D7 generation.ts:276-286 and session.ts:1091-1101: each cleared pi.live progress
+            // commit is held and folded into the next stored commit. All other bytes keep the D5b diff.
+            var prior = try #require(before.arrayValue)
+            prior.remove(at: 9); prior.remove(at: 4)
+            #expect(Set(changedPaths(.array(prior), current)) == Set([
+                "$[1][3].content.value.run.first", "$[4][0].value.model[0].thinkingLevel",
+                "$[5][3].content.value.run.first", "$[8][0].value.model[0].thinkingLevel"
             ]))
             #expect(current[1]?[3]?["content"]?["value"]?["run"]?["first"] == 7)
-            #expect(current[6]?[3]?["content"]?["value"]?["run"]?["first"] == 11)
-            #expect(current[5]?[0]?["value"]?["model"]?[0]?["thinkingLevel"] == "off")
-            #expect(current[10]?[0]?["value"]?["model"]?[0]?["thinkingLevel"] == "off")
+            #expect(current[5]?[3]?["content"]?["value"]?["run"]?["first"] == 11)
+            #expect(current[4]?[0]?["value"]?["model"]?[0]?["thinkingLevel"] == "off")
+            #expect(current[8]?[0]?["value"]?["model"]?[0]?["thinkingLevel"] == "off")
         }
         #expect(bytes.utf8.count > 100)
     }

@@ -55,7 +55,8 @@ private func viewNote(_ conversation: Conversation, _ kind: String, head: EntryI
         let setup = HarnessChatSetup(), held = HarnessGatedResponse(message: chatAssistant("a longer answer"))
         setup.models.setResponses([held.step]); let chat = try await openChat(setup: setup)
         let recorder = try await ViewTestRecorder(chat.root), touches = Mutex(0)
-        let subscription = try chat.harness.subscribeCommits { publication, _ in
+        // v1.5.2 D7 session.ts:1091-1101: view frames follow memory publications, including held commits.
+        let subscription = try chat.harness.session.observeCommits { (publication: ObservedCommit, _: ChordContext) in
             let touching = publication.changes.contains { change in
                 switch change {
                 case .entry(let entry): return entry.conversationId == chat.root.id

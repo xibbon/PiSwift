@@ -24,7 +24,8 @@ struct D6NestedHistoryTests {
         }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("outer", [:], "c1")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup)
-        let subscription = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        // v1.5.2 D7 session.ts:1091-1101: running slots publish in memory before storage.
+        let subscription = try opened.harness.session.observeCommits { (publication: ObservedCommit, _: ChordContext) in log.append(publication) }
         let settled = try await opened.root.submit(.input(content: .text("go")), context: .background).wait(context: .background)
         #expect(settled.status == "done")
         let states = try log.values.map { try JSONValue.object($0.2).decode(LiveState.self) }

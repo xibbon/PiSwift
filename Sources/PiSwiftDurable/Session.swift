@@ -42,6 +42,8 @@ public final class Session: Sendable {
     private let documentRetentionMs: @Sendable () throws -> Double?
     private let cacheNow: @Sendable () throws -> Int64
     private let documentTimer: SessionDocumentTimer
+    private let persistWithinMs: @Sendable () -> Double?
+    private let readOnly: Bool
     // This build flag is used only for the full-suite retention checks.
     #if DEBUG && PI_DURABLE_ZERO_DOCUMENT_RETENTION
     internal static let defaultDocumentRetentionMs: Double = 0
@@ -58,6 +60,11 @@ public final class Session: Sendable {
         var queued = false
         var timer: Task<Void, Never>?
     }
+    private struct HoldTimer: Sendable {
+        let id: Int
+        let at: Double
+        let task: Task<Void, Never>
+    }
     internal let line = SessionLine()
     private let outcomes = SessionOutcomeLine()
     internal var outstandingJobs: Int { outcomes.outstandingCount }
@@ -71,7 +78,7 @@ public final class Session: Sendable {
     }
     private struct InternalListener: Sendable {
         let id: Int
-        let call: @Sendable (CommitPublication, ChordContext) throws -> Void
+        let call: @Sendable (ObservedCommit, ChordContext) throws -> Void
     }
     private struct CloseListener: Sendable {
         let id: Int
@@ -92,6 +99,10 @@ public final class Session: Sendable {
         var nextDocumentSweep = 0
         var sweepJobs = 0
         var documentTimersUnavailable = false
+        var holds: [DocumentID: SessionHeldDocument] = [:]
+        var holdOrder: [DocumentID] = []
+        var holdTimer: HoldTimer?
+        var nextHoldTimer = 0
     }
     private let state = Mutex(State())
     // Capture cached revisions atomically with all adoption, eviction, and installation.
@@ -110,14 +121,18 @@ public final class Session: Sendable {
         if let error { throw error }
     }
     #endif
-    deinit { state.withLock { $0.documentSweep?.timer?.cancel() } }
+    deinit { state.withLock { $0.documentSweep?.timer?.cancel(); $0.holdTimer?.task.cancel() } }
     private init(storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
                  documentRetentionMs: @escaping @Sendable () throws -> Double?, documentTimer: SessionDocumentTimer,
                  cacheNow: (@Sendable () throws -> Int64)?, cacheBounds: CacheBounds,
+                 persistWithinMs: @escaping @Sendable () -> Double?,
+                 readOnly: Bool,
                  hooks: any SessionHooks, report: @escaping @Sendable (any Error, ReportInfo) -> Void) {
         let latch = SessionFailureLatch()
         self.failureLatch = latch
         self.documentRetentionMs = documentRetentionMs; self.documentTimer = documentTimer
+        self.persistWithinMs = persistWithinMs
+        self.readOnly = readOnly
         self.cacheNow = cacheNow ?? now
         let cached = SessionCachedStorage(storage, conversationCapacity: cacheBounds.conversations,
                                           taskCapacity: cacheBounds.tasks, submissionCapacity: cacheBounds.submissions)
@@ -138,32 +153,34 @@ public final class Session: Sendable {
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             documentRetentionMs: Double? = nil,
+                            persistWithinMs: Double? = nil,
                             setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (Report) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
         let legacy: @Sendable (any Error, ReportInfo) -> Void = { error, info in onReport(Report(info, error: error)) }
         return try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
-            documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: legacy)), hooks: hooks, onReport: legacy, context: context)
+            documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: legacy)),
+            persistWithinMs: { persistWithinMs }, hooks: hooks, onReport: legacy, context: context)
     }
     @available(*, deprecated, message: "Use the single Report callback")
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-                            documentRetentionMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
+                            documentRetentionMs: Double? = nil, persistWithinMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error, ReportInfo) -> Void,
                             context: ChordContext) async throws -> Session {
-        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
+        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs, persistWithinMs: persistWithinMs,
             setTimer: setTimer, hooks: hooks, onReport: { (report: Report) in onReport(report.error, report.info) }, context: context)
     }
     /// Adapts a callback that receives only the original error.
     public static func open(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
-                            documentRetentionMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
+                            documentRetentionMs: Double? = nil, persistWithinMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error) -> Void,
                             context: ChordContext) async throws -> Session {
-        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
+        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs, persistWithinMs: persistWithinMs,
                        setTimer: setTimer, hooks: hooks, onReport: { (report: Report) in onReport(report.error) }, context: context)
     }
     /// Opens a Session with an internal timer hook for retention tests.
@@ -171,11 +188,12 @@ public final class Session: Sendable {
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                             documentRetentionMs: Double?,
                             documentTimer: SessionDocumentTimer,
+                            persistWithinMs: @escaping @Sendable () -> Double? = { nil },
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
-            documentTimer: documentTimer, hooks: hooks, onReport: onReport, context: context)
+            documentTimer: documentTimer, persistWithinMs: persistWithinMs, hooks: hooks, onReport: onReport, context: context)
     }
     internal static func openWithDocumentRetention(storage: any DurableStorage,
                             now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
@@ -183,12 +201,15 @@ public final class Session: Sendable {
                             documentTimer: SessionDocumentTimer? = nil,
                             cacheNow: (@Sendable () throws -> Int64)? = nil,
                             cacheBounds: CacheBounds = CacheBounds(),
+                            persistWithinMs: @escaping @Sendable () -> Double? = { nil },
+                            readOnly: Bool = false,
                             hooks: any SessionHooks = DefaultSessionHooks(),
                             onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
                             context: ChordContext) async throws -> Session {
         let session = Session(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
             documentTimer: documentTimer ?? .host(HarnessTimers(now: now, report: onReport)), cacheNow: cacheNow,
-            cacheBounds: cacheBounds, hooks: hooks, report: onReport)
+            cacheBounds: cacheBounds, persistWithinMs: persistWithinMs, readOnly: readOnly,
+            hooks: hooks, report: onReport)
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
@@ -239,20 +260,36 @@ public final class Session: Sendable {
     internal func evictCachedConversation(_ id: ConversationID) { cached.evictConversation(id) }
     internal func evictCachedSubmission(_ id: SubmissionID) { cached.evictSubmission(id) }
     internal var tailCacheSizes: (latest: Int, markers: Int) { (tails.size, tails.markers) }
+    private func deferral(_ persistence: CommitPersistence) throws -> Double? {
+        switch persistence {
+        case .immediate: return nil
+        case .deferred(let value):
+            if let value {
+                guard !value.isNaN, value >= 0 else {
+                    throw SessionError.message("CommitPersistence.withinMs must be a number of milliseconds, 0 or more")
+                }
+                return value
+            }
+            let configured = persistWithinMs()
+            return configured.map { !$0.isNaN && $0 >= 0 ? $0 : 1_000 } ?? 1_000
+        }
+    }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
     public func commit<T>(_ change: (Transaction) async throws -> T,
-                          context: ChordContext) async throws -> T {
-        try await commitWith(change, context: context, scope: TransactionScope())
+                          context: ChordContext, persistence: CommitPersistence = .immediate) async throws -> T {
+        try await commitWith(change, context: context, scope: TransactionScope(), persistence: persistence)
     }
     internal func commitWith<T>(_ change: (Transaction) async throws -> T,
                                 context: ChordContext,
-                                scope: TransactionScope = TransactionScope()) async throws -> T {
+                                scope: TransactionScope = TransactionScope(),
+                                persistence: CommitPersistence = .immediate) async throws -> T {
+        let withinMs = try deferral(persistence)
         let (ticket, delivery) = try admit()
         await ticket.wait()
         let prepared: (T, SessionWriterPart?, Bool)
         do {
             if !outcomes.tryClaimRoom() { await outcomes.waitForRoom() }
-            prepared = try await commitOnLine(change, context: context, scope: scope, delivered: delivery)
+            prepared = try await commitOnLine(change, context: context, scope: scope, withinMs: withinMs, delivered: delivery)
             line.release()
         } catch {
             sweepDocuments()
@@ -297,6 +334,7 @@ public final class Session: Sendable {
     }
     private func commitOnLine<T>(_ change: (Transaction) async throws -> T,
                                 context: ChordContext, scope: TransactionScope,
+                                withinMs: Double? = nil,
                                 delivered: SessionOutcomeLine.Ticket? = nil) async throws -> (T, SessionWriterPart?, Bool) {
         try assertHealthy()
         try context.abortSignal?.throwIfAborted()
@@ -304,20 +342,35 @@ public final class Session: Sendable {
         let result: T
         do { result = try await change(tx); try assertHealthy() }
         catch { await tx.settleFailure(); throw error }
-        let writes = try await tx.settleSuccess()
+        var writes = try await tx.settleSuccess()
+        if readOnly && !writes.isEmpty { tx.discard(); throw ReadOnlySession() } // v1.5.2 D7 session.ts:1115-1118
+        // v1.5.2 D7 session.ts:1107-1111: a read-only transaction does not store a hold.
         if writes.isEmpty { tx.discard(); sweepDocuments(); return (result, nil, false) }
-        let part = SessionWriterPart(writes: writes, keys: tx.writeKeys(writes), context: context,
+        if let withinMs, let eligible = tx.holdable(writes) {
+            let part = SessionWriterPart(writes: nil, keys: tx.writeKeys(writes), context: context,
+                delivered: delivered,
+                publish: { [weak self] _ in
+                    guard let self else { return .adoption(SessionError.closed) }
+                    return self.publishHeld(tx, eligible: eligible, withinMs: withinMs, context: context)
+                }, discard: { tx.discard() })
+            let first = writer.admit(part)
+            return (result, part, first)
+        }
+        let taken = tx.takeHeld({ id in self.state.withLock { $0.holds[id] } }, writes: &writes)
+        let storedWrites = writes
+        let part = SessionWriterPart(writes: storedWrites, keys: tx.writeKeys(storedWrites), context: context,
             delivered: delivered,
             publish: { [weak self] seq in
                 guard let self else { return .adoption(SessionError.closed) }
-                return self.publishCommit(tx, writes: writes, seq: seq, context: context)
+                guard let seq else { return .adoption(SessionError.closed) }
+                return self.publishCommit(tx, writes: storedWrites, taken: taken, seq: seq, context: context)
             }, discard: { tx.discard() })
         let first = writer.admit(part)
         return (result, part, first)
     }
 
     /// v1.5.2 session/session.ts `#adopt` and `#publish`.
-    private func publishCommit(_ tx: Transaction, writes: [StorageWrite], seq: Seq,
+    private func publishCommit(_ tx: Transaction, writes: [StorageWrite], taken: [SessionHeldDocument], seq: Seq,
                                context: ChordContext) -> WriterPublishFailure? {
         // v1.5.2 writer.ts:252–260: write-through precedes adoption.
         #if DEBUG
@@ -334,10 +387,10 @@ public final class Session: Sendable {
             cached.published(writes)
             tails.apply(writes)
         }
-        let documents: [DocumentCommitChange]
+        let documents: (observed: [DocumentCommitChange], stored: [DocumentCommitChange])
         do { documents = try committedRead.withLock { _ in try tx.adopt(seq) } }
         catch { return .adoption(error) }
-        for document in documents {
+        for document in documents.stored {
             touchDocument(DocumentAddress(kind: document.record.kind, scope: document.record.scope, key: document.record.key))
         }
         var changes: [CommitChange] = []
@@ -350,7 +403,8 @@ public final class Session: Sendable {
             default: break
             }
         }
-        changes.append(contentsOf: documents.map(CommitChange.document))
+        let tables = changes
+        changes.append(contentsOf: documents.observed.map(CommitChange.document))
         let publication = CommitPublication(seq: seq, changes: changes)
         // v1.5.2 session.ts:1364–1385 queues host dispatch only if a
         // host was attached when this publication began. The dispatch uses
@@ -359,14 +413,167 @@ public final class Session: Sendable {
         let internalListeners = state.withLock { $0.internals }
         var ownFailure: (any Error)?
         for listener in internalListeners {
-            do { try listener.call(publication, context) } catch { if ownFailure == nil { ownFailure = error } }
+            do { try listener.call(.stored(publication), context) } catch { if ownFailure == nil { ownFailure = error } }
         }
         if hadHostListener {
             let listeners = state.withLock { $0.commits }
-            for listener in listeners { listener.call(publication, context) }
+            let stored = CommitPublication(seq: seq, changes: tables + documents.stored.map(CommitChange.document))
+            for listener in listeners { listener.call(stored, context) }
         }
+        releaseHolds(taken)
         sweepDocuments()
         return ownFailure.map { .listener($0) }
+    }
+
+    /// v1.5.2 D7 session.ts:1207-1249. The tracker, hold and pin advance together.
+    private func publishHeld(_ tx: Transaction,
+                             eligible: [(loaded: LoadedDocument, ops: [Delta.Op], base: Bool)],
+                             withinMs: Double, context: ChordContext) -> WriterPublishFailure? {
+        let documents: [DocumentCommitChange]
+        do {
+            documents = try committedRead.withLock { _ in
+                let documents = try tx.adoptHeld()
+                let deadline = Double(now()) + withinMs
+                state.withLock { state in
+                    for item in eligible {
+                        let id = item.loaded.record.id
+                        if var hold = state.holds[id] {
+                            hold.pending.push(item.ops)
+                            hold.base = hold.base || item.base
+                            hold.deadline = min(hold.deadline, deadline)
+                            state.holds[id] = hold
+                        } else {
+                            let pending = PendingOps()
+                            pending.push(item.ops)
+                            state.holds[id] = SessionHeldDocument(loaded: item.loaded, pending: pending,
+                                                                  base: item.base, deadline: deadline)
+                            state.holdOrder.append(id)
+                            state.attachedDocuments[id, default: 0] += 1
+                            state.idleDocuments.remove(Array(documentAddressID(item.loaded.address).utf8))
+                        }
+                    }
+                    if state.idleDocuments.count == 0 { cancelDocumentTimer(&state) }
+                    armHoldTimer(&state)
+                }
+                return documents
+            }
+        } catch { return .adoption(error) }
+        var ownFailure: (any Error)?
+        for listener in state.withLock({ $0.internals }) {
+            do { try listener.call(.memory(documents), context) }
+            catch { if ownFailure == nil { ownFailure = error } }
+        }
+        return ownFailure.map { .listener($0) }
+    }
+
+    /// v1.5.2 D7 session.ts:1288-1295. A stored hold no longer pins its tracker.
+    private func releaseHolds(_ holds: [SessionHeldDocument]) {
+        guard !holds.isEmpty else { return }
+        var released: [(DocumentAddress, DocumentID)] = []
+        state.withLock { state in
+            for hold in holds {
+                let id = hold.loaded.record.id
+                guard state.holds.removeValue(forKey: id) != nil else { continue }
+                state.holdOrder.removeAll { $0 == id }
+                if let count = state.attachedDocuments[id] {
+                    if count > 1 { state.attachedDocuments[id] = count - 1 }
+                    else { state.attachedDocuments.removeValue(forKey: id); released.append((hold.loaded.address, id)) }
+                }
+            }
+            armHoldTimer(&state)
+        }
+        for (address, id) in released { touchDocument(address, recordID: id) }
+    }
+
+    /// v1.5.2 D7 session.ts:1297-1323. There is no task for an empty or infinite hold set.
+    private func armHoldTimer(_ state: inout State) {
+        let at = state.holds.values.map(\.deadline).min() ?? .infinity
+        if let current = state.holdTimer, current.at == at { return }
+        state.holdTimer?.task.cancel()
+        state.holdTimer = nil
+        guard at.isFinite, state.closing == nil else { return }
+        state.nextHoldTimer += 1
+        let id = state.nextHoldTimer
+        let timer = documentTimer
+        let delay = max(0, at - Double(now()))
+        let add = Int64(min(delay.rounded(.up), Double(Int64.max / 2)))
+        let sum = timer.now().addingReportingOverflow(add)
+        let deadline = sum.overflow ? Int64.max : sum.partialValue
+        let task = Task { [weak self] in
+            do { try await timer.foregroundSleep(deadline) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            await self?.holdTimerFired(id: id)
+        }
+        state.holdTimer = HoldTimer(id: id, at: at, task: task)
+    }
+
+    private func holdTimerFired(id: Int) async {
+        let ticket = line.reserve()
+        await ticket.wait()
+        defer { line.release() }
+        let shouldStore = state.withLock { state -> Bool in
+            guard state.holdTimer?.id == id, state.closing == nil else { return false }
+            state.holdTimer = nil
+            return true
+        }
+        guard shouldStore, failure == nil else { return }
+        try? await storeHolds(context: .background)
+    }
+
+    /// v1.5.2 D7 session.ts:1251-1285. The caller holds the Session line.
+    private func storeHolds(ids: Set<DocumentID>? = nil, context: ChordContext) async throws {
+        await writer.drained()
+        try assertHealthy()
+        let held: [SessionHeldDocument] = state.withLock { state in state.holdOrder.compactMap { id -> SessionHeldDocument? in
+            guard ids == nil || ids!.contains(id) else { return nil }
+            return state.holds[id]
+        } }
+        guard !held.isEmpty else { return }
+        var writes: [StorageWrite] = []
+        var changes: [DocumentCommitChange] = []
+        var keys: [String] = []
+        for hold in held {
+            let value = hold.loaded.tracker.value.objectValue!
+            let ops: [Delta.Op]
+            let content: DocumentContent
+            switch hold.pending.take() {
+            case .replace:
+                ops = [.replace(.object(value))]
+                content = .base(version: hold.loaded.valueVersion, value: value)
+            case .ops(let folded):
+                ops = folded
+                content = hold.base ? .base(version: hold.loaded.valueVersion, value: value)
+                                    : .delta(version: hold.loaded.valueVersion, ops: folded)
+            }
+            writes.append(.documentChange(id: hold.loaded.record.id, content: content))
+            keys.append(SessionKeys.documentKey(hold.loaded.address))
+            keys.append(SessionKeys.incarnationKey(hold.loaded.record.id))
+            let conversation: ConversationID?
+            if case .conversation(let id, _) = hold.loaded.record.scope { conversation = id } else { conversation = nil }
+            changes.append(DocumentCommitChange(record: hold.loaded.record, conversationId: conversation,
+                                                version: hold.loaded.valueVersion, value: value, ops: ops))
+        }
+        let storedWrites = writes
+        let storedChanges = changes
+        let part = SessionWriterPart(writes: storedWrites, keys: keys, context: context.withoutAbortSignal(),
+            publish: { [weak self] seq in
+                guard let self, let seq else { return .adoption(SessionError.closed) }
+                self.cached.published(storedWrites)
+                for (index, hold) in held.enumerated() {
+                    hold.loaded.state.withLock { state in
+                        if case .documentChange(_, .base, _) = storedWrites[index] { state.deltasSinceBase = 0 }
+                        else { state.deltasSinceBase += 1 }
+                    }
+                }
+                let publication = CommitPublication(seq: seq, changes: storedChanges.map(CommitChange.document))
+                for listener in self.state.withLock({ $0.commits }) { listener.call(publication, context) }
+                self.releaseHolds(held)
+                return nil
+            }, discard: {})
+        let first = writer.admit(part)
+        if first { await writer.runFirst(part) }
+        try await part.wait()
     }
     internal func readOnLine<T>(_ job: () async throws -> T) async throws -> T {
         let (ticket, delivery) = try admit()
@@ -387,6 +594,7 @@ public final class Session: Sendable {
         let ticket = line.reserve()
         await ticket.wait()
         defer { line.release() }
+        if failure == nil { try await storeHolds(context: .background) }
         state.withLock { clearDocumentCache(&$0) }
     }
     /// The listener runs when close seals admission. It must not block or call Session operations.
@@ -458,7 +666,7 @@ public final class Session: Sendable {
             if state.closing != nil { throw SessionError.closed }
         }
     }
-    internal func observeCommits(_ listener: @escaping @Sendable (CommitPublication, ChordContext) throws -> Void) throws -> SessionSubscription {
+    internal func observeCommits(_ listener: @escaping @Sendable (ObservedCommit, ChordContext) throws -> Void) throws -> SessionSubscription {
         let id = try state.withLock { state in
             try failureLatch.check()
             if state.closing != nil { throw SessionError.closed }
@@ -484,16 +692,24 @@ public final class Session: Sendable {
                 await ticket.wait()
                 defer { self.line.release(); self.finishClose() }
                 await self.writer.drained()
+                var unstored: (any Error)?
+                if self.failure == nil {
+                    do { try await self.storeHolds(context: cleanup) }
+                    catch { unstored = error }
+                }
                 // v1.5.2 CH3 session/session.ts:797–802: end after the last publication.
                 let observers = self.state.withLock { $0.commits }
                 for observer in observers { observer.end?(self.observerCloseEnd) }
-                self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); self.clearDocumentCache(&$0); $0.attachedDocuments.removeAll() }
+                self.state.withLock { $0.commits.removeAll(); $0.internals.removeAll(); self.clearDocumentCache(&$0); $0.attachedDocuments.removeAll(); $0.holds.removeAll(); $0.holdOrder.removeAll() }
                 do { try await self.storage.close(context: cleanup) }
                 catch { self.fail(error); throw error }
+                if let unstored { throw unstored }
             }
             state.closing = task
             state.documentSweep?.timer?.cancel()
             state.documentSweep = nil
+            state.holdTimer?.task.cancel()
+            state.holdTimer = nil
             let listeners = state.closes; state.closes.removeAll()
             return (task, listeners)
         }
@@ -514,6 +730,7 @@ public final class Session: Sendable {
         try await waitForDocument(address)
         if let cached = cachedDocument(address) {
             if cached.valueVersion == definition.version { return cached }
+            try await storeHolds(ids: [cached.record.id], context: context)
             evictDocument(address, recordID: cached.record.id)
         }
         guard let record = try await storage.findDocument(address, at: .current, context: context) else { return nil }

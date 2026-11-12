@@ -68,6 +68,8 @@ private struct DocumentPlan: Sendable {
     let loaded: LoadedDocument?
     let definition: DocumentDefinition?
     var conversationID: ConversationID?
+    var heldStoredOps: [Delta.Op]? = nil
+    var heldObserved = false
     var id: DocumentID { create?.id ?? record!.id }
     var scope: DocumentScope { create?.scope ?? record!.scope }
     var fork: DocumentFork? { create?.fork ?? record?.fork }
@@ -287,9 +289,76 @@ final class TransactionDocuments: Sendable {
         return keys
     }
 
-    func adopt(seq: Seq, session: Session) throws -> [DocumentCommitChange] {
+    /// v1.5.2 D7 transaction.ts:805-826. A migration or any other write must reach Storage.
+    func holdable(_ writes: [StorageWrite]) -> [(loaded: LoadedDocument, ops: [Delta.Op], base: Bool)]? {
+        guard !writes.isEmpty, writes.allSatisfy({ if case .documentChange = $0 { true } else { false } }) else { return nil }
+        var result: [(LoadedDocument, [Delta.Op], Bool)] = []
+        for plan in state.withLock({ $0.plans }) where plan.content != nil || plan.retire {
+            guard !plan.retire, let loaded = plan.loaded, let prepared = plan.prepared,
+                  let definition = plan.definition, case .conversation = loaded.record.scope,
+                  loaded.record.history == .latest, loaded.record.fork == .initial,
+                  loaded.storedVersion == definition.version,
+                  case .documentChange(_, let content, _) = plan.content else { return nil }
+            if case .base = content { result.append((loaded, prepared.ops, true)) }
+            else { result.append((loaded, prepared.ops, false)) }
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    /// v1.5.2 D7 transaction.ts:828-855. This does not advance stored version or delta count.
+    func adoptHeld(session: Session) throws -> [DocumentCommitChange] {
         var result: [DocumentCommitChange] = []
         for plan in state.withLock({ $0.plans }) {
+            guard let loaded = plan.loaded, let prepared = plan.prepared, let definition = plan.definition else { continue }
+            if prepared.ops.isEmpty { prepared.abort(); continue }
+            try loaded.tracker.adopt(prepared)
+            result.append(DocumentCommitChange(record: loaded.record, conversationId: plan.conversationID,
+                                               version: definition.version, value: prepared.value.objectValue!, ops: prepared.ops))
+        }
+        return result
+    }
+
+    /// v1.5.2 D7 transaction.ts:857-885. Called after fallible settlement, before writer admission.
+    func takeHeld(_ held: (DocumentID) -> SessionHeldDocument?, writes: inout [StorageWrite]) -> [SessionHeldDocument] {
+        var taken: [SessionHeldDocument] = []
+        state.withLock { state in
+            for index in state.plans.indices {
+                guard let record = state.plans[index].record, let hold = held(record.id) else { continue }
+                let plan = state.plans[index]
+                let ownOps = plan.prepared?.ops ?? []
+                let value = plan.prepared?.value.objectValue ?? hold.loaded.tracker.value.objectValue!
+                hold.pending.push(ownOps)
+                let storedOps: [Delta.Op]
+                let content: DocumentContent
+                switch hold.pending.take() {
+                case .replace:
+                    storedOps = [.replace(.object(value))]
+                    content = .base(version: hold.loaded.valueVersion, value: value)
+                case .ops(let ops):
+                    storedOps = ops
+                    if hold.base || (plan.content.flatMap({ if case .documentChange(_, .base, _) = $0 { true } else { nil } }) == true) {
+                        content = .base(version: hold.loaded.valueVersion, value: value)
+                    } else { content = .delta(version: hold.loaded.valueVersion, ops: ops) }
+                }
+                let write = StorageWrite.documentChange(id: record.id, content: content)
+                if let own = plan.content, let at = writes.firstIndex(of: own) { writes[at] = write }
+                else if let at = writes.firstIndex(where: { if case .documentRetire(let id, _) = $0 { id == record.id } else { false } }) {
+                    writes.insert(write, at: at)
+                } else { writes.append(write) }
+                state.plans[index].content = write
+                state.plans[index].heldStoredOps = storedOps
+                state.plans[index].heldObserved = plan.content != nil
+                taken.append(hold)
+            }
+        }
+        return taken
+    }
+
+    func adopt(seq: Seq, session: Session) throws -> (observed: [DocumentCommitChange], stored: [DocumentCommitChange]) {
+        var result: [DocumentCommitChange] = []
+        var stored: [DocumentCommitChange] = []
+        for plan in state.withLock({ $0.plans }) {
+            let before = result.count
             let record: DocumentRecord
             if let old = plan.record {
                 record = DocumentRecord(id: old.id, kind: old.kind, scope: old.scope, createdAt: old.createdAt, key: old.key, retiredAt: plan.retire ? seq : old.retiredAt, history: old.history, fork: old.fork, extensionFields: old.extensionFields)
@@ -315,10 +384,18 @@ final class TransactionDocuments: Sendable {
             } else if case .documentCopy(_, let source, _) = plan.content {
                 result.append(DocumentCommitChange(record: record, conversationId: plan.conversationID, source: source))
             } else if plan.content != nil, let prepared = plan.prepared, let definition = plan.definition {
-                result.append(DocumentCommitChange(record: record, conversationId: plan.conversationID, version: definition.version, value: prepared.value.objectValue!, ops: plan.loaded == nil ? [] : prepared.ops))
+                let own = DocumentCommitChange(record: record, conversationId: plan.conversationID, version: definition.version,
+                                               value: prepared.value.objectValue!, ops: plan.loaded == nil ? [] : prepared.ops)
+                if plan.heldStoredOps == nil || plan.heldObserved { result.append(own) }
             }
+            if let ops = plan.heldStoredOps {
+                stored.append(DocumentCommitChange(record: plan.record ?? record, conversationId: plan.conversationID,
+                                                   version: plan.loaded?.valueVersion, value: plan.prepared?.value.objectValue ?? plan.loaded?.tracker.value.objectValue,
+                                                   ops: ops))
+                if plan.retire { stored.append(contentsOf: result.dropFirst(before)) }
+            } else { stored.append(contentsOf: result.dropFirst(before)) }
         }
-        return result
+        return (result, stored)
     }
 }
 

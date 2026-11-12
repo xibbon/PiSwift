@@ -59,6 +59,7 @@ public final class Harness: Sendable {
             let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
                 documentRetentionMs: { settings().documentRetentionMs },
                 documentTimer: .host(timers),
+                persistWithinMs: { settings().progress.persistWithinMs },
                 hooks: hooks, onReport: report, context: context)
             let storage = session.storage
             let reference = Mutex(WeakHarness())
@@ -108,9 +109,10 @@ public final class Harness: Sendable {
         try await withTaskCancellationContext(context) { try await session.close(context: $0) }
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
-    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
+    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext,
+                          persistence: CommitPersistence = .immediate) async throws -> T {
         try await withTaskCancellationContext(context) { context in
-            try assertOpen(); return try await session.commit(change, context: context)
+            try assertOpen(); return try await session.commit(change, context: context, persistence: persistence)
         }
     }
     /// Attaches a synchronous observer of committed changes.

@@ -106,6 +106,7 @@ extension TaskScheduler {
         return (state.withLock { $0.closing ? .closing : $0.enabled ? .running : .paused }, tasks)
     }
     func gated<T>(_ invocation: TaskInvocation, context: ChordContext,
+                  persistence: CommitPersistence = .immediate,
                   change: (Transaction, TaskRecord) async throws -> T) async throws -> T {
         try invocation.check()
         return try await session.commitWith({ tx in
@@ -134,7 +135,8 @@ extension TaskScheduler {
                 }
             }
             return result
-        }, context: context, scope: .init(conversationId: invocation.conversationId, taskId: invocation.taskId))
+        }, context: context, scope: .init(conversationId: invocation.conversationId, taskId: invocation.taskId),
+           persistence: persistence)
     }
     func commitState(_ tx: Transaction, invocation: TaskInvocation, current: TaskRecord, next: TaskState) async throws {
         if case .waiting(_, let on, let policy, _) = next {
@@ -158,18 +160,33 @@ extension TaskScheduler {
         default: throw SessionError.message("A task handler can commit only running, waiting, sleeping, or terminal state")
         }
     }
-    func settleIdle() {
-        for id in idleWaiters.keys { if idle(id) { idleWaiters.resolve(id, value: ()) } }
-        let now = now(), retention = settings().contextRetentionMs
-        let ids = state.withLock { Array($0.contexts.keys) }
+    /// v1.5.2 D7 scheduler.ts:935-959. Only changed scopes and expired heads are visited.
+    func settleIdle(scopes: Set<ConversationID>? = nil) {
+        let all = state.withLock { state -> Bool in
+            let all = scopes == nil || state.unknownsChanged
+            state.unknownsChanged = false
+            return all
+        }
+        for id in idleWaiters.keys where id == nil || all || scopes?.contains(id!) == true {
+            if idle(id) { idleWaiters.resolve(id, value: ()) }
+        }
+        let time = now(), retention = settings().contextRetentionMs
+        let ids = state.withLock { state -> [ConversationID] in
+            for id in state.idleOrder.expire(now: time, retention: retention) { state.contexts.removeValue(forKey: id) }
+            return all ? Array(state.contexts.keys) : Array(scopes ?? [])
+        }
         for id in ids {
-            let idle = idle(id)
+            let isIdle = idle(id)
             state.withLock { state in
                 guard var kept = state.contexts[id] else { return }
-                if let since = kept.idleSince, now - since >= retention { state.contexts.removeValue(forKey: id) }
-                else if !idle { kept.idleSince = nil; state.contexts[id] = kept }
-                else if retention > 0 { kept.idleSince = kept.idleSince ?? now; state.contexts[id] = kept }
-                else { state.contexts.removeValue(forKey: id) }
+                if !isIdle {
+                    if kept.idleSince != nil { kept.idleSince = nil; state.idleOrder.remove(id); state.contexts[id] = kept }
+                } else if retention <= 0 {
+                    state.contexts.removeValue(forKey: id); state.idleOrder.remove(id)
+                } else if kept.idleSince == nil {
+                    kept.idleSince = time; kept.expiresAt = time + retention
+                    state.contexts[id] = kept; state.idleOrder.mark(id, since: time)
+                }
             }
         }
         scheduleExpiry()
@@ -177,7 +194,7 @@ extension TaskScheduler {
     private func scheduleExpiry() {
         let retention = settings().contextRetentionMs
         let changed = state.withLock { state -> (UUID, Int64?, HarnessDisarm?)? in
-            let deadline = state.closing ? nil : state.contexts.values.compactMap { $0.idleSince.map { $0 + retention } }.min()
+            let deadline = state.closing ? nil : state.idleOrder.oldest.map { $0 + retention }
             if state.expiryAt == deadline { return nil }
             let previous = state.expiry; state.expiry = nil; state.expiryAt = deadline
             let id = UUID(); state.expiryID = id
@@ -192,7 +209,7 @@ extension TaskScheduler {
                 guard state.expiryID == id, !state.closing else { return false }
                 state.expiry = nil; state.expiryAt = nil; return true
             }
-            if valid { self.settleIdle() }
+            if valid { self.settleIdle(scopes: []) }
         }, until: Double(deadline), options: .init(background: true))
         let installed = state.withLock { state in
             guard state.expiryID == id, state.expiryAt != nil, !state.closing else { return false }
@@ -211,8 +228,15 @@ extension TaskScheduler {
                 // v1.5.2 context.ts:105–139: a commit can publish after the
                 // off-line scan and before this range is installed.
                 guard !range.current || session.knownLatestEntryId(id) == range.bounds.tail else { return }
-                if !idle { state.contexts[id] = KeptContext(range: range, idleSince: nil) }
-                else if retention > 0 { state.contexts[id] = KeptContext(range: range, idleSince: state.contexts[id]?.idleSince ?? now) }
+                if !idle {
+                    state.contexts[id] = KeptContext(range: range, idleSince: nil)
+                    state.idleOrder.remove(id)
+                } else if retention > 0 {
+                    let oldSince = state.contexts[id]?.idleSince
+                    let since = oldSince ?? now
+                    state.contexts[id] = KeptContext(range: range, idleSince: since, expiresAt: state.contexts[id]?.expiresAt ?? (since + retention))
+                    if oldSince == nil { state.idleOrder.mark(id, since: since) }
+                }
             }
             scheduleExpiry()
         }

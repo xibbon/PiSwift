@@ -11,6 +11,13 @@ public struct ReadAfterWrite: Error, Sendable, Equatable, CustomStringConvertibl
     }
 }
 
+/// A write was attempted through a read-only Session.
+public struct ReadOnlySession: Error, Sendable, Equatable, CustomStringConvertible {
+    public let what: String
+    public init(_ what: String = "a commit with writes") { self.what = what }
+    public var description: String { "Read-only Harness: \(what) refused" }
+}
+
 /// Errors from the Session and its transaction. Messages follow the upstream kernel.
 public enum SessionError: Error, Sendable, Equatable, CustomStringConvertible {
     /// Session is closed.

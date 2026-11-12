@@ -63,10 +63,12 @@ public final class Conversation: Sendable {
         _ = try await submit(.write(entry: EntryDraft(kind: resetEntry.kind, model: model, head: .self)), context: context)
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
-    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
+    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext,
+                          persistence: CommitPersistence = .immediate) async throws -> T {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen()
-            return try await harness.session.commitWith(change, context: context, scope: TransactionScope(conversationId: id))
+            return try await harness.session.commitWith(change, context: context, scope: TransactionScope(conversationId: id),
+                                                        persistence: persistence)
         }
     }
     /// Reads the visible model context through the optional inclusive entry boundary.

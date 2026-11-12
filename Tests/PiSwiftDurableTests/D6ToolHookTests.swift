@@ -263,7 +263,9 @@ struct D6ToolHookTests {
 
     // v1.5.2 harness-tool-hooks.test.ts:413,508.
     @Test(arguments: ["replace", "throw"]) func abortResultPassesThroughAfterToolWithHeldOutput(mode: String) async throws {
-        let setup = HarnessChatSetup(), started = HarnessChatSignal()
+        // v1.5.2 D7 harness-tool-hooks.test.ts:508-537: output stays in memory until the result stores it.
+        let setup = HarnessChatSetup(settings: .init(progress: .init(outputIntervalMs: 0, persistWithinMs: 60_000)))
+        let started = HarnessChatSignal(), storage = ControlledStorage()
         let observed = Mutex<String?>(nil)
         try installHarnessTool(harnessTestTool(execute: { _, api, context in
             try api.output(.text("partial"), nil)
@@ -280,10 +282,16 @@ struct D6ToolHookTests {
             return changed
         }))]))
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("done"))])
-        let opened = try await openChat(setup: setup)
+        let opened = try await openChat(storage: storage, setup: setup)
         let submission = try await opened.root.submit(.input(content: .text("go")), context: .background)
         await started.wait()
-        let id = try #require(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)?.tools?.first?.taskId)
+        let memory = try #require(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background))
+        #expect(memory.tools?.first?.output == "partial")
+        let record = try #require(try await storage.findDocument(
+            .init(kind: LiveDoc.definition.kind, scope: .conversation(conversationId: opened.root.id)), at: .current, context: .background))
+        let stored = try #require(try await storage.document(record.id, at: .current, context: .background))
+        #expect(stored.value["tools"]?.arrayValue?.first?["output"] != .string("partial"))
+        let id = try #require(memory.tools?.first?.taskId)
         #expect(try await opened.harness.abortTask(id: id, context: .background) == .marked)
         _ = try await opened.harness.waitForTask(id: id, context: .background)
         #expect(try await submission.wait(context: .background).status == "done")

@@ -226,7 +226,11 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
                 try slot.set("arguments", .object(final))
             }
         }
-        return try toolTask.running(ToolTaskCheckpoint(phase: .execute, arguments: final, replay: tool.replay ?? .unsafe))
+        return nil
+    }, context: context, persistence: .deferred()) // v1.5.2 D7 tool.ts:181-193
+    // v1.5.2 D7 tool.ts:195-198 stores the execution intent before the tool runs.
+    try await runtime.commit({ _, _ in
+        try toolTask.running(ToolTaskCheckpoint(phase: .execute, arguments: final, replay: tool.replay ?? .unsafe))
     }, context: context)
     try await executeTool(runtime, call, tool, final, context)
 }

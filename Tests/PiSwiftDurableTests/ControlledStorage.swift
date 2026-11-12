@@ -61,6 +61,8 @@ actor ControlledStorage: DurableStorage {
     private var delaySeed: UInt32?
     private(set) var admittedCommits: [[StorageWrite]] = []
     private(set) var commits: [[StorageWrite]] = []
+    // v1.5.2 D7 session-deferred-commits.test.ts:347-364: keep each batch for cross-language fold fixtures.
+    private(set) var commitBatches: [[[StorageWrite]]] = []
     private(set) var callBatchCounts: [Int] = []
     private(set) var entryReadCount = 0
     private(set) var conversationReadCount = 0
@@ -162,6 +164,7 @@ actor ControlledStorage: DurableStorage {
         if skipReceipts { skippedReceiptCall = nil }
         admittedCommits.append(writes)
         commits.append(writes)
+        commitBatches.append(batches)
         if let held = commitGate {
             await held.entered.resolve()
             await held.gate.wait()

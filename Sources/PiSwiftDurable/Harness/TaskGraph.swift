@@ -349,7 +349,7 @@ internal final class TaskGraphView: Sendable {
         guard let (value, ops, observers) = frame else { return }
         for observer in observers { observer.advance(value, ops, context.withoutAbortSignal()) }
     }
-    private func advance(_ publication: CommitPublication, _ context: ChordContext) {
+    private func advance(_ publication: ObservedCommit, _ context: ChordContext) {
         guard let mount = state.withLock({ $0.mount }) else { return }
         let frame = mount.storage.withLock { state -> (TaskGraph, [Delta.Op], [TaskGraphObserver])? in
             var tasks = state.value.tasks

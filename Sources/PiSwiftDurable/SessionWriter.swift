@@ -86,12 +86,12 @@ internal enum WriterPublishFailure: Sendable {
 
 /// v1.5.2 session/writer.ts `PartSpec` and `Part`.
 internal final class SessionWriterPart: Sendable {
-    let writes: [StorageWrite]
+    let writes: [StorageWrite]?
     let keys: [String]
     let touchesDocument: Bool
     let context: ChordContext
     let delivered: SessionOutcomeLine.Ticket?
-    let publish: @Sendable (Seq) -> WriterPublishFailure?
+    let publish: @Sendable (Seq?) -> WriterPublishFailure?
     let discard: @Sendable () -> Void
     private struct State {
         var outcome: Result<Void, any Error>?
@@ -104,9 +104,9 @@ internal final class SessionWriterPart: Sendable {
         var publicationWaiters: [CheckedContinuation<Void, Never>] = []
     }
     private let state = Mutex(State())
-    init(writes: [StorageWrite], keys: [String], context: ChordContext,
+    init(writes: [StorageWrite]?, keys: [String], context: ChordContext,
          delivered: SessionOutcomeLine.Ticket? = nil,
-         publish: @escaping @Sendable (Seq) -> WriterPublishFailure?,
+         publish: @escaping @Sendable (Seq?) -> WriterPublishFailure?,
          discard: @escaping @Sendable () -> Void) {
         self.writes = writes; self.keys = keys; self.touchesDocument = keys.contains { $0.hasPrefix("doc:") }
         self.context = context; self.delivered = delivered
@@ -281,14 +281,17 @@ internal final class SessionWriter: Sendable {
             for part in parts { unpublish(part, SessionFailed(cause)) }
             return
         }
-        let received = Mutex<Receipts>(parts.count == 1 ? .single(nil) : .grouped([:]))
+        let stored = parts.compactMap(\.writes)
+        let received = Mutex<Receipts>(stored.count == 1 ? .single(nil) : .grouped([:]))
         var result: CommitResult?
         var rejected: (any Error)?
-        do {
-            result = try await storage.commit(parts.map(\.writes), receive: { index, seq in
-                received.withLock { $0.receive(index, seq) }
-            }, context: parts[0].context.withoutAbortSignal())
-        } catch { rejected = error }
+        if !stored.isEmpty {
+            do {
+                result = try await storage.commit(stored, receive: { index, seq in
+                    received.withLock { $0.receive(index, seq) }
+                }, context: parts[0].context.withoutAbortSignal())
+            } catch { rejected = error }
+        }
         if let cause = latch.failure {
             for part in parts { unpublish(part, SessionFailed(cause)) }
             return
@@ -303,18 +306,24 @@ internal final class SessionWriter: Sendable {
         var stop: (any Error)?
         var externalStop = false
         var pending: [(SessionWriterPart, any Error, Bool)] = []
+        var storedIndex = 0
         for (index, part) in parts.enumerated() {
             if let stop {
                 let error: any Error = externalStop ? SessionFailed(stop) : (rejected ?? SessionFailed(stop))
                 pending.append((part, error, false))
                 continue
             }
-            guard let seq = seqs.sequence(at: index) else {
-                let error: any Error = rejected ?? result?.refused ?? StorageRequestError("Storage committed without adopting the batch")
-                stop = error
-                pending.append((part, error, false))
-                continue
-            }
+            let seq: Seq?
+            if part.writes != nil {
+                seq = seqs.sequence(at: storedIndex)
+                storedIndex += 1
+                if seq == nil {
+                    let error: any Error = rejected ?? result?.refused ?? StorageRequestError("Storage committed without adopting the batch")
+                    stop = error
+                    pending.append((part, error, false))
+                    continue
+                }
+            } else { seq = nil }
             let publication: @Sendable () -> Void = {
                 part.runPublication {
                     if let cause = self.latch.failure { return .external(cause) }

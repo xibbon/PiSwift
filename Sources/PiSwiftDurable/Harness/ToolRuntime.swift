@@ -7,10 +7,11 @@ extension ToolExecutionApi {
         return runtime
     }
     /// Commits the supplied changes atomically and publishes them after storage succeeds.
-    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext) async throws -> T {
+    public func commit<T>(_ change: (Transaction) async throws -> T, context: ChordContext,
+                          persistence: CommitPersistence = .immediate) async throws -> T {
         try await withTaskCancellationContext(context) { context in
             let runtime = try taskRuntime()
-            return try await runtime.scheduler.gated(runtime.invocation, context: context) { tx, _ in
+            return try await runtime.scheduler.gated(runtime.invocation, context: context, persistence: persistence) { tx, _ in
                 return try await change(tx)
             }
         }

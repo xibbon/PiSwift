@@ -6,6 +6,8 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
+private struct CompactionD7Crash: Error {}
+
 private func compactionRecoveryPath() throws -> URL {
     try sqliteTestDirectory().appendingPathComponent("compaction.sqlite")
 }
@@ -22,6 +24,27 @@ private func compactionStoredCheckpoint(_ chat: CompactionChat, _ id: TaskID) as
     }
 }
 @Suite struct HarnessCompactionRecoveryTests {
+    @Test(.timeLimit(.minutes(1))) func cutOffSummarizationRerunsFromItsCheckpointAfterCrash() async throws {
+        // v1.5.2 D7 harness-deferred-progress.test.ts:398-428.
+        let path = try compactionRecoveryPath()
+        defer { try? FileManager.default.removeItem(at: path.deletingLastPathComponent()) }
+        var chat = try await compactionOpen(storage: SqliteStorage.open(path: path.path))
+        try await compactionHistory(chat)
+        let held = HarnessUnanswered()
+        chat.script.appendSummary([held.step])
+        let id = try await chat.root.compact(context: .background)
+        await held.reached.wait()
+        #expect(try await compactionStoredCheckpoint(chat, id)["phase"] == .string("summarize"))
+        chat.harness.session.fail(CompactionD7Crash())
+        _ = await chat.harness.closed
+        chat.script.appendSummary([.message(chatAssistant("SUMMARY"))])
+        chat = try await compactionReopen(chat, path: path)
+        #expect(try await compactionOutcome(chat, id).status == "completed")
+        #expect(chat.script.summaryRequests.count == 2)
+        #expect(chat.script.summaryRequests[0].messages.map(textOf) == chat.script.summaryRequests[1].messages.map(textOf))
+        #expect(try await compactionLive(chat) == LiveState())
+        try await chat.harness.close(context: .background)
+    }
     // Upstream harness-compaction.test.ts:1563.
     @Test func placedSummaryIsNotRepeatedAfterReopen() async throws {
         let path = try compactionRecoveryPath()

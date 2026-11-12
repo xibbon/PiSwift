@@ -163,9 +163,11 @@ public struct ProgressPolicy: Sendable, Equatable, Codable {
     public var partialIntervalMs: Int64
     /// Minimum interval between tool output publications, in milliseconds.
     public var outputIntervalMs: Int64
+    /// Maximum storage delay of an eligible progress commit, in milliseconds.
+    public var persistWithinMs: Double?
     /// Sets the intervals for partial-message and tool-output publication.
-    public init(partialIntervalMs: Int64 = 100, outputIntervalMs: Int64 = 100) {
-        self.partialIntervalMs = partialIntervalMs; self.outputIntervalMs = outputIntervalMs
+    public init(partialIntervalMs: Int64 = 100, outputIntervalMs: Int64 = 100, persistWithinMs: Double? = 1_000) {
+        self.partialIntervalMs = partialIntervalMs; self.outputIntervalMs = outputIntervalMs; self.persistWithinMs = persistWithinMs
     }
 }
 /// Optional publication intervals. Absent fields use the default policy.
@@ -174,9 +176,11 @@ public struct ProgressPolicyOverrides: Sendable {
     public var partialIntervalMs: Int64?
     /// Minimum interval between tool output publications, in milliseconds.
     public var outputIntervalMs: Int64?
+    /// Overrides the maximum storage delay of progress commits.
+    public var persistWithinMs: Double?
     /// Selects optional publication intervals to replace their defaults.
-    public init(partialIntervalMs: Int64? = nil, outputIntervalMs: Int64? = nil) {
-        self.partialIntervalMs = partialIntervalMs; self.outputIntervalMs = outputIntervalMs
+    public init(partialIntervalMs: Int64? = nil, outputIntervalMs: Int64? = nil, persistWithinMs: Double? = nil) {
+        self.partialIntervalMs = partialIntervalMs; self.outputIntervalMs = outputIntervalMs; self.persistWithinMs = persistWithinMs
     }
 }
 /// The default retry policy used when the host supplies no override.
@@ -276,7 +280,8 @@ public func resolveSettings(_ settings: HarnessSettings? = nil) -> Settings {
                          keepRecentTokens: compact?.keepRecentTokens ?? 20000, backgroundTokens: compact?.backgroundTokens ?? 32768,
                          modelOverrides: compact?.modelOverrides),
         progress: .init(partialIntervalMs: settings?.progress?.partialIntervalMs ?? 100,
-                        outputIntervalMs: settings?.progress?.outputIntervalMs ?? 100),
+                        outputIntervalMs: settings?.progress?.outputIntervalMs ?? 100,
+                        persistWithinMs: settings?.progress?.persistWithinMs ?? 1_000),
         toolExecution: settings?.toolExecution ?? .parallel,
         steeringMode: settings?.steeringMode ?? .oneAtATime, followUpMode: settings?.followUpMode ?? .oneAtATime,
         contextRetentionMs: settings?.contextRetentionMs ?? 600000,

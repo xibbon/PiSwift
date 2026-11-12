@@ -209,7 +209,8 @@ internal final class Submissions: Sendable {
             return record.status == "placed" ? .alreadyPlaced : .settled
         }, context: context)
     }
-    private func observe(_ publication: CommitPublication) {
+    private func observe(_ publication: ObservedCommit) {
+        if case .memory = publication { return }
         for change in publication.changes {
             if case .submission(let value) = change, isSettled(value) { waiters.resolve(value.id, value: SettledSubmission(value)) }
         }

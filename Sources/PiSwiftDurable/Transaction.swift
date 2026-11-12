@@ -145,11 +145,23 @@ public final class Transaction: Sendable {
         }
     }
     internal func discard() { documents.abort() }
-    internal func adopt(_ seq: Seq) throws -> [DocumentCommitChange] {
+    internal func adopt(_ seq: Seq) throws -> (observed: [DocumentCommitChange], stored: [DocumentCommitChange]) {
         #if DEBUG
         try session.checkAdoptionFault()
         #endif
         return try documents.adopt(seq: seq, session: session)
+    }
+    internal func holdable(_ writes: [StorageWrite]) -> [(loaded: LoadedDocument, ops: [Delta.Op], base: Bool)]? {
+        documents.holdable(writes)
+    }
+    internal func adoptHeld() throws -> [DocumentCommitChange] {
+        #if DEBUG
+        try session.checkAdoptionFault()
+        #endif
+        return try documents.adoptHeld(session: session)
+    }
+    internal func takeHeld(_ held: (DocumentID) -> SessionHeldDocument?, writes: inout [StorageWrite]) -> [SessionHeldDocument] {
+        documents.takeHeld(held, writes: &writes)
     }
     /// v1.5.2 session/transaction.ts:892–900 `writeKeys`.
     internal func writeKeys(_ writes: [StorageWrite]) -> [String] {

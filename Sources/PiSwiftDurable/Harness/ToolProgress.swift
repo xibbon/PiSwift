@@ -55,7 +55,7 @@ private actor ToolProgressWriter {
                 try slot.child("diagnostics")!.append(contentsOf: added.map { try JSONValue(encoding: $0) })
             }
             return nil
-        }, context: context)
+        }, context: context, persistence: .deferred()) // v1.5.2 D7 tool.ts:611-654
         writtenText = current.output.text; writtenDetails = current.details; writtenDiagnostics = current.diagnostics.count
         return bytes
     }

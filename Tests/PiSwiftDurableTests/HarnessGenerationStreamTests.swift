@@ -13,11 +13,13 @@ struct HarnessGenerationStreamTests {
         let submission = try await generationSubmit(opened)
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         generationPartial(models, text: "a")
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: wait for the partial throttle as well as the held-commit deadline.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         clock.advance(by: 100)
         try await eventually { try await generationLive(opened)?.generation?.message?["content"]?[0]?["text"] == .string("a") }
         generationPartial(models, text: "ab")
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: the held-commit deadline is already armed.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         clock.advance(by: 100)
         try await eventually { try await generationLive(opened)?.generation?.message?["content"]?[0]?["text"] == .string("ab") }
         generationFinal(models)
@@ -25,13 +27,9 @@ struct HarnessGenerationStreamTests {
         let contents: [DocumentContent] = await storage.commits.flatMap { writes in writes.compactMap { write in
             if case .documentChange(let id, let content, _) = write, id == record.id { return content }; return nil
         } }
-        #expect(contents.contains { if case .delta = $0 { true } else { false } })
+        // v1.5.2 D7 generation.ts:717-730; session.ts:1091-1101: held deltas fold into the final base.
+        #expect(!contents.contains { if case .delta = $0 { true } else { false } })
         guard case .base = contents.last else { Issue.record("Final live write must be a base"); return }
-        let append = contents.contains { content in
-            guard case .delta(_, let ops, _) = content else { return false }
-            return ops.contains { if case .append = $0 { true } else { false } }
-        }
-        #expect(append)
         try await opened.harness.close(context: .background)
     }
     @Test func partialThrottleUsesConfiguredIntervalAndStopsBeforeClassification() async throws {
@@ -40,7 +38,8 @@ struct HarnessGenerationStreamTests {
         let submission = try await generationSubmit(opened)
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         generationPartial(models)
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: wait for the partial throttle.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         clock.advance(by: 300)
         #expect(try await generationLive(opened)?.generation?.message == nil)
         generationFinal(models)
@@ -55,11 +54,14 @@ struct HarnessGenerationStreamTests {
         let submission = try await generationSubmit(opened)
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         generationPartial(models)
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: wait for the partial throttle.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         let gate = await storage.holdCommits()
         clock.advance(by: 100)
-        await gate.waitUntilEntered()
+        // v1.5.2 D7 generation.ts:717-730: the partial publishes in memory; classification stores it.
+        try await eventually { try await generationLive(opened)?.generation?.message != nil }
         generationFinal(models)
+        await gate.waitUntilEntered()
         let waiter = settled { try await submission.wait(context: .background) }
         #expect(!waiter.isSettled)
         await gate.release()
@@ -73,7 +75,8 @@ struct HarnessGenerationStreamTests {
         let opened = try await openChat(setup: setup, models: models), submission = try await generationSubmit(opened)
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         generationPartial(models)
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: wait for the partial throttle.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         clock.advance(by: 100)
         try await eventually { try await generationLive(opened)?.generation?.message != nil }
         try await opened.root.abort(context: .background)
@@ -110,7 +113,8 @@ struct HarnessGenerationStreamTests {
         let opened = try await openChat(setup: setup, models: models), submission = try await generationSubmit(opened)
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         generationPartial(models)
-        try await eventually { clock.pendingSleeperCount > 0 }
+        // v1.5.2 D7 generation.ts:717-730: wait for the partial throttle.
+        try await eventually { clock.pendingSleeperCount >= 2 }
         clock.advance(by: 100)
         try await eventually { try await generationLive(opened)?.generation?.message != nil }
         var invalid = chatAssistant("final"); invalid.usage.cost.total = .nan

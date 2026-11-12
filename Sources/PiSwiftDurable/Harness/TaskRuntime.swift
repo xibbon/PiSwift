@@ -73,13 +73,13 @@ public final class TaskRuntime: Sendable {
     }
     /// Commits state only while this invocation still owns the task.
     public func commit(_ change: (Transaction, TaskRecord) async throws -> TaskState?,
-                       context: ChordContext) async throws {
+                       context: ChordContext, persistence: CommitPersistence = .immediate) async throws {
         try await withTaskCancellationContext(context) { context in
             // v1.5.2 D5a scheduler.ts:2716–2744: report a crash ending only
             // after its terminal commit succeeds. Keep the report out of the
             // transaction so a refused write cannot produce a false ending.
             let interrupted = Mutex<(message: String, reason: ReportInfo.InterruptedReason, restarts: Double)?>(nil)
-            try await scheduler.gated(invocation, context: context) { tx, current in
+            try await scheduler.gated(invocation, context: context, persistence: persistence) { tx, current in
                 if let next = try await change(tx, current) {
                     try await scheduler.commitState(tx, invocation: invocation, current: current, next: next)
                     if case .terminal(.failed(let error, _, _), _) = next,

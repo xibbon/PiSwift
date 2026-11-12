@@ -298,7 +298,7 @@ private func requestGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Ta
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         try await convertPartial(tx: tx, live: live, conversationId: runtime.conversationId)
         try live.set("generation", .object(["attempt": .number(Double(attempt))])); return nil
-    }, context: context)
+    }, context: context, persistence: .deferred()) // v1.5.2 D7 generation.ts:276-286
     let models = try runtime.generationModels()
     guard let model = models.getModel(provider: ref.provider, modelId: ref.modelId) else { return try await failGeneration(runtime, ref: ref, context: context) }
     let view = try await runtime.context(runtime.conversationId, at: required(checkpoint.cutoff, "cutoff"), context: context)

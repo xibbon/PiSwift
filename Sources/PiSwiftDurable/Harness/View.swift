@@ -261,7 +261,7 @@ internal final class ConversationViews: Sendable {
             for observer in observers { observer.observer.closeSession() }
         }
     }
-    private func advance(_ publication: CommitPublication, context: ChordContext) throws {
+    private func advance(_ publication: ObservedCommit, context: ChordContext) throws {
         let mounts = state.withLock { Array($0.mounts) }
         for (id, mount) in mounts {
             let next = try mount.state.withLock { state -> ([EntryRecord], [Delta.Op], [String: JSONObject], [WindowedView]) in
