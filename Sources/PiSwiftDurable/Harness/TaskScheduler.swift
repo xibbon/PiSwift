@@ -66,6 +66,7 @@ internal final class TaskScheduler: Sendable {
     let withdrawInputs: @Sendable (Transaction, ConversationID) async throws -> Void
     struct KeptContext: Sendable { let range: ContextRange; var idleSince: Int64? }
     struct State: Sendable {
+        var publicationVersion: UInt64 = 0
         var live: [TaskID: TaskRecord] = [:]
         var nodes: [TaskID: TaskNode] = [:]
         var liveOrder: [TaskID: UInt64] = [:]
@@ -77,7 +78,6 @@ internal final class TaskScheduler: Sendable {
         var intent = Set<TaskID>()
         var runnable = Set<TaskID>()
         var sleeping = Set<TaskID>()
-        var parked = Set<TaskID>()
         var refreshBlocked: (@Sendable () -> Void)?
         var sleepDisarm: HarnessDisarm?
         var sleepAt: Double?
@@ -145,8 +145,6 @@ internal final class TaskScheduler: Sendable {
         let close = try session.subscribeClose { [weak self] in self?.seal() }
         let unsubscribe = registry.subscribe { [weak self] in self?.registryChanged() }
         state.withLock { $0.subscriptions = [commits, close]; $0.unsubscribe = unsubscribe }
-        let limit = settings().restartLimit
-        var parked: [TaskRecord] = []
         try await session.commit({ tx in
             var found: [TaskRecord] = []
             for status in [TaskStatus.pending, .running, .waiting, .sleeping, .completing] {
@@ -163,15 +161,9 @@ internal final class TaskScheduler: Sendable {
                 if case .running(let checkpoint, _) = record.state {
                     let restarts = record.restarts + 1
                     try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint), restarts: .some(restarts)))
-                    if restarts >= limit && !record.abortRequested { parked.append(record) }
                 }
             }
         }, context: context)
-        let snapshot = registry.snapshot()
-        for record in parked {
-            report(SessionError.message("Task \(record.id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts + 1)) times without progress; it is parked until retryTask()"),
-                   .taskParked(task: ReportTask(record), extension: snapshot.installer(of: snapshot.task(name: record.kind))))
-        }
         state.withLock { $0.cascadePending = true }
         scheduleReconcile()
         scheduleWake()
@@ -219,6 +211,7 @@ internal final class TaskScheduler: Sendable {
         var aborts: [TaskInvocation] = [], settled: [TaskRecord] = [], updated: [TaskRecord] = []
         var failed = Set<TaskID>(), repair = false, changed = false
         state.withLock { state in
+            state.publicationVersion &+= 1
             // Install conversation edges before the tasks that need them.
             for change in publication.changes {
                 if case .conversation(let record) = change, state.edges[record.id] == nil { state.setEdge(record) }
@@ -376,12 +369,24 @@ internal final class TaskScheduler: Sendable {
             state.finalizeChecks.removeAll(); return checks
         }
         var overlay = try TaskOverlay(tx), done = Set<TaskID>()
-        let links = links(overlay)
+        // A chain may finalize one owner in each round. Keep the staged link
+        // graph for the whole transaction; rebuild only after a publication.
+        let staged = overlay
+        let roundLinks = Mutex(links(staged))
         while !round.isEmpty {
             var next = Set<TaskID>()
             for id in round {
-                guard let record = overlay.tasks[id] ?? current(id), record.state.status == "completing", !done.contains(id) else { continue }
-                if !ownedLive(id, overlay: overlay, links: links, first: true, done: done).isEmpty { continue }
+                // v1.5.2 D5a scheduler.ts:1163–1227: decide from a clean
+                // ownership region before staging the terminal write.
+                let ready = try await region({ () -> TaskRecord? in
+                    guard let record = overlay.tasks[id] ?? current(id), record.state.status == "completing", !done.contains(id) else { return nil }
+                    return ownedLive(id, overlay: overlay, links: roundLinks.withLock { $0 }, first: true, done: done).isEmpty ? record : nil
+                }, refresh: {
+                    try await self.loadScopes()
+                    let fresh = self.links(staged)
+                    roundLinks.withLock { $0 = fresh }
+                })
+                guard let record = ready else { continue }
                 guard let outcome = record.state.outcome else { continue }
                 let terminal = record.replacing(state: .terminal(outcome: outcome))
                 try tx.setTask(terminal); overlay.tasks[id] = terminal; done.insert(id)
@@ -396,7 +401,9 @@ internal final class TaskScheduler: Sendable {
         try await loadScopes()
         let overlay = try TaskOverlay(tx)
         for record in overlay.tasks.values { try await loadChain(record.parent, overlay: overlay) }
-        let held = !ownedLive(record.id, overlay: overlay, links: links(overlay), first: true).isEmpty
+        let held = try await region({
+            !ownedLive(record.id, overlay: overlay, links: links(overlay), first: true).isEmpty
+        }, refresh: { try await self.loadScopes() })
         try tx.setTask(record.replacing(state: held ? .completing(outcome: outcome) : .terminal(outcome: outcome)))
         if !held && (outcome.status == "faulted" || outcome.status == "orphaned") { try await settleOutcome(tx, record, outcome) }
     }
@@ -412,7 +419,8 @@ internal final class TaskScheduler: Sendable {
         if let phase = unsupportedBuiltInPhase(record) {
             // The tagged scheduler blocks work it cannot migrate as migration_failed
             // (scheduler.ts:2083-2096). Block these D5/D6 shapes before reservation.
-            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires D5/D6 for \(phase)"), false)
+            let order = record.kind == "pi.generation" ? "D5b" : "D6"
+            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires \(order) for \(phase)"), false)
         }
         if definition.version == record.version { return (nil, nil, false) }
         if let failed = state.withLock({ $0.failedMigrations[record.id] }), failed.0 == definition.identity { return ("migration_failed", failed.1, false) }
@@ -448,11 +456,9 @@ internal final class TaskScheduler: Sendable {
             return false
         } catch { return true }
     }
-    func parked(_ record: TaskRecord) -> Bool { !record.abortRequested && record.restarts >= settings().restartLimit }
     func blockedReason(_ record: TaskBlockedSubject) -> TaskBlockedReason? {
         if ["running", "completing", "terminal"].contains(record.status) { return nil }
         if record.abortRequested && record.abortReason == nil { return nil }
-        if !record.abortRequested && record.restarts >= settings().restartLimit { return .restartLimit }
         let definition = registry.snapshot().task(name: record.kind), fit = fit(record, definition: definition)
         if let reason = fit.reason { return TaskBlockedReason(rawValue: reason) }
         return fit.migrates && definition?.migrate == nil ? .migrationFailed : nil
@@ -467,19 +473,6 @@ internal final class TaskScheduler: Sendable {
         }
     }
     func refreshBlocked() { state.withLock { $0.refreshBlocked }?() }
-    private func unparkRaised() {
-        let limit = settings().restartLimit
-        let changed = state.withLock { state in
-            var changed = false
-            for id in state.parked {
-                if let record = state.live[id], !record.abortRequested && record.restarts >= limit { continue }
-                state.parked.remove(id)
-                if state.live[id] != nil { state.runnable.insert(id); changed = true }
-            }
-            return changed
-        }
-        if changed { refreshBlocked() }
-    }
     struct Reservation: Sendable { let invocation: TaskInvocation; let definition: AnyTaskDefinition; let snapshot: RegistrySnapshot; let joinID: UUID }
     private func reserve() async throws -> [Reservation] {
         var reservations: [Reservation] = []
@@ -501,7 +494,6 @@ internal final class TaskScheduler: Sendable {
                 }
                 try await loadScopes()
                 wakeDue()
-                unparkRaised()
                 // v1.5.2 D3a scheduler.ts:2002–2023 `#planCandidates`.
                 // Take candidates before any awaited planning step. A publication
                 // can add a fresh notification while this pass is suspended.
@@ -531,21 +523,17 @@ internal final class TaskScheduler: Sendable {
                     }
                     if !waitingOn(original, first: true).isEmpty { dropped.insert(id); continue }
                     if notDue(original) { dropped.insert(id); continue }
-                    if parked(original) {
-                        let changed = state.withLock { state in
-                            return state.parked.insert(id).inserted
-                        }
-                        dropped.insert(id)
-                        if changed { refreshBlocked() }
-                        continue
-                    }
                     if !original.abortRequested && !original.background && belowCancelled(original.parent) {
                         state.withLock { $0.cascadePending = true }; scheduleReconcile()
                         continue
                     }
                     var record = original
-                    if record.abortRequested && record.restarts >= settings().restartLimit {
-                        let message = "Abort handler of task \(id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts)) times"
+                    let cutOff = record.storedRestarts != nil && record.restarts >= settings().restartLimit
+                    let limitsOwnRestarts = ["pi.generation", "pi.tool", "pi.compaction"].contains(record.kind)
+                    if cutOff && (record.abortRequested || !limitsOwnRestarts) {
+                        let message = record.abortRequested
+                            ? "Abort handler of task \(id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts)) times"
+                            : "Task \(id.rawValue) (\(record.kind)) was cut off \(restartCountText(record.restarts)) times without progress"
                         try await terminate(tx, record: record, outcome: .faulted(error: .init(message: message, detail: ["reason": "restart_limit"])))
                         faulted.append((record, message))
                         continue
@@ -697,8 +685,9 @@ internal final class TaskScheduler: Sendable {
                         return true
                     }
                     if shouldReport {
-                        let reason: ReportInfo.OutdatedReason = next == nil ? .missingTask : .incompatibleTask
-                        report(TaskHandoverError(taskId: current.id, kind: current.kind, cause: next == nil ? .missingTask : .incompatibleTask),
+                        let reason: ReportInfo.OutdatedReason = next == nil ? .missingTask :
+                            next!.version < current.version ? .taskTooOld : .migrationFailed
+                        report(SessionError.message("Task \(current.id.rawValue) keeps running under its old \(current.kind) definition"),
                                .taskOutdated(task: invocation.reportTask, extension: phase.installer, reason: reason))
                     }
                 }

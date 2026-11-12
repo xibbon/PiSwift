@@ -2,14 +2,6 @@ import Foundation
 import PiSwiftChord
 
 extension TaskScheduler {
-    func retry(id: TaskID, context: ChordContext) async throws {
-        try await session.commit({ tx in
-            guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
-            guard record.state.outcome == nil, parked(record) else { return }
-            try tx.setTask(record.progressed())
-        }, context: context)
-        resume()
-    }
     func abort(id: TaskID, context: ChordContext, keepRestart: Bool = false) async throws -> TaskAbortResult {
         let marked: (TaskAbortResult, TaskInvocation?) = try await session.commit({ tx in
             guard let record = try await tx.task(id) else { throw SessionError.message("Task \(id.rawValue) does not exist") }
@@ -18,7 +10,11 @@ extension TaskScheduler {
             if keepRestart && record.abortReason == .restart { return (.marked, nil) }
             if invocation == nil && record.state.status != "completing" {
                 try await loadScopes()
-                if ownedLive(id, first: true).isEmpty, let reason = fit(record, definition: registry.snapshot().task(name: record.kind)).reason {
+                let orphanReason = try await region({ () -> String? in
+                    guard ownedLive(id, first: true).isEmpty else { return nil }
+                    return fit(record, definition: registry.snapshot().task(name: record.kind)).reason
+                }, refresh: { try await self.loadScopes() })
+                if let reason = orphanReason {
                     try await terminate(tx, record: record, outcome: .orphaned(reason: reason)); return (.marked, nil)
                 }
             }
@@ -35,7 +31,7 @@ extension TaskScheduler {
     func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         let promise: HarnessPromise<SettledTask> = try await session.readOnLine {
             if closing { throw closedError() }
-            if current(id) != nil {
+            if try await region({ current(id) != nil }) {
                 return try state.withLock { state in
                     if state.closing { throw closedError() }
                     return try taskWaiters.add(id, context: context)
@@ -51,7 +47,7 @@ extension TaskScheduler {
         let promise: HarnessPromise<Void>? = try await session.readOnLine {
             if closing { throw closedError() }
             try context.abortSignal?.throwIfAborted()
-            if idle(conversationId) { return nil }
+            if try await region({ idle(conversationId) }, refresh: { try await self.loadScopes() }) { return nil }
             scheduleReconcile()
             return try state.withLock { state in
                 if state.closing { throw closedError() }
@@ -64,16 +60,22 @@ extension TaskScheduler {
         let reached: [TaskID] = try await session.commit({ tx in
             try await loadScopes()
             let queued = try await loadQueuedScopes()
-            var reached: [TaskID] = []
-            walkDown(.conversation(id), crossBackground: background) { step in
-                guard let record = step.live, !record.background || background else { return false }
-                reached.append(record.id)
-                return false
-            }
+            let reached = try await region({ () -> [TaskID] in
+                var found: [TaskID] = []
+                walkDown(.conversation(id), crossBackground: background) { step in
+                    guard let record = step.live, !record.background || background else { return false }
+                    found.append(record.id)
+                    return false
+                }
+                return found
+            }, refresh: { try await self.loadScopes() })
             for task in reached {
                 if let record = current(task), !record.abortRequested || record.abortReason != nil { try tx.setTask(record.withAbortMark()) }
             }
-            for queuedID in queued where inScope(.conversation(queuedID), conversationId: id, background: background) == true { try await withdrawInputs(tx, queuedID) }
+            let withdraw = try await region({ queued.filter {
+                inScope(.conversation($0), conversationId: id, background: background) == true
+            } }, refresh: { try await self.loadScopes() })
+            for queuedID in withdraw { try await withdrawInputs(tx, queuedID) }
             return reached
         }, context: context)
         resume()
@@ -83,7 +85,7 @@ extension TaskScheduler {
     /// Caller runs this read on the Session line. Migration code is not called.
     func inspect(snapshot: RegistrySnapshot) async throws -> (scheduling: SchedulingState, tasks: [TaskInspection]) {
         try await loadScopes()
-        let tasks = records().map { record -> TaskInspection in
+        let tasks = try await region({ records().map { record -> TaskInspection in
             let derived: TaskInspectionState
             if state.withLock({ $0.invocations[record.id] != nil }) { derived = .running }
             else if record.state.status == "completing" { derived = .completing }
@@ -91,17 +93,16 @@ extension TaskScheduler {
                 let on = waitingOn(record)
                 if !on.isEmpty { derived = .waiting(on: on) }
                 else if notDue(record), case .sleeping(_, let until, _) = record.state { derived = .sleeping(until: until) }
-                else if parked(record) { derived = .blocked(reason: .restartLimit) }
                 else {
                     let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)
                     if let reason = fit.reason { derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error) }
                     else if fit.migrates && definition?.migrate == nil {
                         derived = .blocked(reason: .migrationFailed, error: SessionError.message("Task \(record.kind) version \(definition!.version) has no migration from \(record.version)"))
-                    } else { derived = .ready(migrates: fit.migrates) }
+                    } else { derived = .pending(migrates: fit.migrates) }
                 }
             }
             return TaskInspection(record: record, state: derived)
-        }
+        } }, refresh: { try await self.loadScopes() })
         return (state.withLock { $0.closing ? .closing : $0.enabled ? .running : .paused }, tasks)
     }
     func gated<T>(_ invocation: TaskInvocation, context: ChordContext,
@@ -116,9 +117,12 @@ extension TaskScheduler {
             try await session.touch(SessionKeys.taskKey(invocation.taskId))
             try invocation.check()
             if closing { throw closedError() }
-            guard let found = current(invocation.taskId) else { throw SessionError.message("Task \(invocation.taskId.rawValue) is terminal") }
-            guard found.state.status == "running" else { throw SessionError.message("Task \(invocation.taskId.rawValue) is \(found.state.status)") }
-            if !invocation.abort && found.abortRequested { throw SessionError.message("Task \(invocation.taskId.rawValue) has a durable abort mark") }
+            let found = try await region { () throws -> TaskRecord in
+                guard let found = current(invocation.taskId) else { throw SessionError.message("Task \(invocation.taskId.rawValue) is terminal") }
+                guard found.state.status == "running" else { throw SessionError.message("Task \(invocation.taskId.rawValue) is \(found.state.status)") }
+                if !invocation.abort && found.abortRequested { throw SessionError.message("Task \(invocation.taskId.rawValue) has a durable abort mark") }
+                return found
+            }
             let result = try await change(tx, found)
             if invocation.abort {
                 let overlay = try TaskOverlay(tx)

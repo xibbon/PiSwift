@@ -159,8 +159,11 @@ internal final class RuntimeViewSource: DurableViewSource {
                 switch info {
                 case .taskParked: category = .taskParked; level = .warning
                 case .taskFaulted: category = .taskFault; level = .error
+                // v1.5.2 D5a scheduler.ts:2716–2744: keep an interruption
+                // report distinct from a later fault of the same task.
+                case .taskInterrupted: category = .report; level = .error
                 case .extensionError: category = .extensionError; level = .warning
-                case .sessionFailed: category = .sessionFailed; level = .error
+                case .storageFailed, .sessionFailed: category = .sessionFailed; level = .error
                 default: category = .report; level = .warning
                 }
                 let previous = state.view.notices.last {
@@ -302,6 +305,7 @@ internal final class RuntimeReports: Sendable {
         }
         if drain { flush() }
     }
+    func report(_ report: Report) { self.report(report.error, info: report.info) }
 
     func attach(_ source: RuntimeViewSource) {
         let drain = state.withLock { state in

@@ -30,8 +30,8 @@ private struct TaskStateDirectory: Sendable {
             }))
     }
 
-    // Save upstream task states without starting their handlers.
-    func seed(tool: Bool, sleepingUntil: Int64? = nil) async throws -> TaskID {
+    // v1.5.2 D5a harness-restart-failure.test.ts:275–325: sleeping retry work is not charged by reopen.
+    func seedSleeping(until: Int64) async throws -> TaskID {
         let location = try await selectSession(cwd, continueSession: false, agentDirectory: agent)
         defer { location.release() }
         let setup = HarnessChatSetup()
@@ -40,45 +40,16 @@ private struct TaskStateDirectory: Sendable {
             _ = try await opened.root.submit(.input(content: .text("Saved input")), context: .background)
             let live = try #require(try await opened.harness.snapshot(LiveDoc, conversationId: rootConversationID, context: .background))
             let generation = try #require(live.run?.taskId)
-            let target: TaskID
-            if tool {
-                let saved = try await opened.root.commit({ tx in
-                    _ = try #require(try await tx.task(generation))
-                    var message = chatAssistant("", reason: .toolUse)
-                    message.content = [.toolCall(.init(id: "saved-read", name: "read", arguments: ["path": AnyCodable("input.txt")]))]
-                    let assistant = try await tx.appendEntry(rootConversationID, value: EntryDraft(kind: "pi.assistant",
-                        model: EntryRecord.encodeMessages([.assistant(message)])))
-                    let id = try await tx.createTask(toolTask, input: .init(assistant: assistant.id, callId: "saved-read"),
-                        options: .init(ownership: .task(taskId: generation)))
-                    return (id, assistant.id)
-                }, context: .background)
-                try await opened.root.commit({ tx in
-                    let record = try #require(try await tx.task(generation))
-                    let toolRecord = try #require(try await tx.task(saved.0))
-                    let draft = try await tx.doc(LiveDoc, conversationId: rootConversationID)
-                    try tx.setTask(toolRecord.replacing(restarts: .some(5)))
-                    try tx.setTask(record.replacing(state: try generationTask.waiting(
-                        .init(phase: .tools, assistant: saved.1, tools: [saved.0]), on: [saved.0], policy: .allSettled)))
-                    try draft.set("tools", JSONValue(encoding: [ToolSlot(callId: "saved-read", name: "read", taskId: saved.0)]))
-                }, context: .background)
-                target = saved.0
-            } else {
-                try await opened.root.commit({ tx in
-                    let record = try #require(try await tx.task(generation))
-                    let draft = try await tx.doc(LiveDoc, conversationId: rootConversationID)
-                    if let until = sleepingUntil {
-                        let checkpoint = GenerationCheckpoint(phase: .retry, attempt: 1, until: until)
-                        try tx.setTask(record.replacing(state: try generationTask.sleeping(checkpoint, until: Double(until))))
-                        try draft.set("generation", JSONValue(encoding: LiveGeneration(attempt: 1,
-                            retry: LiveRetry(at: until, error: "503 Service Unavailable"))))
-                    } else {
-                        try tx.setTask(record.replacing(restarts: .some(5)))
-                    }
-                }, context: .background)
-                target = generation
-            }
+            try await opened.root.commit({ tx in
+                let record = try #require(try await tx.task(generation))
+                let draft = try await tx.doc(LiveDoc, conversationId: rootConversationID)
+                let checkpoint = GenerationCheckpoint(phase: .retry, attempt: 1, until: until)
+                try tx.setTask(record.replacing(state: try generationTask.sleeping(checkpoint, until: Double(until))))
+                try draft.set("generation", JSONValue(encoding: LiveGeneration(attempt: 1,
+                    retry: LiveRetry(at: until, error: "503 Service Unavailable"))))
+            }, context: .background)
             try await opened.harness.close(context: .background)
-            return target
+            return generation
         } catch {
             try? await opened.harness.close(context: .background)
             throw error
@@ -109,69 +80,9 @@ private func taskStateTexts(_ view: DurableView, kind: String) throws -> [String
     try view.conversation.entries.filter { $0.kind == kind }.flatMap { try $0.messages()?.compactMap { textOf($0) } ?? [] }
 }
 
-private func expectParked(_ result: OpenDurableResult, id: TaskID, tool: Bool) async throws {
-    try await eventually { result.view.current().parkedTasks.contains { $0.id == id } }
-    let view = result.view.current()
-    let task = try #require(view.parkedTasks.first { $0.id == id })
-    #expect(task.kind == (tool ? "pi.tool" : "pi.generation"))
-    #expect(task.reason == .restartLimit)
-    #expect(task.restarts == 5)
-    #expect(view.activity == .parked)
-    #expect(view.sleepingTasks.isEmpty)
-}
-
 @Suite(.timeLimit(.minutes(1))) struct RuntimeTaskStateTests {
-    @Test(arguments: [false, true], [false, true])
-    func parkedTaskStaysVisibleWhenHiddenAndReopenedThenAcceptsControl(tool: Bool, abort: Bool) async throws {
-        let directory = try TaskStateDirectory()
-        defer { directory.remove() }
-        let id = try await directory.seed(tool: tool)
-        let models = FakeDurableModels(responses: [.message(chatAssistant("Recovered answer"))])
-        let first = try await directory.open(models)
-        let sessionID = first.view.current().session.id
-        do {
-            await first.controller.toggleTasks()
-            #expect(first.view.current().tasks == nil)
-            try await expectParked(first, id: id, tool: tool)
-            #expect(models.calls().streamSimple == 0)
-            try await eventually { first.view.current().notices.contains { $0.category == .taskParked && $0.taskId == id } }
-            let notice = try #require(first.view.current().notices.first { $0.category == .taskParked && $0.taskId == id })
-            #expect(notice.taskKind == (tool ? "pi.tool" : "pi.generation"))
-            #expect(notice.message == runtimeParkingReport(id: id, kind: tool ? "pi.tool" : "pi.generation", restarts: 5))
-        } catch { await first.close(); throw error }
-        await first.close()
-
-        let second = try await directory.open(models)
-        do {
-            #expect(second.view.current().session.id == sessionID)
-            await second.controller.toggleTasks()
-            #expect(second.view.current().tasks == nil)
-            try await expectParked(second, id: id, tool: tool)
-            #expect(models.calls().streamSimple == 0)
-            if abort { await second.controller.abortTask(id) }
-            else { await second.controller.retryTask(id) }
-            try await eventually {
-                try second.view.current().parkedTasks.isEmpty
-                    && decodeLiveOf(second.view.current().conversation).run == nil
-                    && second.view.current().activity == .idle
-            }
-            #expect(second.view.current().tasks == nil)
-            #expect(second.view.current().activity == .idle)
-            if !abort || tool {
-                try await eventually { try taskStateTexts(second.view.current(), kind: "pi.assistant").contains("Recovered answer") }
-                #expect(models.calls().streamSimple == 1)
-            } else {
-                #expect(models.calls().streamSimple == 0)
-            }
-            if tool {
-                let results = try taskStateTexts(second.view.current(), kind: "pi.tool-result")
-                #expect(results.contains { $0.contains(abort ? "was aborted" : "Saved tool output") })
-            }
-            #expect(second.view.current().terminal == nil)
-        } catch { await second.close(); throw error }
-        await second.close()
-    }
-
+    // v1.5.2 D5a harness-blocked.test.ts:134–183 removes parked/retry control.
+    // TypedReportHostTests.restartLimitFaultIsVisibleWithTaskPanelHidden is its successor.
     @Test func taskFaultShowsItsIdentityWithoutFailingTheSession() async throws {
         let directory = try TaskStateDirectory()
         defer { directory.remove() }
@@ -198,7 +109,7 @@ private func expectParked(_ result: OpenDurableResult, id: TaskID, tool: Bool) a
         let directory = try TaskStateDirectory()
         defer { directory.remove() }
         let until = Int64(Date().timeIntervalSince1970 * 1000) + 600_000
-        let id = try await directory.seed(tool: false, sleepingUntil: until)
+        let id = try await directory.seedSleeping(until: until)
         let models = FakeDurableModels()
         let result = try await directory.open(models)
         do {

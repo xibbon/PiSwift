@@ -42,7 +42,8 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         let harness = try await harnessOpen([AnyTaskDefinition(d1SleepTask(runs))], storage: storage, clock: clock)
         #expect(runs.values.isEmpty)
         let inspection = try await harness.inspect(context: .background)
-        guard case .ready(false)? = inspection.tasks.first?.state else { throw TaskDefinitionError("Due sleep was not ready") }
+        // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable inspection is pending.
+        guard case .pending(false)? = inspection.tasks.first?.state else { throw TaskDefinitionError("Due sleep was not pending") }
         try harness.resume()
         try await harnessEventually { try await harness.getTask(id: id, context: .background)?.state.status == "terminal" }
         let settled = try await harness.waitForTask(id: id, context: .background)

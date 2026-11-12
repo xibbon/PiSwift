@@ -342,7 +342,8 @@ public protocol DurableController: Sendable {
     /// Aborts work in the shown conversation, including manual compaction.
     /// This command bypasses the ordered command queue.
     func abort() async
-    /// Clears the restart count and resumes a parked task.
+    /// Historical command. Restart-limit tasks now end.
+    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
     func retryTask(_ id: TaskID) async
     /// Aborts one task. This command bypasses the ordered command queue.
     func abortTask(_ id: TaskID) async
@@ -357,7 +358,8 @@ public protocol DurableController: Sendable {
 }
 
 extension DurableController {
-    /// Existing controllers can omit task retry support.
+    /// Historical default for old controller implementations.
+    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
     public func retryTask(_ id: TaskID) async {}
     /// Existing controllers can omit task abort support.
     public func abortTask(_ id: TaskID) async {}

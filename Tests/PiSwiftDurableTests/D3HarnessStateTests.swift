@@ -55,7 +55,8 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
         try await harness.close(context: .background)
     }
 
-    @Test func completingOutcomeRemovesCountAndRetryLeavesOtherTasksUnchanged() async throws {
+    // v1.5.2 D5a scheduler.ts:1910–2003: terminal states clear restarts; retryTask was removed.
+    @Test func completingOutcomeRemovesCountAndLeavesOtherTasksUnchanged() async throws {
         let base = MemoryStorage(), events = SessionTestLog<String>(), storage = D3TestStorage(base, events: events)
         let owner = try TaskID(20), child = try TaskID(21), terminal = try TaskID(22), ready = try TaskID(23)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
@@ -76,17 +77,10 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
         #expect(try JSONValue(encoding: completing)["restarts"] == nil)
         let finished = try #require(await harness.getTask(id: terminal, context: .background))
         let pending = try #require(await harness.getTask(id: ready, context: .background))
-        let writes = events.count
-        for id in [owner, terminal, ready] { try await harness.retryTask(id: id, context: .background) }
         #expect(try await harness.getTask(id: owner, context: .background) == completing)
         #expect(try await harness.getTask(id: terminal, context: .background) == finished)
         #expect(try await harness.getTask(id: ready, context: .background) == pending)
-        #expect(events.count == writes)
-        do {
-            try await harness.retryTask(id: TaskID(90_000), context: .background)
-            Issue.record("Unknown task retry succeeded")
-        } catch { #expect(String(describing: error) == "Task 90000 does not exist") }
-        #expect(try await harness.getTask(id: ready, context: .background) == pending)
+        #expect(events.count > 0)
         try await harness.close(context: .background); try await base.close(context: .background)
     }
 

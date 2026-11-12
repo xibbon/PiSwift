@@ -13,28 +13,29 @@ private func typedReportView() -> DurableView {
           conversations: [], models: [])
 }
 
+// v1.5.2 D5a types.ts:155–204: the host receives one tagged report for each failure.
 @Test func typedReportsKeepSourceAndDistinctDisplayWordsWithIdenticalErrors() throws {
     let source = RuntimeViewSource(typedReportView(), schedule: { _ in })
     let reports = RuntimeReports()
     let task = ReportTask(id: try TaskID(2), kind: "test.task", conversationId: rootConversationID)
     let error = SessionError.message("same error")
-    reports.report(error, info: .taskParked(task: task, extension: "park"))
+    reports.report(Report(.taskInterrupted(task: task, extension: "run", reason: .restartLimit, restarts: 5), error: error))
     reports.report(error, info: .taskFaulted(task: task, extension: "fault", reason: .threw))
     reports.report(error, info: .extensionError(extension: "extension", task: task))
-    reports.report(error, info: .sessionFailed)
+    reports.report(error, info: .storageFailed)
     reports.attach(source)
     let view = source.current()
     #expect(view.notices.map(\.displayMessage) == [
-        "Task parked: same error", "Task fault: same error",
+        "Runtime report: same error", "Task fault: same error",
         "Extension error: same error", "Session failed: same error",
     ])
-    #expect(view.notices.map(\.reportType) == ["task_parked", "task_faulted", "extension_error", "session_failed"])
-    #expect(view.notices.map(\.extensionName) == ["park", "fault", "extension", nil])
+    #expect(view.notices.map(\.reportType) == ["task_interrupted", "task_faulted", "extension_error", "storage_failed"])
+    #expect(view.notices.map(\.extensionName) == ["run", "fault", "extension", nil])
     #expect(view.notices.prefix(3).allSatisfy { $0.taskId == task.id && $0.taskKind == task.kind && $0.conversationId == task.conversationId })
     #expect(view.notices.map(\.reportInfo) == [
-        .taskParked(task: task, extension: "park"),
+        .taskInterrupted(task: task, extension: "run", reason: .restartLimit, restarts: 5),
         .taskFaulted(task: task, extension: "fault", reason: .threw),
-        .extensionError(extension: "extension", task: task), .sessionFailed,
+        .extensionError(extension: "extension", task: task), .storageFailed,
     ])
     #expect(view.terminal == nil)
     source.terminate(.failed(error))
@@ -59,11 +60,12 @@ private func typedReportView() -> DurableView {
     #expect(source.current().terminal == nil)
 }
 
-@Test func typedListenerReportDoesNotUseParkingTextToClassifyTheError() throws {
+// v1.5.2 D5a types.ts:193–204: listener_error stays distinct from task endings.
+@Test func typedListenerReportDoesNotUseTaskEndingTextToClassifyTheError() throws {
     let source = RuntimeViewSource(typedReportView(), schedule: { _ in })
     let reports = RuntimeReports()
     reports.attach(source)
-    let text = runtimeParkingReport(id: try TaskID(2), kind: "test.task", restarts: 5)
+    let text = "Task 2 (test.task) was cut off 5 times without progress"
     reports.report(SessionError.message(text), info: .listenerError)
     let notice = try #require(source.current().notices.first)
     #expect(notice.category == .report)
@@ -106,7 +108,8 @@ private func typedReportView() -> DurableView {
 }
 
 @Suite(.timeLimit(.minutes(1))) struct TypedReportHostTests {
-    @Test func parkedHostStaysOpenAndAcceptsRetryWithTaskPanelHidden() async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:134–183: an extension task ends faulted at the limit.
+    @Test func restartLimitFaultIsVisibleWithTaskPanelHidden() async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("typed-report-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: base) }
         let cwd = base.appendingPathComponent("project").path
@@ -117,12 +120,15 @@ private func typedReportView() -> DurableView {
         let saved = try await openChat(storage: SqliteStorage.open(path: location.database), setup: HarnessChatSetup())
         let id: TaskID
         do {
-            _ = try await saved.root.submit(.input(content: .text("Saved input")), context: .background)
-            let live = try #require(try await saved.harness.snapshot(LiveDoc, conversationId: rootConversationID, context: .background))
-            id = try #require(live.run?.taskId)
+            id = try await saved.root.commit({ tx in
+                try await tx.createTask(toolTask, input: .init(assistant: EntryID(999_999), callId: "unused"),
+                    options: .init(ownership: .conversation()))
+            }, context: .background)
             try await saved.root.commit({ tx in
                 let record = try #require(try await tx.task(id))
-                try tx.setTask(record.replacing(restarts: .some(5)))
+                try tx.setTask(TaskRecord(id: record.id, conversationId: record.conversationId,
+                    kind: "test.host-crash-loop", version: 1, input: record.input, state: record.state,
+                    restarts: 5))
             }, context: .background)
             try await saved.harness.close(context: .background)
         } catch {
@@ -140,14 +146,18 @@ private func typedReportView() -> DurableView {
             }))
         do {
             await result.controller.toggleTasks()
-            try await eventually { result.view.current().parkedTasks.contains { $0.id == id } }
+            try await eventually { result.view.current().notices.contains { $0.category == .taskFault && $0.taskId == id } }
             #expect(result.view.current().tasks == nil)
             #expect(result.view.current().terminal == nil)
             #expect(result.failure == nil)
             #expect(models.calls().streamSimple == 0)
-            #expect(result.view.current().notices.contains { $0.displayMessage.hasPrefix("Task parked:") })
-            await result.controller.retryTask(id)
-            try await eventually { models.calls().streamSimple == 1 && result.view.current().activity == .idle }
+            #expect(result.view.current().notices.contains {
+                $0.reportType == "task_faulted" && $0.reportInfo == .taskFaulted(
+                    task: ReportTask(id: id, kind: "test.host-crash-loop", conversationId: rootConversationID),
+                    reason: .restartLimit)
+            })
+            #expect(result.view.current().blockedTasks.isEmpty)
+            #expect(result.view.current().activity == .idle)
             #expect(result.view.current().terminal == nil)
             #expect(result.failure == nil)
         } catch { await result.close(); throw error }

@@ -49,16 +49,18 @@ public final class Harness: Sendable {
             let missing = ["pi.generation", "pi.tool", "pi.compaction"].filter { snapshot.task(name: $0) == nil }
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
             let hooks = HarnessSessionHooks(app: options.conversationCreated)
+            let report: @Sendable (any Error, ReportInfo) -> Void = { error, info in
+                options.onReport?(Report(info, error: error))
+            }
             let timers = HarnessTimers(clock: options.clock, now: options.now, setTimer: options.setTimer,
-                report: options.onReport ?? { _, _ in })
+                report: report)
             let now = timers.now
             let settings: @Sendable () -> Settings = { options.settings?.resolve() ?? resolveSettings() }
             let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
                 documentRetentionMs: { settings().documentRetentionMs },
                 documentTimer: .host(timers),
-                hooks: hooks, onReport: options.onReport ?? { _, _ in }, context: context)
+                hooks: hooks, onReport: report, context: context)
             let storage = session.storage
-            let report: @Sendable (any Error, ReportInfo) -> Void = options.onReport ?? { _, _ in }
             let reference = Mutex(WeakHarness())
             let scheduler = TaskScheduler(session: session, registry: options.registry, models: options.models,
                 timers: timers, now: now, onWake: options.onWake, settings: settings,
@@ -181,10 +183,12 @@ public final class Harness: Sendable {
             try assertOpen(); return try await tasks.abort(id: id, context: context)
         }
     }
-    /// Clears a parked task's restart count and starts scheduling. Unknown IDs throw.
+    /// Historical API. Restart-limit tasks now end and cannot be retried.
+    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
     public func retryTask(id: TaskID, context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
-            try assertOpen(); try await tasks.retry(id: id, context: context)
+            try assertOpen()
+            throw SessionError.message("Task \(id.rawValue) cannot be retried: restart-limit tasks now end")
         }
     }
     /// Waits for a terminal task outcome and returns its durable receipt.
@@ -220,7 +224,9 @@ public final class Harness: Sendable {
     internal func resolveConversationAgent(id: ConversationID, context: ChordContext) async throws -> Agent {
         try assertOpen(); try context.abortSignal?.throwIfAborted()
         let value = try await session.snapshot(AgentDoc, conversationId: id, context: context)
-        return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: { error, name in options.onReport?(error, .extensionError(extension: name, conversationId: id)) })
+        return resolveAgent(state: value, snapshot: options.registry.snapshot(), settings: options.settings?.resolve() ?? resolveSettings(), report: { error, name in
+            options.onReport?(Report(.extensionError(extension: name, conversationId: id), error: error))
+        })
     }
 }
 /// The harness cannot use the supplied registry to load its built-in tasks.

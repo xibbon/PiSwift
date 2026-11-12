@@ -33,25 +33,29 @@ extension TaskScheduler {
         var active = !view.invocations.isEmpty || view.reconcilingWork > 0 || view.cascadePending ||
             !view.finalizeChecks.isEmpty || !view.failFastChecks.isEmpty
         var at: Double?
-        var snapshot: RegistrySnapshot?
-        for record in view.live.values {
-            if record.state.status == "completing" { continue }
-            if !record.abortRequested, case .waiting(_, let on, _, _) = record.state,
-               on.contains(where: { view.live[$0] != nil }) { continue }
+        // v1.5.2 D5a scheduler.ts:533–579: find the deadline from the sleep
+        // index, even while work runs. Scan all live tasks only when idle.
+        for id in view.sleeping {
+            guard let record = view.live[id] else { continue }
             if !record.abortRequested, case .sleeping(_, let until, _) = record.state, until > time {
                 at = at.map { min($0, until) } ?? until
-                continue
             }
-            if active { continue }
-            if !record.abortRequested && record.restarts >= settings().restartLimit { continue }
-            if record.abortRequested && view.hasOwnedLive(record.id) { continue }
-            if !record.abortRequested || record.abortReason != nil {
-                snapshot = snapshot ?? registry.snapshot()
-                guard let definition = snapshot?.task(name: record.kind), definition.version >= record.version else { continue }
-                if definition.version > record.version, let failure = view.failedMigrations[record.id],
-                   failure.0 == definition.identity { continue }
+        }
+        if !active {
+            var snapshot: RegistrySnapshot?
+            for record in view.live.values {
+                if record.state.status == "completing" { continue }
+                if !record.abortRequested, case .waiting(_, let on, _, _) = record.state,
+                   on.contains(where: { view.live[$0] != nil }) { continue }
+                if !record.abortRequested, case .sleeping(_, let until, _) = record.state, until > time { continue }
+                if record.abortRequested && view.hasOwnedLive(record.id) { continue }
+                if !record.abortRequested || record.abortReason != nil {
+                    snapshot = snapshot ?? registry.snapshot()
+                    if fit(record, definition: snapshot?.task(name: record.kind)).reason != nil { continue }
+                }
+                active = true
+                break
             }
-            active = true
         }
         return HarnessWake(active: active, at: at)
     }

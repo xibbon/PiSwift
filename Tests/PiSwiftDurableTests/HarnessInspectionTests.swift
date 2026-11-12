@@ -76,7 +76,8 @@ import PiSwiftDurableTesting
     }
 }
 private func expectInspection(_ inspection: HarnessInspection, id: TaskID, ready migrates: Bool) {
-    guard case .ready(let value)? = inspection.tasks.first(where: { $0.record.id == id })?.state else { Issue.record("Task should be ready"); return }
+    // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable inspection is pending.
+    guard case .pending(let value)? = inspection.tasks.first(where: { $0.record.id == id })?.state else { Issue.record("Task should be pending"); return }
     #expect(value == migrates)
 }
 private func expectInspectionBlocked(_ inspection: HarnessInspection, id: TaskID, reason: TaskBlockedReason) {

@@ -174,7 +174,8 @@ private struct ObserverRecorder<Value: Sendable>: Sendable {
     @Test("reports a throwing commit observer and the others go on") func commitFailureIsolation() async throws {
         // upstream :427
         let reports = SessionTestLog<String>(); let storage = ControlledStorage()
-        let session = try await Session.open(storage: storage, onReport: { reports.append(String(describing: $0)) }, context: .background)
+        // v1.5.2 D5a types.ts:204: a Session report is one tagged value.
+        let session = try await Session.open(storage: storage, onReport: { (report: Report) in reports.append(String(describing: report.error)) }, context: .background)
         let ends = SessionTestLog<WatchEnd>(); let healthy = SessionTestLog<Int>()
         _ = try session.observeCommits(CommitObserver(advance: { _, _ in throw ObserverTestError.bug }, end: { ends.append($0) }))
         _ = try session.observeCommits(CommitObserver(advance: { _, _ in healthy.append(1) }, end: { _ in }))

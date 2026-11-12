@@ -79,7 +79,8 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
     }
 
     // upstream v1.4.0 harness-blocked.test.ts:135.
-    @Test func parksAfterThreeCrashesAndRetryRunsTask() async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:129,161,173: the successor to parking ends the task.
+    @Test(.timeLimit(.minutes(1))) func faultsAfterThreeCrashesWithoutRetry() async throws {
         let base = MemoryStorage(), crashing = Mutex(true), runs = SessionTestLog<Int>()
         let definition = harnessOneStep("test.loop") { _, runtime, context in
             runs.append(1)
@@ -96,20 +97,16 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
             opened = try await d3Open(base, registry: registry, settings: settings)
         }
         let harness = opened.harness
-        #expect(try await harness.getTask(id: id, context: .background)?.storedRestarts == 3)
-        try await d3ExpectBlocked(harness, id, reason: .restartLimit)
         let graph = try await harness.taskGraph(context: .background)
-        #expect(graph.value.tasks[String(id.rawValue)]?.blocked == .restartLimit)
-        #expect(opened.reports.values == ["Task \(id.rawValue) (test.loop) was cut off 3 times without progress; it is parked until retryTask()"])
-        try await harnessEventually { !harness.wake().active }
-        #expect(harness.wake() == HarnessWake(active: false))
-        try harness.resume(); try await d3WaitForParkedPass(harness)
-        #expect(runs.count == 3)
-        crashing.withLock { $0 = false }
-        try await harness.retryTask(id: id, context: .background)
         let receipt = try await harness.waitForTask(id: id, context: .background)
-        #expect(receipt.outcome.status == "completed" && receipt.record.storedRestarts == nil)
-        #expect(runs.count == 4)
+        guard case .faulted(let error, _) = receipt.outcome else { Issue.record("Expected restart fault"); return }
+        #expect(error.detail == .object(["reason": .string("restart_limit")]))
+        #expect(receipt.record.storedRestarts == nil)
+        #expect(graph.value.tasks[String(id.rawValue)] == nil)
+        #expect(runs.count == 3)
+        let reportLog = opened.reports
+        try await harnessEventually { reportLog.count == 1 }
+        #expect(opened.reports.values == ["Task \(id.rawValue) (test.loop) was cut off 3 times without progress"])
         graph.dispose(); try await harness.close(context: .background); try await base.close(context: .background)
     }
 
@@ -181,7 +178,8 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
     }
 
     // upstream v1.4.0 harness-blocked.test.ts:269.
-    @Test func raisedLiveLimitRunsParkedTask() async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:270: raising the limit before reservation lets the task run.
+    @Test(.timeLimit(.minutes(1))) func raisedLiveLimitBeforeReservationRunsTask() async throws {
         let base = MemoryStorage(), runs = SessionTestLog<Int>(), limit = Mutex(1.0), id = try TaskID(20)
         let definition = harnessOneStep("test.loop") { _, runtime, context in
             runs.append(1); try await runtime.commit({ _, _ in .terminal(outcome: .completed(result: .number(1))) }, context: context)
@@ -189,8 +187,7 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
         try await d3Seed(base, d3Record(id))
         let opened = try await d3Open(base, registry: d3Registry(definition), settings: HarnessSettingsProvider { .init(restartLimit: limit.withLock { $0 }) })
         let graph = try await opened.harness.taskGraph(context: .background)
-        try opened.harness.resume(); try await d3WaitForParkedPass(opened.harness)
-        #expect(graph.value.tasks[String(id.rawValue)]?.blocked == .restartLimit && runs.count == 0)
+        #expect(graph.value.tasks[String(id.rawValue)]?.blocked == nil && runs.count == 0)
         limit.withLock { $0 = .infinity }; try opened.harness.resume()
         #expect(try await opened.harness.waitForTask(id: id, context: .background).outcome.status == "completed")
         #expect(runs.count == 1)
@@ -212,7 +209,8 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
     }
 
     // upstream v1.4.0 harness-blocked.test.ts:329.
-    @Test func equalCheckpointDoesNotResetCount() async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:161: an equal checkpoint retains the count until the limit ends work.
+    @Test(.timeLimit(.minutes(1))) func equalCheckpointDoesNotResetCount() async throws {
         let base = MemoryStorage(), runs = SessionTestLog<Int>()
         let definition = harnessOneStep("test.loop") { task, runtime, context in
             try await runtime.commit({ _, _ in .running(checkpoint: try JSONValue(encoding: task.checkpoint)) }, context: context)
@@ -226,7 +224,7 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
             try await d3Crash(opened); opened = try await d3Open(base, registry: registry, settings: settings)
         }
         #expect(try await opened.harness.getTask(id: id, context: .background)?.storedRestarts == 2)
-        try await d3ExpectBlocked(opened.harness, id, reason: .restartLimit)
+        #expect(try await opened.harness.waitForTask(id: id, context: .background).outcome.status == "faulted")
         try await opened.harness.close(context: .background); try await base.close(context: .background)
     }
 
@@ -310,9 +308,8 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
         #expect(resolveSettings(.init(restartLimit: limit)).restartLimit == limit.rounded(.down))
     }
 
-    // Upstream stores a parked task as pending with a restart count.
-    // Decoding must not require a Swift-only parked state.
-    @Test func typeScriptPendingRecordAtLimitDoesNotRun() async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:129–173: a pending record at the limit ends on reservation.
+    @Test(.timeLimit(.minutes(1))) func typeScriptPendingRecordAtLimitFaults() async throws {
         let base = MemoryStorage(), id = try TaskID(20), runs = SessionTestLog<Int>()
         let raw: JSONValue = .object([
             "id": .number(Double(id.rawValue)), "conversationId": .number(Double(rootConversationID.rawValue)),
@@ -325,11 +322,12 @@ private func d3WaitForParkedPass(_ harness: Harness) async throws {
         let definition = harnessOneStep("test.loop") { _, _, _ in runs.append(1) }
         let opened = try await d3Open(base, registry: d3Registry(definition))
         let graph = try await opened.harness.taskGraph(context: .background)
-        try opened.harness.resume(); try await d3WaitForParkedPass(opened.harness)
+        try opened.harness.resume()
         #expect(runs.count == 0)
-        #expect(try await opened.harness.getTask(id: id, context: .background) == record)
-        try await d3ExpectBlocked(opened.harness, id, reason: .restartLimit)
-        #expect(graph.value.tasks[String(id.rawValue)]?.blocked == .restartLimit)
+        #expect(try await opened.harness.waitForTask(id: id, context: .background).outcome.status == "faulted")
+        #expect(graph.value.tasks[String(id.rawValue)] == nil)
+        // The terminal publication can finish before its reconcile pass exits.
+        try await harnessEventually { !opened.harness.wake().active }
         #expect(opened.harness.wake() == HarnessWake(active: false))
         graph.dispose(); try await opened.harness.close(context: .background); try await base.close(context: .background)
     }

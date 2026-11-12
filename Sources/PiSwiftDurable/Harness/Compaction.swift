@@ -99,9 +99,14 @@ public let compactionTask = TaskDefinition<CompactionInput, CompactionCheckpoint
     name: "pi.compaction", version: 1, initial: { _ in .select },
     phase: { task, runtime, context in
         switch task.checkpoint {
-        case .select: try await selectCompaction(task, runtime, context)
-        case .summarize(let request): try await summarizeCompaction(task, request, runtime, context)
+        case .select:
+            if cutOffTooOften(task, runtime) { return try await failCutOff(runtime, task, context: context) }
+            try await selectCompaction(task, runtime, context)
+        case .summarize(let request):
+            if cutOffTooOften(task, runtime) { return try await failCutOff(runtime, task, context: context) }
+            try await summarizeCompaction(task, request, runtime, context)
         case .retry(var request, let until):
+            if cutOffTooOften(task, runtime) { return try await failCutOff(runtime, task, context: context) }
             if until > (try runtime.now()) {
                 try await runtime.sleepUntil(Double(until), checkpoint: JSONValue(encoding: task.checkpoint), context: context)
                 return
@@ -272,6 +277,32 @@ private func completeCompaction(_ runtime: TaskRuntime, context: ChordContext) a
     try await runtime.commit({ tx, _ in
         try removeCompactionStatus(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId)
         return try compactionTask.completed(CompactionResult())
+    }, context: context)
+}
+
+/// v1.5.2 live.ts:250–256: a task with no stored cut-off count does not resolve the limit on the normal path.
+private func cutOffTooOften(_ task: RunningTask<CompactionInput, CompactionCheckpoint>, _ runtime: TaskRuntime) -> Bool {
+    guard let restarts = task.record.storedRestarts else { return false }
+    return restarts >= runtime.settings.restartLimit
+}
+
+/// v1.5.2 live.ts:270–273: use the same count text in a visible compaction failure.
+private func cutOffCount(_ task: RunningTask<CompactionInput, CompactionCheckpoint>) -> String {
+    let restarts = task.record.restarts
+    if restarts == 1 { return "once" }
+    let count = (try? JSONValue.number(restarts).jsonText()) ?? String(restarts)
+    return "\(count) times in a row"
+}
+
+/// v1.5.2 compaction.ts:501–509: retain the failure in pi.live and end the task.
+private func failCutOff(_ runtime: TaskRuntime, _ task: RunningTask<CompactionInput, CompactionCheckpoint>,
+                        context: ChordContext) async throws {
+    let message = "Compaction was interrupted \(cutOffCount(task))"
+    try await runtime.commit({ tx, _ in
+        let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
+        try failCompactionStatus(live: live, taskId: runtime.taskId, error: message)
+        return .terminal(outcome: .failed(error: TaskOutcomeError(message: message,
+            detail: .object(["reason": .string("restart_limit")]))))
     }, context: context)
 }
 

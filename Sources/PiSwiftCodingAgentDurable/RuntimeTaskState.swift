@@ -11,6 +11,8 @@ internal struct RuntimeReport: Sendable {
     let taskId: TaskID?
     let taskKind: String?
 
+    init(_ report: Report) { self.init(report.error, info: report.info) }
+
     init(_ error: any Error, info: ReportInfo? = nil) {
         self.info = info
         message = runtimeErrorMessage(error)

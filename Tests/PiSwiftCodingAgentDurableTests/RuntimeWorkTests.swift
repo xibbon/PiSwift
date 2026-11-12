@@ -34,6 +34,8 @@ private func faultRecord(_ id: TaskID, message: String, completing: Bool = false
 
 @Test func durableWorkFieldsAndNoticeMetadataRoundTripAndOldJSONDefaults() throws {
     let id = try TaskID(2)
+    // v1.5.2 D5a task-graph.ts:58–64: restart_limit no longer blocks a live task.
+    // Keep this codec case so a saved v1.4.0 host view can still be read.
     let parking = runtimeParkingReport(id: id, kind: "pi.tool", restarts: 5)
     let original = workView()
     let view = DurableView(session: original.session, conversation: original.conversation,
@@ -56,7 +58,8 @@ private func faultRecord(_ id: TaskID, message: String, completing: Bool = false
     #expect(notice.taskKind == nil)
 }
 
-@Test(arguments: [TaskBlockedReason.missingTask, .taskTooOld, .migrationFailed, .restartLimit])
+// v1.5.2 D5a scheduler.ts:505–521: only registry fit can block a live task.
+@Test(arguments: [TaskBlockedReason.missingTask, .taskTooOld, .migrationFailed])
 func hiddenWorkKeepsEachBlockedReasonAndCount(reason: TaskBlockedReason) throws {
     let source = RuntimeViewSource(workView(), schedule: { _ in })
     let id = try TaskID(2)
@@ -65,29 +68,30 @@ func hiddenWorkKeepsEachBlockedReasonAndCount(reason: TaskBlockedReason) throws 
     source.updateTasks(try workGraph([workNode(2, blocked: reason)]), visible: false)
     let blocked = try #require(source.current().blockedTasks.first)
     #expect(source.current().tasks == nil)
-    #expect(source.current().activity == (reason == .restartLimit ? .parked : .blocked))
+    #expect(source.current().activity == .blocked)
     #expect(blocked.id == id)
     #expect(blocked.kind == "pi.generation")
     #expect(blocked.reason == reason)
     #expect(blocked.restarts == 5)
-    #expect(blocked.report == (reason == .restartLimit ? runtimeParkingReport(id: id, kind: blocked.kind, restarts: 5) : nil))
+    #expect(blocked.report == nil)
 }
 
+// v1.5.2 D5a task-graph.ts:58–64: the graph never has a restart_limit blocked node.
 @Test func hiddenGraphChangesIncludeOwnedConversationsAndIndependentProgress() throws {
     let source = RuntimeViewSource(workView(), schedule: { _ in })
     let parent = workNode(2, conversations: [8], state: ["status": "waiting", "phase": "tools", "on": [3], "policy": "allSettled"])
-    let parked = workNode(3, kind: "pi.tool", conversation: 8, blocked: .restartLimit)
-    source.updateTasks(try workGraph([parent, parked]), visible: false)
-    #expect(source.current().activity == .parked)
-    #expect(source.current().parkedTasks.map(\.id) == [try TaskID(3)])
-    source.updateTasks(try workGraph([parent, parked, workNode(4)]), visible: false)
+    let blocked = workNode(3, kind: "test.extension", conversation: 8, blocked: .missingTask)
+    source.updateTasks(try workGraph([parent, blocked]), visible: false)
+    #expect(source.current().activity == .blocked)
+    #expect(source.current().blockedTasks.map(\.id) == [try TaskID(3)])
+    source.updateTasks(try workGraph([parent, blocked, workNode(4)]), visible: false)
     #expect(source.current().activity == .progressing)
-    #expect(source.current().parkedTasks.count == 1)
+    #expect(source.current().blockedTasks.count == 1)
     let sleeping = workNode(3, kind: "pi.tool", conversation: 8,
         state: ["status": "sleeping", "phase": "poll", "until": 1_000.5])
     source.updateTasks(try workGraph([parent, sleeping]), visible: false)
     #expect(source.current().activity == .sleeping)
-    #expect(source.current().parkedTasks.isEmpty)
+    #expect(source.current().blockedTasks.isEmpty)
     #expect(source.current().sleepingTasks.first?.phase == "poll")
     #expect(source.current().sleepingTasks.first?.until == 1_000.5)
     #expect(source.current().tasks == nil)
@@ -116,25 +120,21 @@ func hiddenWorkKeepsEachBlockedReasonAndCount(reason: TaskBlockedReason) throws 
     #expect(source.current().terminal == .failed(message: "Storage failed"))
 }
 
-@Test func parkingReportsMatchExactCoreTextAndKeepTaskKindsWithPunctuation() throws {
+// v1.5.2 D5a types.ts:170–181; ended work is reported by identity and reason.
+@Test func interruptedReportsKeepIdentityAndRestartCount() throws {
     let source = RuntimeViewSource(workView(), schedule: { _ in })
     let reports = RuntimeReports()
     let id = try TaskID(2)
     let kind = "test.(tool) was cut off (again)"
-    let text = runtimeParkingReport(id: id, kind: kind, restarts: 5)
-    reports.report(SessionError.message(text))
-    source.updateTasks(try workGraph([workNode(2, kind: kind, blocked: .restartLimit)]), visible: false)
-    #expect(source.current().notices.isEmpty)
-    source.recordRestarts(.init(id: id, conversationId: rootConversationID, kind: kind, version: 1,
-        input: [:], state: .pending(checkpoint: ["phase": "work"]), restarts: 5))
+    let task = ReportTask(id: id, kind: kind, conversationId: rootConversationID)
+    let info = ReportInfo.taskInterrupted(task: task, reason: .restartLimit, restarts: 5)
+    let text = "Tool call ended after 5 restarts"
+    reports.report(Report(info, error: SessionError.message(text)))
     reports.attach(source)
     #expect(source.current().notices.count == 1)
-    #expect(source.current().notices.first?.category == .taskParked)
     #expect(source.current().notices.first?.message == text)
     #expect(source.current().notices.first?.taskKind == kind)
-    #expect(RuntimeReport(SessionError.message(text)).parked?.restarts == 5)
-    #expect(RuntimeReport(SessionError.message(text + " extra")).parked == nil)
-    reports.report(SessionError.message("Task 999 (missing) was cut off 5 times without progress; it is parked until retryTask()"))
-    #expect(source.current().notices.last?.category == .report)
+    #expect(source.current().notices.first?.reportInfo == info)
+    #expect(source.current().notices.first?.reportType == "task_interrupted")
     #expect(source.current().terminal == nil)
 }

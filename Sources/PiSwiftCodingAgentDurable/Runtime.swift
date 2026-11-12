@@ -118,7 +118,7 @@ internal func openDurable(_ options: OpenDurableOptions,
         storage = sqlite
         let opened = try await Harness.open(storage: sqlite,
             options: HarnessOptions(models: models.models, registry: registry, identity: getCodingAgentClientIdentity(manager), settings: settings,
-                                    env: envs.factory, onReport: { error, info in reports.report(error, info: info) }), context: .background)
+                                    env: envs.factory, onReport: { (report: Report) in reports.report(report) }), context: .background)
         harness = opened
         let initial = location.created ? await models.initial(manager) : nil
         let root = try await opened.root(options: .init(agent: AgentChange(
@@ -253,6 +253,7 @@ private final class RuntimeController: DurableController {
         do { try await runtime.abort() }
         catch { report(error) }
     }
+    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
     func retryTask(_ id: TaskID) async { await command { try await $0.retryTask(id) } }
     func abortTask(_ id: TaskID) async {
         guard queue.withLock({ !$0.sealed }), runtime.harness.failure == nil else { return }
@@ -394,6 +395,7 @@ private actor DurableRuntime {
         }
     }
     func abort() async throws { try assertOpen(); try await current.abort(context: .background) }
+    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
     func retryTask(_ id: TaskID) async throws {
         try assertOpen()
         try await harness.retryTask(id: id, context: .background)

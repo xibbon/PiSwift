@@ -1,0 +1,1 @@
+{"format":1,"type":"record","seq":2,"ordinal":1,"payload":{"type":"document","id":2,"content":{"version":3,"kind":"base","value":{"compactions":[{"taskId":7,"trigger":"manual","blocking":false,"attempt":1}]}}}}

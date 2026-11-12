@@ -129,7 +129,8 @@ import PiSwiftDurableTesting
         let id = try await root.commit({ tx in try await tx.createTask(old, input: 4, options: .init(ownership: .conversation())) }, context: .background)
         let before = try await harness.inspect(context: .background)
         #expect(attempts.count == 0)
-        guard case .ready(let migrates) = try #require(before.tasks.first).state else { Issue.record("Expected ready migration"); return }
+        // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable inspection is pending.
+        guard case .pending(let migrates) = try #require(before.tasks.first).state else { Issue.record("Expected pending migration"); return }
         #expect(migrates)
         try harness.resume()
         try await harnessEventually { attempts.count == 1 }

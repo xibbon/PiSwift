@@ -66,7 +66,8 @@ private final class RoutingTimerHost: Sendable {
     let reports = SessionTestLog<String>()
     let token = try SessionDocToken<JSONObject>(kind: "test.host-clock-declined", version: 1, initial: { ["value": 1] }, checkpointWhen: { _, _, _ in false })
     let session = try await Session.open(storage: MemoryStorage(), now: { host.now }, documentRetentionMs: 500,
-        setTimer: host.setTimer, onReport: { reports.append(String(describing: $0)) }, context: .background)
+        // v1.5.2 D5a types.ts:204: the host receives one tagged report.
+        setTimer: host.setTimer, onReport: { (report: Report) in reports.append(String(describing: report.error)) }, context: .background)
     try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
     try await harnessEventually { host.backgroundAttempts == 1 }
     #expect(host.pending.isEmpty)

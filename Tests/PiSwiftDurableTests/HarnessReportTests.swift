@@ -18,6 +18,7 @@ private final class TypedHarnessReports: Sendable {
     func append(_ error: any Error, _ info: ReportInfo) {
         state.withLock { $0.append(CapturedHarnessReport(error: error, info: info)) }
     }
+    func append(_ report: Report) { append(report.error, report.info) }
     func info(_ message: String) -> ReportInfo? { values.first { $0.message == message }?.info }
 }
 
@@ -28,10 +29,32 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
     reports: TypedHarnessReports) async throws -> Harness {
     if !tasks.isEmpty { try registry.install(Extension(name: "test", tasks: tasks)) }
     return try await Harness.open(storage: storage, options: .init(models: FakeDurableModels(), registry: registry,
-        setTimer: setTimer, onWake: onWake, onReport: { error, info in reports.append(error, info) }), context: .background)
+        // v1.5.2 D5a harness-reports.test.ts:159–161,219–227: one tagged report.
+        setTimer: setTimer, onWake: onWake, onReport: { (report: Report) in reports.append(report) }), context: .background)
 }
 
 @Suite struct HarnessReportTests {
+    // v1.5.2 D5a scheduler.ts:2716–2744: a stored crash-ending outcome
+    // emits one task_interrupted report after commit, with its restart count.
+    @Test(.timeLimit(.minutes(1))) func failedCrashEndingEmitsTaggedInterruption() async throws {
+        let reports = TypedHarnessReports()
+        let definition = harnessOneStep("test.report-interrupted") { _, runtime, context in
+            try await runtime.commit({ _, _ in
+                .terminal(outcome: .failed(error: .init(message: "request interrupted",
+                    detail: ["reason": "interrupted"])))
+            }, context: context)
+        }
+        let harness = try await openReportHarness([AnyTaskDefinition(definition)], reports: reports)
+        let root = try await harness.root(context: .background)
+        let id = try await harnessStart(root, definition)
+        try harness.resume()
+        #expect(try await harness.waitForTask(id: id, context: .background).outcome.status == "failed")
+        try await harnessEventually { reports.values.contains { $0.info.kind == "task_interrupted" } }
+        let task = ReportTask(id: id, kind: definition.name, conversationId: root.id)
+        #expect(reports.values.first { $0.info.kind == "task_interrupted" }?.info ==
+            .taskInterrupted(task: task, extension: "test", reason: .interrupted, restarts: 0))
+        try await harness.close(context: .background)
+    }
     // v1.4.0 harness-reports.test.ts:47
     @Test func taskReportsNameTheTaskAndItsExtension() async throws {
         let reports = TypedHarnessReports()
@@ -153,7 +176,8 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
         } catch {}
         _ = await harness.closed
         try await harnessEventually { reports.info("disk gone") != nil }
-        #expect(reports.info("disk gone") == .sessionFailed)
+        // v1.5.2 D5a harness-reports.test.ts:227: storage failure has its own kind.
+        #expect(reports.info("disk gone") == .storageFailed)
     }
 
     @Test func oneArgumentHarnessReportAdapterKeepsTheSameErrorInstance() async throws {
@@ -235,7 +259,8 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
     }
 
     @Test(arguments: [false, true])
-    func restartLimitSeparatesParkedTasksFromFaultedAbortHandlers(abortRequested: Bool) async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:129–173,362: both normal extension phases and abort handlers fault.
+    func restartLimitFaultsExtensionTasksAndAbortHandlers(abortRequested: Bool) async throws {
         let storage = MemoryStorage(), registry = Registry(), reports = TypedHarnessReports()
         let definition = harnessOneStep("test.report-restarts") { _, _, _ in Issue.record("The restart limit task ran") }
         try registry.install(Extension(name: "test", tasks: [AnyTaskDefinition(definition)]))
@@ -250,15 +275,9 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
         let harness = try await Harness.open(storage: storage, options: .init(models: FakeDurableModels(), registry: registry,
             settings: settings, onReport: { error, info in reports.append(error, info) }), context: .background)
         let task = ReportTask(id: id, kind: definition.name, conversationId: rootConversationID)
-        if abortRequested {
-            #expect(try await harness.waitForTask(id: id, context: .background).outcome.status == "faulted")
-            try await harnessEventually { reports.values.contains { $0.info.type == "task_faulted" } }
-            #expect(reports.values.first { $0.info.type == "task_faulted" }?.info == .taskFaulted(task: task, extension: "test", reason: .restartLimit))
-        } else {
-            try await harnessEventually { reports.values.contains { $0.info.type == "task_parked" } }
-            #expect(reports.values.first { $0.info.type == "task_parked" }?.info == .taskParked(task: task, extension: "test"))
-            #expect(try await harness.getTask(id: id, context: .background)?.state.status == "pending")
-        }
+        #expect(try await harness.waitForTask(id: id, context: .background).outcome.status == "faulted")
+        try await harnessEventually { reports.values.contains { $0.info.type == "task_faulted" } }
+        #expect(reports.values.first { $0.info.type == "task_faulted" }?.info == .taskFaulted(task: task, extension: "test", reason: .restartLimit))
         try await harness.close(context: .background)
     }
 
@@ -292,7 +311,8 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
         try await harnessEventually { reports.values.contains { $0.info.type == "task_outdated" } }
         #expect(reports.values.first { $0.info.type == "task_outdated" }?.info == .taskOutdated(
             task: .init(id: id, kind: definition.name, conversationId: root.id), extension: "test",
-            reason: incompatible ? .incompatibleTask : .missingTask))
+            // v1.5.2 D5a scheduler.ts:3162–3165: a newer definition without migrate is migration_failed.
+            reason: incompatible ? .migrationFailed : .missingTask))
         try await harness.close(context: .background)
     }
 

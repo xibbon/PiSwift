@@ -174,7 +174,8 @@ struct D4SharedFileResumeTests {
     }
 
     @Test(arguments: ["sqlite", "prefix", "jsonl"])
-    func parkedFilesStayParkedUntilRetryTask(backend: String) async throws {
+    // v1.5.2 D5a harness-blocked.test.ts:129–173: historical parked seeds now end as faults.
+    func v140ParkedSeedsEndAsFaults(backend: String) async throws {
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let item = try #require(prepare(directory, backend: backend)["parked"])
@@ -192,23 +193,14 @@ struct D4SharedFileResumeTests {
         try await checkSeed(storage, item: item)
         let harness = try await Harness.open(storage: storage, options: .init(models: FakeDurableModels(), registry: registry,
             settings: HarnessSettingsProvider { .init(restartLimit: 3) }, clock: TestClock(now: 1000), onWake: { _ in }), context: .background)
-        try harness.resume(); try await idle(harness)
+        try harness.resume()
         #expect(runs.values == [])
-        #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == raw)
-        let inspection = try await harness.inspect(context: .background)
-        guard case .blocked(.restartLimit, _) = inspection.tasks.first(where: { $0.record.id == record.id })?.state else {
-            throw TaskDefinitionError("Expected the shared task to stay parked")
-        }
-        try await harness.retryTask(id: record.id, context: .background)
         let receipt = try await harness.waitForTask(id: record.id, context: .background)
-        var terminal = try #require(raw.objectValue)
-        terminal["state"] = ["status": "terminal", "outcome": ["status": "completed", "result": .null]]
-        terminal["restarts"] = nil
-        terminal["endedAt"] = 1000
-        #expect(try JSONValue(encoding: receipt.record) == .object(terminal))
-        #expect(runs.values == [1])
+        guard case .faulted(let error, _) = receipt.outcome else { Issue.record("Expected restart fault"); return }
+        #expect(error.detail == .object(["reason": .string("restart_limit")]))
+        #expect(receipt.record.storedRestarts == nil)
+        #expect(runs.values == [])
         try await harness.close(context: .background)
-        try verify([try await capture(directory, backend: backend, name: "parked", item: item)], directory: directory, backend: backend)
     }
 
     @Test(arguments: ["sqlite", "prefix", "jsonl"])

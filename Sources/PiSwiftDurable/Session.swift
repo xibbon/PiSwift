@@ -140,10 +140,21 @@ public final class Session: Sendable {
                             documentRetentionMs: Double? = nil,
                             setTimer: HarnessSetTimer? = nil,
                             hooks: any SessionHooks = DefaultSessionHooks(),
-                            onReport: @escaping @Sendable (any Error, ReportInfo) -> Void = { _, _ in },
+                            onReport: @escaping @Sendable (Report) -> Void = { _ in },
                             context: ChordContext) async throws -> Session {
-        try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
-            documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: onReport)), hooks: hooks, onReport: onReport, context: context)
+        let legacy: @Sendable (any Error, ReportInfo) -> Void = { error, info in onReport(Report(info, error: error)) }
+        return try await openWithDocumentRetention(storage: storage, now: now, documentRetentionMs: { documentRetentionMs },
+            documentTimer: .host(HarnessTimers(now: now, setTimer: setTimer, report: legacy)), hooks: hooks, onReport: legacy, context: context)
+    }
+    @available(*, deprecated, message: "Use the single Report callback")
+    public static func open(storage: any DurableStorage,
+                            now: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+                            documentRetentionMs: Double? = nil, setTimer: HarnessSetTimer? = nil,
+                            hooks: any SessionHooks = DefaultSessionHooks(),
+                            onReport: @escaping @Sendable (any Error, ReportInfo) -> Void,
+                            context: ChordContext) async throws -> Session {
+        try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
+            setTimer: setTimer, hooks: hooks, onReport: { (report: Report) in onReport(report.error, report.info) }, context: context)
     }
     /// Adapts a callback that receives only the original error.
     public static func open(storage: any DurableStorage,
@@ -153,7 +164,7 @@ public final class Session: Sendable {
                             onReport: @escaping @Sendable (any Error) -> Void,
                             context: ChordContext) async throws -> Session {
         try await open(storage: storage, now: now, documentRetentionMs: documentRetentionMs,
-                       setTimer: setTimer, hooks: hooks, onReport: { error, _ in onReport(error) }, context: context)
+                       setTimer: setTimer, hooks: hooks, onReport: { (report: Report) in onReport(report.error) }, context: context)
     }
     /// Opens a Session with an internal timer hook for retention tests.
     internal static func open(storage: any DurableStorage,
@@ -181,7 +192,7 @@ public final class Session: Sendable {
         session.failureLatch.install { [weak session] error in
             guard let session else { return }
             _ = session.beginClose(context: .background)
-            session.report(error, .sessionFailed)
+            session.report(error, .storageFailed)
         }
         return session
     }
@@ -201,6 +212,9 @@ public final class Session: Sendable {
         await writer.gate(key)
         try assertHealthy()
     }
+    /// Whether a decision on the Session line read an unpublished write.
+    /// The decision can discard its result, wait with `touch`, and retry.
+    internal func hasPendingWrite(_ key: String) -> Bool { writer.pendingGate(key) != nil }
     /// The newest visible entry, updated when this Session publishes an append.
     internal func latestEntryId(_ id: ConversationID, context: ChordContext) async throws -> EntryID? {
         try await touch(SessionKeys.conversationKey(id))

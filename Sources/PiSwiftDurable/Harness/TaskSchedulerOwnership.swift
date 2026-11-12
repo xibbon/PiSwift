@@ -94,7 +94,6 @@ extension TaskScheduler.State {
             }
         }
         if record.state.status == "terminal" {
-            parked.remove(id)
             live.removeValue(forKey: id); liveOrder.removeValue(forKey: id); intent.remove(id); runnable.remove(id); finalizeChecks.remove(id)
             nodes[id] = TaskNode(record)
             if let above = nearestLiveAbove(TaskNode(record)) {
@@ -137,6 +136,31 @@ extension TaskScheduler.State {
 }
 
 extension TaskScheduler {
+    /// v1.5.2 scheduler.ts:1377-1408 `#region`. The caller is on the Session
+    /// line and `decide` must be synchronous and free of side effects. Swift
+    /// conservatively gates all unpublished writes because its writer does not
+    /// yet install the tag's ownership membership keys. If a prior write is
+    /// pending, discard both the value and any error, wait for publication,
+    /// refresh loaded ownership, and decide again before staging a side effect.
+    func region<T>(_ decide: () throws -> T,
+                   refresh: (() async throws -> Void)? = nil) async throws -> T {
+        while true {
+            let before = state.withLock { $0.publicationVersion }
+            let decision = Result { try decide() }
+            // No await separates the memory read from these checks. A
+            // Session-line callback prevents a new writer from admission.
+            // Publication of an earlier write may run on another executor:
+            // the version check detects even a publication that finished
+            // between the memory read and the pending-writer probe.
+            let pending = session.hasPendingWrite(SessionKeys.allKeys)
+            let changed = state.withLock { $0.publicationVersion != before }
+            if !pending && !changed { return try decision.get() }
+            if changed && !pending { try await refresh?(); continue }
+            try await session.touch(SessionKeys.allKeys)
+            try await refresh?()
+        }
+    }
+
     var indexSizes: [String: Int] {
         state.withLock { ["live": $0.live.count, "settled": $0.nodes.count, "edges": $0.edges.count,
                          "below": $0.below.values.reduce(0) { $0 + $1.count }, "roots": $0.roots.count,
@@ -158,6 +182,9 @@ extension TaskScheduler {
         }
     }
     func loadChain(_ start: OwnershipUp, overlay: TaskOverlay = .empty) async throws {
+        // A known node is read from scheduler memory. Publish every earlier
+        // write before using that memory to decide where this chain ends.
+        try await session.touch(SessionKeys.allKeys)
         var at: OwnershipUp? = start, passed: [TaskID] = []
         while let step = at {
             switch step {
@@ -187,6 +214,9 @@ extension TaskScheduler {
         state.withLock { $0.unloaded.subtract(passed) }
     }
     func loadScopes() async throws {
+        // Capture the unloaded set after earlier publications. The region's
+        // refresh calls this again if it waited on an ownership decision.
+        try await session.touch(SessionKeys.allKeys)
         let unloaded = state.withLock { state in state.candidateEntries += state.unloaded.count; return Array(state.unloaded) }
         for id in unloaded where state.withLock({ $0.unloaded.contains(id) }) { try await loadChain(.task(id)) }
     }

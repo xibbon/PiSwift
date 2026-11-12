@@ -1,0 +1,1978 @@
+{
+  "tag": "v1.5.2",
+  "source": "unmodified tagged Harness and storage",
+  "cases": {
+    "extension-run-sqlite": {
+      "scenario": "extension-run",
+      "backend": "sqlite",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Task 7 (fixture.restart-loop) was cut off 2 times without progress",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Task 7 (fixture.restart-loop) was cut off 2 times without progress",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 7,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    },
+    "extension-run-jsonl": {
+      "scenario": "extension-run",
+      "backend": "jsonl",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Task 7 (fixture.restart-loop) was cut off 2 times without progress",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Task 7 (fixture.restart-loop) was cut off 2 times without progress",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 7,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    },
+    "extension-abort-sqlite": {
+      "scenario": "extension-abort",
+      "backend": "sqlite",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": true,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": true,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Abort handler of task 7 (fixture.restart-loop) was cut off 2 times",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": true,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Abort handler of task 7 (fixture.restart-loop) was cut off 2 times",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 7,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    },
+    "extension-abort-jsonl": {
+      "scenario": "extension-abort",
+      "backend": "jsonl",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": true,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": true,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "background": false,
+          "abortRequested": true,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Abort handler of task 7 (fixture.restart-loop) was cut off 2 times",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": true,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Abort handler of task 7 (fixture.restart-loop) was cut off 2 times",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 7,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    },
+    "compaction-sqlite": {
+      "scenario": "compaction",
+      "backend": "sqlite",
+      "restartLimit": 1,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "pi.compaction",
+            "version": 1,
+            "input": {
+              "reason": "manual"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "select"
+              }
+            },
+            "restarts": 0,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "version": 1,
+          "input": {
+            "reason": "manual"
+          },
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "select"
+            }
+          },
+          "restarts": 1,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "version": 1,
+          "input": {
+            "reason": "manual"
+          },
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "failed",
+              "error": {
+                "message": "Compaction was interrupted once",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "pi.compaction",
+              "version": 1,
+              "input": {
+                "reason": "manual"
+              },
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "failed",
+                  "error": {
+                    "message": "Compaction was interrupted once",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {
+          "compactionFailure": {
+            "taskId": 7,
+            "trigger": "manual",
+            "error": "Compaction was interrupted once"
+          }
+        },
+        "reports": [
+          {
+            "kind": "task_interrupted",
+            "task": {
+              "id": 7,
+              "kind": "pi.compaction",
+              "conversationId": 1
+            },
+            "reason": "restart_limit",
+            "restarts": 1,
+            "error": {}
+          }
+        ]
+      }
+    },
+    "compaction-jsonl": {
+      "scenario": "compaction",
+      "backend": "jsonl",
+      "restartLimit": 1,
+      "rootId": 1,
+      "ids": {
+        "task": 7
+      },
+      "pre": {
+        "ids": {
+          "task": 7
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "pi.compaction",
+            "version": 1,
+            "input": {
+              "reason": "manual"
+            },
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "select"
+              }
+            },
+            "restarts": 0,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "version": 1,
+          "input": {
+            "reason": "manual"
+          },
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "select"
+            }
+          },
+          "restarts": 1,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 7,
+          "conversationId": 1,
+          "kind": "pi.compaction",
+          "version": 1,
+          "input": {
+            "reason": "manual"
+          },
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "failed",
+              "error": {
+                "message": "Compaction was interrupted once",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "task": 7
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "pi.compaction",
+              "version": 1,
+              "input": {
+                "reason": "manual"
+              },
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "failed",
+                  "error": {
+                    "message": "Compaction was interrupted once",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {
+          "compactionFailure": {
+            "taskId": 7,
+            "trigger": "manual",
+            "error": "Compaction was interrupted once"
+          }
+        },
+        "reports": [
+          {
+            "kind": "task_interrupted",
+            "task": {
+              "id": 7,
+              "kind": "pi.compaction",
+              "conversationId": 1
+            },
+            "reason": "restart_limit",
+            "restarts": 1,
+            "error": {}
+          }
+        ]
+      }
+    },
+    "nested-extension-sqlite": {
+      "scenario": "nested-extension",
+      "backend": "sqlite",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "owner": 7,
+        "task": 8
+      },
+      "pre": {
+        "ids": {
+          "owner": 7,
+          "task": 8
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": null
+              }
+            }
+          },
+          {
+            "id": 8,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "owner": 7,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 8,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "owner": 7,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 8,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "owner": 7,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Task 8 (fixture.restart-loop) was cut off 2 times without progress",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "owner": 7,
+            "task": 8
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "completed",
+                  "result": null
+                }
+              },
+              "endedAt": 1700000000000
+            },
+            {
+              "id": 8,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "owner": 7,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Task 8 (fixture.restart-loop) was cut off 2 times without progress",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 8,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    },
+    "nested-extension-jsonl": {
+      "scenario": "nested-extension",
+      "backend": "jsonl",
+      "restartLimit": 2,
+      "rootId": 1,
+      "ids": {
+        "owner": 7,
+        "task": 8
+      },
+      "pre": {
+        "ids": {
+          "owner": 7,
+          "task": 8
+        },
+        "tasks": [
+          {
+            "id": 7,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "completing",
+              "outcome": {
+                "status": "completed",
+                "result": null
+              }
+            }
+          },
+          {
+            "id": 8,
+            "conversationId": 1,
+            "kind": "fixture.restart-loop",
+            "version": 1,
+            "input": null,
+            "owner": 7,
+            "background": false,
+            "abortRequested": false,
+            "state": {
+              "status": "running",
+              "checkpoint": {
+                "phase": "run"
+              }
+            },
+            "restarts": 1,
+            "startedAt": 1700000000000
+          }
+        ],
+        "documents": [
+          {
+            "id": 2,
+            "kind": "pi.live",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 3,
+            "kind": "pi.inbox",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 4,
+            "kind": "pi.usage",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 5,
+            "kind": "pi.provider",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "latest",
+            "fork": "initial",
+            "createdAt": 1
+          },
+          {
+            "id": 6,
+            "kind": "pi.agent",
+            "scope": {
+              "kind": "conversation",
+              "conversationId": 1
+            },
+            "history": "rewindable",
+            "fork": "asOf",
+            "createdAt": 1
+          }
+        ]
+      },
+      "post": {
+        "afterOpen": {
+          "id": 8,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "owner": 7,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "checkpoint": {
+              "phase": "run"
+            }
+          },
+          "restarts": 2,
+          "startedAt": 1700000000000
+        },
+        "terminal": {
+          "id": 8,
+          "conversationId": 1,
+          "kind": "fixture.restart-loop",
+          "version": 1,
+          "input": null,
+          "owner": 7,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "terminal",
+            "outcome": {
+              "status": "faulted",
+              "error": {
+                "message": "Task 8 (fixture.restart-loop) was cut off 2 times without progress",
+                "detail": {
+                  "reason": "restart_limit"
+                }
+              }
+            }
+          },
+          "startedAt": 1700000000000,
+          "endedAt": 1700000000000
+        },
+        "after": {
+          "ids": {
+            "owner": 7,
+            "task": 8
+          },
+          "tasks": [
+            {
+              "id": 7,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "completed",
+                  "result": null
+                }
+              },
+              "endedAt": 1700000000000
+            },
+            {
+              "id": 8,
+              "conversationId": 1,
+              "kind": "fixture.restart-loop",
+              "version": 1,
+              "input": null,
+              "owner": 7,
+              "background": false,
+              "abortRequested": false,
+              "state": {
+                "status": "terminal",
+                "outcome": {
+                  "status": "faulted",
+                  "error": {
+                    "message": "Task 8 (fixture.restart-loop) was cut off 2 times without progress",
+                    "detail": {
+                      "reason": "restart_limit"
+                    }
+                  }
+                }
+              },
+              "startedAt": 1700000000000,
+              "endedAt": 1700000000000
+            }
+          ],
+          "documents": [
+            {
+              "id": 2,
+              "kind": "pi.live",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 3,
+              "kind": "pi.inbox",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 4,
+              "kind": "pi.usage",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 5,
+              "kind": "pi.provider",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "latest",
+              "fork": "initial",
+              "createdAt": 1
+            },
+            {
+              "id": 6,
+              "kind": "pi.agent",
+              "scope": {
+                "kind": "conversation",
+                "conversationId": 1
+              },
+              "history": "rewindable",
+              "fork": "asOf",
+              "createdAt": 1
+            }
+          ]
+        },
+        "live": {},
+        "reports": [
+          {
+            "kind": "task_faulted",
+            "task": {
+              "id": 8,
+              "kind": "fixture.restart-loop",
+              "conversationId": 1
+            },
+            "extension": "fixture",
+            "reason": "restart_limit",
+            "error": {}
+          }
+        ]
+      }
+    }
+  }
+}

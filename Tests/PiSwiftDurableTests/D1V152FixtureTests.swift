@@ -323,7 +323,8 @@ struct D1V152FixtureTests {
                 if case .blocked(let reason, _) = saved.state {
                     #expect(reason == (name == "newerGenerationVersion" ? .taskTooOld : .migrationFailed))
                 } else if name == "toolsPending" {
-                    guard case .ready = saved.state else { Issue.record("Fixture phase \(name) was neither ready nor blocked"); continue }
+                    // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable work is pending.
+                    guard case .pending = saved.state else { Issue.record("Fixture phase \(name) was neither pending nor blocked"); continue }
                 } else { Issue.record("Fixture phase \(name) was not blocked") }
             }
             var recordsBefore: [TaskID: TaskRecord] = [:]
