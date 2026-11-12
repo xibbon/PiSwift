@@ -387,7 +387,8 @@ public func decodeAgentOf(_ view: ConversationView) throws -> PiSwiftDurable.Age
 /// Invalid data throws so a host can show the decoding error.
 public func decodeLiveOf(_ view: ConversationView) throws -> LiveState {
     guard let document = view.docs["pi.live"] else { return LiveState() }
-    return try JSONValue.object(document).decode(LiveState.self)
+    // v1.5.2 D1: live.ts:205-213 migrates older views before typed decoding.
+    return try JSONValue.object(migrateLiveState(document)).decode(LiveState.self)
 }
 
 /// Returns an empty state if the agent document is absent or cannot be decoded.

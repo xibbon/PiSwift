@@ -34,6 +34,20 @@ import Testing
     }
 }
 
+@Test func publicLiveDecoderAcceptsV3RunFailure() throws {
+    // v1.5.2 D1: live.ts:138-192 adds run.turns and runFailure.
+    let document: JSONObject = [
+        "run": ["taskId": 8, "inputs": [5], "turns": 2],
+        "runFailure": ["taskId": 7, "inputs": [4], "reason": "turn_limit", "detail": "2 turns"],
+    ]
+    let view = ConversationView(conversation: .init(id: rootConversationID), entries: [], docs: ["pi.live": document])
+    let live = try decodeLiveOf(view)
+    #expect(live.run?.turns == 2)
+    #expect(live.runFailure?.reason == .turnLimit)
+    #expect(live.runFailure?.detail == "2 turns")
+    #expect(try JSONValue(encoding: live) == .object(document))
+}
+
 #if os(macOS)
 import Darwin
 

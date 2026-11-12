@@ -128,7 +128,8 @@ struct HarnessGenerationStreamTests {
             let entry = try await tx.appendEntry(opened.root.id, value: EntryDraft(kind: userEntry.kind,
                 model: EntryRecord.encodeMessages([.user(UserMessage(content: .text("hi"), timestamp: 1))])))
             let submission = try await tx.createSubmission(.input(conversationId: opened.root.id, state: .placed(entry: entry.id)))
-            let future = TaskKind<GenerationInput, GenerationCheckpoint>(name: "pi.generation", version: 2,
+            // v1.5.2 D1: generation.ts:166 is version 2; scheduler.ts:2100-2107 blocks future version 3.
+            let future = TaskKind<GenerationInput, GenerationCheckpoint>(name: "pi.generation", version: 3,
                 initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) })
             let task = try await tx.createTask(future, input: GenerationInput(), options: .init(ownership: .conversation()))
             let live = try await tx.doc(LiveDoc, conversationId: opened.root.id)

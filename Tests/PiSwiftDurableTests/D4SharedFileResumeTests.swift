@@ -229,6 +229,8 @@ struct D4SharedFileResumeTests {
             try await idle(harness)
             var sleeping = try #require(raw.objectValue)
             if name == "legacyRunningRetry" {
+                // v1.5.2 D1: scheduler.ts:2083-2088 migrates this runnable task before sleeping.
+                sleeping["version"] = 2
                 sleeping["state"] = ["status": "sleeping", "checkpoint": try #require(raw["state"]?["checkpoint"]), "until": 61_000]
             }
             #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == .object(sleeping))
@@ -251,10 +253,18 @@ struct D4SharedFileResumeTests {
             #expect(entry.model?.count == 1)
             #expect(entry.model?.first?["content"]?[0]?["text"] == "resumed")
             var terminal = try #require(raw.objectValue)
+            // v1.5.2 D1: scheduler.ts:2083-2088 writes the migrated version.
+            terminal["version"] = 2
             terminal["state"] = ["status": "terminal", "outcome": ["status": "completed", "result": ["entryId": try JSONValue(encoding: entryID)]]]
             terminal["restarts"] = nil
             terminal["endedAt"] = 61_000
             #expect(try JSONValue(encoding: receipt.record) == .object(terminal))
+            if name == "retrySleep" {
+                // v1.5.2 D1: scheduler.ts:2083-2088; tagged Node resumes this frozen v1.4.0 seed.
+                let oracleURL = try #require(Bundle.module.url(forResource: "generation-resume-oracle-v152", withExtension: "json", subdirectory: "Fixtures"))
+                let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
+                #expect(try JSONValue(encoding: receipt.record) == oracle["after"]?["record"])
+            }
             if name == "pollSleep" {
                 #expect(models.base.calls().streamSimple == 0)
                 #expect(try JSONValue(encoding: models.handles.map(GenerationDeferredHandle.init)) == [#require(raw["state"]?["checkpoint"]?["handle"])])

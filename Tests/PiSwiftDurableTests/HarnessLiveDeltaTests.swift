@@ -18,7 +18,8 @@ import PiSwiftDurableTesting
         let result = try #require(await allEntries(opened.root).first { $0.kind == "pi.tool-result" })
         let commits = log.commits
         #expect(commits.count == 8)
-        #expect(commits[0] == [.set(["run"], ["taskId": .number(Double(generations[0].rawValue)), "inputs": [.number(Double(input.id.rawValue))]])])
+        // v1.5.2 D1: live.ts:138-145 stores run.turns in a new run.
+        #expect(commits[0] == [.set(["run"], ["taskId": .number(Double(generations[0].rawValue)), "inputs": [.number(Double(input.id.rawValue))], "turns": 0])])
         #expect(commits[1] == [.set(["generation"], ["attempt": 1])])
         #expect(commits[2].count == 2 && commits[2].contains(.delete(["generation"])) && commits[2].contains(.set(["tools"], [["callId": "c1", "name": "noop", "taskId": .number(Double(tool.id.rawValue)), "status": "pending"]])))
         #expect(commits[3] == [.set(["tools", 0, "status"], "running")])

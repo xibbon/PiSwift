@@ -80,7 +80,8 @@ private func storeToolV1(_ path: String, setup: HarnessChatSetup, checkpoint: To
         let slot = try #require(try await generationLive(first)?.tools?.first)
         let toolID = try #require(slot.taskId)
         let produced = try #require(try await first.harness.getTask(id: toolID, context: .background))
-        #expect(produced.version == 2)
+        // v1.5.2 D1: tool.ts:136-147 registers newly written pi.tool tasks at version 3.
+        #expect(produced.version == 3)
         #expect(produced.input["kind"] == "model")
         let entryID = try await first.root.commit({ tx in
             let message = ToolResultMessage(toolCallId: "c1", toolName: "echo", content: [],
@@ -142,7 +143,8 @@ private func storeToolV1(_ path: String, setup: HarnessChatSetup, checkpoint: To
         #expect(try await opened.harness.getTask(id: id, context: .background)?.version == 1)
         try opened.harness.resume()
         let settled = try await opened.harness.waitForTask(id: id, context: .background)
-        #expect(settled.record.version == 2)
+        // v1.5.2 D1: scheduler.ts:2083-2088 writes the migrated pi.tool version.
+        #expect(settled.record.version == 3)
         #expect(settled.record.input.objectValue?["kind"] == "model")
         #expect(settled.outcome.status == (interrupted ? "failed" : "completed"))
         #expect(runs.withLock { $0 } == (interrupted ? 0 : 1))

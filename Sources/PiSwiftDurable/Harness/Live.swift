@@ -7,8 +7,37 @@ public struct LiveRun: Sendable, Equatable, Codable {
     public var taskId: TaskID
     /// The input submission IDs admitted to this generation.
     public var inputs: [SubmissionID]
+    /// Tool rounds completed by this run.
+    public var turns: Int
+    /// The first entry in the run or its continued history.
+    public var first: EntryID?
+    /// Tasks requested by afterRun after an answer.
+    public var afterRun: LiveAfterRun?
     /// Records the active generation task and its admitted input submissions.
-    public init(taskId: TaskID, inputs: [SubmissionID]) { self.taskId = taskId; self.inputs = inputs }
+    public init(taskId: TaskID, inputs: [SubmissionID], turns: Int = 0, first: EntryID? = nil, afterRun: LiveAfterRun? = nil) {
+        self.taskId = taskId; self.inputs = inputs; self.turns = turns; self.first = first; self.afterRun = afterRun
+    }
+}
+/// Tasks that keep an answered run open.
+public struct LiveAfterRun: Sendable, Equatable, Codable {
+    public var tasks: [TaskID]?
+    public init(tasks: [TaskID]? = nil) { self.tasks = tasks }
+}
+/// Saved reason for a run that ended without an answer.
+public enum RunFailureReason: String, Sendable, Codable {
+    case modelError = "model_error", noModel = "no_model", aborted, reset, faulted, orphaned
+    case interrupted, restartLimit = "restart_limit", nothingToAnswer = "nothing_to_answer", turnLimit = "turn_limit"
+}
+/// The latest unanswered run, retained while the conversation is idle.
+public struct RunFailure: Sendable, Equatable, Codable {
+    public var taskId: TaskID
+    public var inputs: [SubmissionID]
+    public var reason: RunFailureReason
+    public var detail: String?
+    public var first: EntryID?
+    public init(taskId: TaskID, inputs: [SubmissionID], reason: RunFailureReason, detail: String? = nil, first: EntryID? = nil) {
+        self.taskId = taskId; self.inputs = inputs; self.reason = reason; self.detail = detail; self.first = first
+    }
 }
 /// The scheduled retry time and last request error.
 public struct LiveRetry: Sendable, Equatable, Codable {
@@ -58,6 +87,8 @@ public struct ToolSlot: Sendable, Equatable, Codable {
     public var name: String
     /// The ID of the task bound to this value or invocation.
     public var taskId: TaskID?
+    /// True when the request did not offer this tool.
+    public var unoffered: Bool?
     /// The stored execution or submission state tag.
     public var status: Status
     /// The retained text output visible for this tool call.
@@ -74,13 +105,15 @@ public struct ToolSlot: Sendable, Equatable, Codable {
     public var entry: EntryID?
     /// Records a tool call and its initial execution status.
     public init(callId: String, name: String, taskId: TaskID? = nil, status: Status = .pending, entry: EntryID? = nil) {
-        self.callId = callId; self.name = name; self.taskId = taskId; self.status = status; self.entry = entry
+        self.callId = callId; self.name = name; self.taskId = taskId; self.unoffered = nil; self.status = status; self.entry = entry
     }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         callId = try recordRequired(object, "callId"); name = try recordRequired(object, "name")
-        taskId = try recordOptional(object, "taskId"); status = try recordRequired(object, "status")
+        taskId = try recordOptional(object, "taskId"); unoffered = try recordOptional(object, "unoffered")
+        if unoffered == false { throw recordUnknown("unoffered", "false") }
+        status = try recordRequired(object, "status")
         output = try recordOptional(object, "output"); droppedBytes = try recordOptional(object, "droppedBytes")
         droppedLines = try recordOptional(object, "droppedLines")
         // An explicit null is a reported value. Absence means no details were reported.
@@ -192,6 +225,8 @@ public struct CompactionStatus: Sendable, Equatable, Codable {
     public var taskId: TaskID
     /// The saved cause of cancellation, unanswered input, or compaction.
     public var reason: CompactionReason
+    /// The stored v2/v3 name of the compaction cause.
+    public var trigger: CompactionReason { get { reason } set { reason = newValue } }
     /// Whether the generation must wait for this compaction.
     public var blocking: Bool
     /// The current request attempt number.
@@ -202,6 +237,21 @@ public struct CompactionStatus: Sendable, Equatable, Codable {
     public init(taskId: TaskID, reason: CompactionReason, blocking: Bool, attempt: Int, retry: LiveRetry? = nil) {
         self.taskId = taskId; self.reason = reason; self.blocking = blocking; self.attempt = attempt; self.retry = retry
     }
+    private enum CodingKeys: String, CodingKey { case taskId, trigger, blocking, attempt, retry }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        taskId = try c.decode(TaskID.self, forKey: .taskId)
+        reason = try c.decode(CompactionReason.self, forKey: .trigger)
+        blocking = try c.decode(Bool.self, forKey: .blocking)
+        attempt = try c.decode(Int.self, forKey: .attempt)
+        retry = try c.decodeIfPresent(LiveRetry.self, forKey: .retry)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(taskId, forKey: .taskId); try c.encode(reason, forKey: .trigger)
+        try c.encode(blocking, forKey: .blocking); try c.encode(attempt, forKey: .attempt)
+        try c.encodeIfPresent(retry, forKey: .retry)
+    }
 }
 /// The newest compaction failure since a compaction produced a summary.
 public struct CompactionFailure: Sendable, Equatable, Codable {
@@ -209,11 +259,24 @@ public struct CompactionFailure: Sendable, Equatable, Codable {
     public var taskId: TaskID
     /// The cause of the compaction.
     public var reason: CompactionReason
+    /// The stored v2/v3 name of the compaction cause.
+    public var trigger: CompactionReason { get { reason } set { reason = newValue } }
     /// The error message or reason the scheduler orphaned the task.
     public var error: String
     /// Records the task, cause, and failure text.
     public init(taskId: TaskID, reason: CompactionReason, error: String) {
         self.taskId = taskId; self.reason = reason; self.error = error
+    }
+    private enum CodingKeys: String, CodingKey { case taskId, trigger, error }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        taskId = try c.decode(TaskID.self, forKey: .taskId)
+        reason = try c.decode(CompactionReason.self, forKey: .trigger)
+        error = try c.decode(String.self, forKey: .error)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(taskId, forKey: .taskId); try c.encode(reason, forKey: .trigger); try c.encode(error, forKey: .error)
     }
 }
 /// The active generation, tools, and compactions of one conversation.
@@ -230,18 +293,46 @@ public struct LiveState: Sendable, Equatable, Codable {
     public var compactions: [CompactionStatus]?
     /// The newest failure, retained until a compaction produces a summary.
     public var compactionFailure: CompactionFailure?
+    /// The latest run that ended without an answer.
+    public var runFailure: RunFailure?
     /// Creates the visible state of active generation, tools, and compactions.
-    public init(run: LiveRun? = nil, generation: LiveGeneration? = nil, tools: [ToolSlot]? = nil, nestedTools: [NestedToolSlot]? = nil, compactions: [CompactionStatus]? = nil, compactionFailure: CompactionFailure? = nil) {
-        self.run = run; self.generation = generation; self.tools = tools; self.nestedTools = nestedTools; self.compactions = compactions; self.compactionFailure = compactionFailure
+    public init(run: LiveRun? = nil, generation: LiveGeneration? = nil, tools: [ToolSlot]? = nil, nestedTools: [NestedToolSlot]? = nil, compactions: [CompactionStatus]? = nil, compactionFailure: CompactionFailure? = nil, runFailure: RunFailure? = nil) {
+        self.run = run; self.generation = generation; self.tools = tools; self.nestedTools = nestedTools; self.compactions = compactions; self.compactionFailure = compactionFailure; self.runFailure = runFailure
     }
 }
 /// The typed token for the built-in live conversation document.
-public let LiveDoc = try! ConversationDocToken<LiveState>(kind: "pi.live", version: 1, fork: .initial,
-    initial: { LiveState() }, checkpointWhen: { value, _, _ in
+public let LiveDoc = try! ConversationDocToken<LiveState>(kind: "pi.live", version: 3, fork: .initial,
+    initial: { LiveState() }, migrate: { value, _ in migrateLiveState(value) }, checkpointWhen: { value, _, _ in
         value["generation"] == nil &&
         !(value["tools"]?.arrayValue ?? []).contains { $0.objectValue?["status"] == .string("running") } &&
         !(value["nestedTools"]?.arrayValue ?? []).contains { $0.objectValue?["status"] == .string("running") }
     })
+
+/// Ports `LiveDoc.migrate` at v1.5.2 live.ts:205-213. The tagged function applies the same transform to v1 and v2.
+public func migrateLiveState(_ value: JSONObject) -> JSONObject {
+    var live = value
+    if case .object(var run)? = live["run"] {
+        if case .number = run["turns"] { } else { run["turns"] = 0 }
+        live["run"] = .object(run)
+    }
+    if case .array(let items)? = live["compactions"] {
+        live["compactions"] = .array(items.map { item in
+            guard case .object(let object) = item else { return item }
+            return .object(renameReason(object))
+        })
+    }
+    if case .object(let failure)? = live["compactionFailure"] {
+        live["compactionFailure"] = .object(renameReason(failure))
+    }
+    return live
+}
+
+/// Ports `renameReason` at v1.5.2 live.ts:227-229.
+private func renameReason(_ value: JSONObject) -> JSONObject {
+    var result: JSONObject = [:]
+    for (key, field) in value { result[key == "reason" ? "trigger" : key] = field }
+    return result
+}
 
 internal func endRun(tx: Transaction, live: JSONDraft, taskId: TaskID, settlement: SubmissionSettlement) throws {
     if let run = try live.get("run")?.decode(LiveRun.self), run.taskId == taskId {

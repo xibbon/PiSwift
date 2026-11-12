@@ -77,7 +77,8 @@ extension Transaction {
         }
     }
 
-    internal func submission(_ id: SubmissionID) async throws -> SubmissionRecord? {
+    /// Reads a submission, including a placed continued run, in this transaction.
+    public func submission(_ id: SubmissionID) async throws -> SubmissionRecord? {
         try await operation(tableRead: "submission") { try await storage.submission(id, context: context) }
     }
 
@@ -378,27 +379,58 @@ private func validateTableJSON<T: Encodable>(_ value: T) throws {
 
 private func applySubmissionChange(_ current: SubmissionRecord, _ change: TransactionSubmissionChange) throws -> SubmissionRecord {
     if current.status == "done" || current.status == "unanswered" { return current }
-    switch (current, change) {
-    case (.input(let id, let conversationId, let requestId, .queued(let fields)), .placed(let entry)):
-        return .input(id: id, conversationId: conversationId, requestId: requestId, state: .placed(entry: entry, extensions: fields))
-    case (.write(let id, let conversationId, let requestId, .queued(let fields)), .placed(let entry)):
-        return .write(id: id, conversationId: conversationId, requestId: requestId, state: .done(entry: entry, extensions: fields))
-    case (_, .placed): throw SessionError.message("Submission \(current.id.rawValue) is not queued")
-    case (.input(let id, let conversationId, let requestId, .placed(let entry, let fields)), .settlement(.done(let answer, let extensions))):
-        var merged = fields
-        for (key, value) in extensions { merged[key] = value }
-        return .input(id: id, conversationId: conversationId, requestId: requestId, state: .done(entry: entry, answer: answer, extensions: merged))
-    case (_, .settlement(.done)): throw SessionError.message("Submission \(current.id.rawValue) is not a placed input")
-    case (.input(let id, let conversationId, let requestId, let state), .settlement(.unanswered(let reason, let detail, let extensions))):
-        let entry: EntryID?
-        var fields: JSONObject
-        switch state { case .placed(let value, let valueFields): entry = value; fields = valueFields; case .queued(let valueFields): entry = nil; fields = valueFields; default: return current }
-        for (key, value) in extensions { fields[key] = value }
-        return .input(id: id, conversationId: conversationId, requestId: requestId, state: .unanswered(reason: reason, entry: entry, detail: detail, extensions: fields))
-    case (.write(let id, let conversationId, let requestId, .queued(let fields)), .settlement(.unanswered(let reason, let detail, let extensions))):
-        var merged = fields
-        for (key, value) in extensions { merged[key] = value }
-        return .write(id: id, conversationId: conversationId, requestId: requestId, state: .unanswered(reason: reason, detail: detail, extensions: merged))
-    default: return current
+    func merged(_ fields: JSONObject, _ extensions: JSONObject) -> JSONObject {
+        var result = fields
+        for (key, value) in extensions { result[key] = value }
+        return result
+    }
+    switch change {
+    case .placed(let entry):
+        switch current {
+        case .input(let id, let conversationId, let requestId, .queued(let fields)):
+            return .input(id: id, conversationId: conversationId, requestId: requestId, state: .placed(entry: entry, extensions: fields))
+        case .write(let id, let conversationId, let requestId, .queued(let fields)):
+            return .write(id: id, conversationId: conversationId, requestId: requestId, state: .done(entry: entry, extensions: fields))
+        case .input, .write, .continue:
+            throw SessionError.message("Submission \(current.id.rawValue) is not queued")
+        }
+    case .settlement(.done(let answer, let extensions)):
+        switch current {
+        case .input(let id, let conversationId, let requestId, .placed(let entry, let fields)):
+            return .input(id: id, conversationId: conversationId, requestId: requestId,
+                state: .done(entry: entry, answer: answer, extensions: merged(fields, extensions)))
+        case .continue(let id, let conversationId, let requestId, .placed(let fields)):
+            return .continue(id: id, conversationId: conversationId, requestId: requestId,
+                state: .done(answer: answer, extensions: merged(fields, extensions)))
+        case .input, .write, .continue:
+            throw SessionError.message("Submission \(current.id.rawValue) is not a placed input")
+        }
+    case .settlement(.unanswered(let reason, let detail, let extensions)):
+        switch current {
+        case .input(let id, let conversationId, let requestId, let state):
+            let entry: EntryID?
+            let fields: JSONObject
+            switch state {
+            case .queued(let value): entry = nil; fields = value
+            case .placed(let value, let valueFields): entry = value; fields = valueFields
+            case .done, .unanswered: return current
+            }
+            return .input(id: id, conversationId: conversationId, requestId: requestId,
+                state: .unanswered(reason: reason, entry: entry, detail: detail, extensions: merged(fields, extensions)))
+        case .write(let id, let conversationId, let requestId, let state):
+            switch state {
+            case .queued(let fields):
+                return .write(id: id, conversationId: conversationId, requestId: requestId,
+                    state: .unanswered(reason: reason, detail: detail, extensions: merged(fields, extensions)))
+            case .done, .unanswered: return current
+            }
+        case .continue(let id, let conversationId, let requestId, let state):
+            switch state {
+            case .placed(let fields):
+                return .continue(id: id, conversationId: conversationId, requestId: requestId,
+                    state: .unanswered(reason: reason, detail: detail, extensions: merged(fields, extensions)))
+            case .done, .unanswered: return current
+            }
+        }
     }
 }

@@ -72,10 +72,20 @@ public struct SettledSubmission: Sendable, Equatable {
     /// The stored execution or submission state tag.
     public var status: String { record.status }
     /// The answer entry of a done input submission, or nil for other settlements.
-    public var answer: EntryID? { if case .input(_, _, _, .done(_, let answer, _)) = record { return answer }; return nil }
+    public var answer: EntryID? {
+        switch record {
+        case .input(_, _, _, .done(_, let answer, _)), .continue(_, _, _, .done(let answer, _)): answer
+        case .input, .write, .continue: nil
+        }
+    }
     /// The unanswered reason, or nil when the submission has an answer.
     public var reason: String? {
-        switch record { case .input(_, _, _, .unanswered(let reason, _, _, _)), .write(_, _, _, .unanswered(let reason, _, _)): reason; default: nil }
+        switch record {
+        case .input(_, _, _, .unanswered(let reason, _, _, _)),
+             .write(_, _, _, .unanswered(let reason, _, _)),
+             .continue(_, _, _, .unanswered(let reason, _, _)): reason
+        case .input, .write, .continue: nil
+        }
     }
     internal init(_ record: SubmissionRecord) { self.record = record }
 }

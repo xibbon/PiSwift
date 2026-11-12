@@ -18,7 +18,8 @@ import PiSwiftDurableTesting
         #expect(try LiveDoc.definition.checkpointWhen(["tools": [["status": "pending"]]], [], info) == true)
         #expect(try LiveDoc.definition.checkpointWhen(["tools": [["status": "running"]]], [], info) == false)
         for definition in [LiveDoc.definition, InboxDoc.definition, UsageDoc.definition, ProviderDoc.definition] {
-            #expect(definition.version == 1)
+            // v1.5.2 D1: live.ts:195-197 raises only pi.live to version 3.
+            #expect(definition.version == (definition.kind == "pi.live" ? 3 : 1))
             if case .conversation(let history, let fork, _) = definition.semantics {
                 #expect(history == .latest)
                 #expect(fork == .initial)

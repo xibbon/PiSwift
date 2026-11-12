@@ -44,9 +44,11 @@ public enum SubmissionCreate: Sendable {
     case input(conversationId: ConversationID, requestId: String? = nil, state: InputSubmissionState = .queued())
     /// Stores an entry write request.
     case write(conversationId: ConversationID, requestId: String? = nil, state: WriteSubmissionState = .queued())
+    /// Stores a run that starts from the current context without an entry.
+    case `continue`(conversationId: ConversationID, requestId: String? = nil, state: ContinueSubmissionState = .placed())
     /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID {
-        switch self { case .input(let id, _, _), .write(let id, _, _): id }
+        switch self { case .input(let id, _, _), .write(let id, _, _), .continue(let id, _, _): id }
     }
     /// Records this model request for later test inspection.
     func record(id: SubmissionID) -> SubmissionRecord {
@@ -55,6 +57,8 @@ public enum SubmissionCreate: Sendable {
             .input(id: id, conversationId: conversationId, requestId: requestId, state: state)
         case .write(let conversationId, let requestId, let state):
             .write(id: id, conversationId: conversationId, requestId: requestId, state: state)
+        case .continue(let conversationId, let requestId, let state):
+            .continue(id: id, conversationId: conversationId, requestId: requestId, state: state)
         }
     }
 }

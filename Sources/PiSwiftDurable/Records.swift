@@ -769,23 +769,74 @@ public enum WriteSubmissionState: Sendable, Equatable, Codable {
     }
 }
 
-/// Durable lifecycle of admitted input or a passive write. JSON uses flat type and status fields.
+/// Lifecycle of a run started from the current context. No state has an entry.
+public enum ContinueSubmissionState: Sendable, Equatable, Codable {
+    /// The run owns this submission.
+    case placed(extensions: JSONObject = [:])
+    /// The run answered at this entry.
+    case done(answer: EntryID, extensions: JSONObject = [:])
+    /// The run ended without an answer.
+    case unanswered(reason: String, detail: JSONValue? = nil, extensions: JSONObject = [:])
+
+    public var status: String {
+        switch self { case .placed: "placed"; case .done: "done"; case .unanswered: "unanswered" }
+    }
+    public init(from decoder: any Decoder) throws {
+        let object = try recordObject(decoder)
+        try recordForbid(object, ["entry"])
+        let tag: String = try recordRequired(object, "status")
+        switch tag {
+        case "placed":
+            try recordForbid(object, ["answer", "reason", "detail"])
+            self = .placed(extensions: recordExtensions(object, excluding: ["status"]))
+        case "done":
+            try recordForbid(object, ["reason", "detail"])
+            self = .done(answer: try recordRequired(object, "answer"), extensions: recordExtensions(object, excluding: ["status", "answer"]))
+        case "unanswered":
+            try recordForbid(object, ["answer"])
+            self = .unanswered(reason: try recordRequired(object, "reason"), detail: try recordOptional(object, "detail"), extensions: recordExtensions(object, excluding: ["status", "reason", "detail"]))
+        default: throw recordUnknown("status", tag)
+        }
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var object: JSONObject
+        switch self {
+        case .placed(let fields):
+            object = fields; object["status"] = "placed"
+            try recordForbid(object, ["entry", "answer", "reason", "detail"])
+        case .done(let answer, let fields):
+            object = fields; object["status"] = "done"
+            try recordForbid(object, ["entry", "reason", "detail"])
+            try recordSet(&object, "answer", answer)
+        case .unanswered(let reason, let detail, let fields):
+            object = fields; object["status"] = "unanswered"
+            try recordForbid(object, ["entry", "answer"])
+            try recordSet(&object, "reason", reason)
+            try recordSetOptional(&object, "detail", detail)
+        }
+        try object.encode(to: encoder)
+    }
+}
+
+/// Durable lifecycle of admitted input, a passive write, or a continued run. JSON uses flat type and status fields.
 public enum SubmissionRecord: Sendable, Equatable, Codable {
     /// Stores user content and its admission policy.
     case input(id: SubmissionID, conversationId: ConversationID, requestId: String? = nil, state: InputSubmissionState)
     /// Stores an entry write request.
     case write(id: SubmissionID, conversationId: ConversationID, requestId: String? = nil, state: WriteSubmissionState)
+    /// Starts a run from the current context without placing an entry.
+    case `continue`(id: SubmissionID, conversationId: ConversationID, requestId: String? = nil, state: ContinueSubmissionState)
     /// The stable identifier of this record or handle.
     public var id: SubmissionID {
-        switch self { case .input(let id, _, _, _), .write(let id, _, _, _): id }
+        switch self { case .input(let id, _, _, _), .write(let id, _, _, _), .continue(let id, _, _, _): id }
     }
     /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID {
-        switch self { case .input(_, let id, _, _), .write(_, let id, _, _): id }
+        switch self { case .input(_, let id, _, _), .write(_, let id, _, _), .continue(_, let id, _, _): id }
     }
     /// An optional conversation-scoped key that makes request admission idempotent.
     public var requestId: String? {
-        switch self { case .input(_, _, let value, _), .write(_, _, let value, _): value }
+        switch self { case .input(_, _, let value, _), .write(_, _, let value, _), .continue(_, _, let value, _): value }
     }
     /// The carrier of the admission context, when propagation is available.
     public var trace: [String: String]? {
@@ -799,16 +850,20 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
             switch state {
             case .queued(let extensions), .done(_, let extensions), .unanswered(_, _, let extensions): fields = extensions
             }
+        case .continue(_, _, _, let state):
+            switch state {
+            case .placed(let extensions), .done(_, let extensions), .unanswered(_, _, let extensions): fields = extensions
+            }
         }
         return try? fields["trace"]?.decode([String: String].self)
     }
     /// The stored input or write submission tag.
     public var type: String {
-        switch self { case .input: "input"; case .write: "write" }
+        switch self { case .input: "input"; case .write: "write"; case .continue: "continue" }
     }
     /// The stored execution or submission state tag.
     public var status: String {
-        switch self { case .input(_, _, _, let state): state.status; case .write(_, _, _, let state): state.status }
+        switch self { case .input(_, _, _, let state): state.status; case .write(_, _, _, let state): state.status; case .continue(_, _, _, let state): state.status }
     }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
@@ -822,6 +877,7 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
         switch type {
         case "input": self = .input(id: id, conversationId: conversationId, requestId: requestId, state: try JSONValue.object(object).decode())
         case "write": self = .write(id: id, conversationId: conversationId, requestId: requestId, state: try JSONValue.object(object).decode())
+        case "continue": self = .continue(id: id, conversationId: conversationId, requestId: requestId, state: try JSONValue.object(object).decode())
         default: throw recordUnknown("submission type", type)
         }
     }
@@ -831,6 +887,7 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
         switch self {
         case .input(_, _, _, let state): object = try JSONValue(encoding: state).decode()
         case .write(_, _, _, let state): object = try JSONValue(encoding: state).decode()
+        case .continue(_, _, _, let state): object = try JSONValue(encoding: state).decode()
         }
         object["type"] = .string(type)
         try recordSet(&object, "id", id)

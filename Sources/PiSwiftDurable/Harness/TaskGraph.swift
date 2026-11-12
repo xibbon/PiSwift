@@ -196,11 +196,14 @@ internal struct TaskBlockedSubject: Sendable {
     let abortReason: TaskAbortReason?
     let restarts: Double
     let status: String
+    let input: JSONValue
+    let checkpoint: JSONValue?
 
     init(record: TaskRecord) {
         id = record.id; kind = record.kind; version = record.version
         abortRequested = record.abortRequested; abortReason = record.abortReason
         restarts = record.restarts; status = record.state.status
+        input = record.input; checkpoint = record.state.checkpoint
     }
 }
 

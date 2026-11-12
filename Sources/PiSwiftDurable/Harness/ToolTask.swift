@@ -6,6 +6,8 @@ import PiSwiftChord
 public enum ToolTaskInput: Codable, Sendable, Equatable {
     /// A call from a saved assistant message.
     case model(assistant: EntryID, callId: String)
+    /// A model call to a tool its request did not offer.
+    case unofferedModel(assistant: EntryID, callId: String)
     /// A call made by a running tool, with a stable caller key.
     case nested(parent: TaskID, parentCallId: String, key: String, call: ToolCall, progress: Bool? = nil)
 
@@ -16,7 +18,11 @@ public enum ToolTaskInput: Codable, Sendable, Equatable {
         let object = try JSONObject(from: decoder)
         switch object["kind"] {
         case .string("model"):
-            self = .model(assistant: try recordRequired(object, "assistant"), callId: try recordRequired(object, "callId"))
+            let unoffered: Bool? = try recordOptional(object, "unoffered")
+            guard unoffered != false else { throw TaskDefinitionError("Invalid unoffered tool task flag") }
+            let assistant: EntryID = try recordRequired(object, "assistant")
+            let callId: String = try recordRequired(object, "callId")
+            self = unoffered == true ? .unofferedModel(assistant: assistant, callId: callId) : .model(assistant: assistant, callId: callId)
         case .string("nested"):
             let progress: Bool? = try recordOptional(object, "progress")
             guard progress != true else { throw TaskDefinitionError("Nested progress must be false or absent") }
@@ -30,6 +36,9 @@ public enum ToolTaskInput: Codable, Sendable, Equatable {
         switch self {
         case .model(let assistant, let callId):
             let object: JSONObject = ["kind": "model", "assistant": try JSONValue(encoding: assistant), "callId": .string(callId)]
+            try object.encode(to: encoder)
+        case .unofferedModel(let assistant, let callId):
+            let object: JSONObject = ["kind": "model", "assistant": try JSONValue(encoding: assistant), "callId": .string(callId), "unoffered": true]
             try object.encode(to: encoder)
         case .nested(let parent, let parentCallId, let key, let call, let progress):
             var object: JSONObject = ["kind": "nested", "parent": try JSONValue(encoding: parent),
@@ -91,7 +100,7 @@ public enum ToolTaskResult: Codable, Sendable, Equatable {
 }
 /// The built-in tool definition installed in every registry.
 public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>(
-    name: "pi.tool", version: 2, initial: { _ in ToolTaskCheckpoint(phase: .call) },
+    name: "pi.tool", version: 3, initial: { _ in ToolTaskCheckpoint(phase: .call) },
     phase: { task, runtime, context in try await runToolTask(task, runtime, context) },
     abort: { task, runtime, context in
         let call = try await readToolCall(runtime, task.input, context)
@@ -103,9 +112,10 @@ public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTask
             toolResultFromSlot(slot, code: code, message: message)
         }
     },
-    migrate: { input, checkpoint, _ in
+    migrate: { input, checkpoint, fromVersion in
         guard case .object(var object) = input else { throw TaskDefinitionError("Tool task input must be an object") }
-        if object["kind"] == nil { object["kind"] = "model" }
+        // v1.5.2 tool.ts:141-147 tags only v1 input; v2 and later stay unchanged.
+        if fromVersion == 1 { object["kind"] = "model" }
         return (try JSONValue.object(object).decode(ToolTaskInput.self), try checkpoint.decode(ToolTaskCheckpoint.self))
     }
 )
@@ -114,7 +124,7 @@ private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ cont
     switch input {
     case .nested(let parent, let parentCallId, _, let call, _):
         return ToolHookCall(call, parent: ToolHookParent(taskId: parent, callId: parentCallId))
-    case .model(let assistant, let callId):
+    case .model(let assistant, let callId), .unofferedModel(let assistant, let callId):
         if let entry = try await runtime.entry(assistantEntry, id: assistant, context: context),
            case .assistant(let message) = try entry.record.messages()?.first {
             for block in message.content {
@@ -141,8 +151,8 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
     let call = try await readToolCall(runtime, task.input, context)
     let agent = try await runtime.agent(context: context)
     let choices: [ToolRegistration]
-    switch task.input { case .model: choices = agent.tools; case .nested: choices = agent.callable }
-    let tool = choices.first { harnessNamesEqual($0.name, call.name) }
+    switch task.input { case .model, .unofferedModel: choices = agent.tools; case .nested: choices = agent.callable }
+    let tool = { if case .unofferedModel = task.input { return nil as ToolRegistration? }; return choices.first { harnessNamesEqual($0.name, call.name) } }()
     if task.checkpoint.phase == .execute {
         guard let args = task.checkpoint.arguments, let replay = task.checkpoint.replay else {
             throw TaskDefinitionError("Tool checkpoint is missing arguments or replay")
@@ -247,7 +257,7 @@ internal func settleTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ ending:
             try state.set("result", JSONValue(encoding: nested))
             if let slot { try finishSlot(slot: slot, entry: nil); try slot.set("summary", JSONValue(encoding: summaryOf(result: nested, output: result.output ?? []))) }
             settled = .nested
-        case .model:
+        case .model, .unofferedModel:
             let entry = try await appendToolResult(tx: tx, conversationId: runtime.conversationId, call: call.call,
                 result: result, timestamp: runtime.now(), durationMs: durationMs)
             if let slot { try finishSlot(slot: slot, entry: entry.id) }

@@ -41,6 +41,27 @@ public struct GenerationDeferredHandle: Codable, Sendable {
                        expiresAt: expiresAt, pollAfterMs: pollAfterMs, data: data)
     }
 }
+/// Deferred request saved while a failed poll waits for retry.
+public struct GenerationRetryPoll: Codable, Sendable {
+    public var model: ModelRef
+    public var thinkingLevel: ModelThinkingLevel?
+    public var cutoff: EntryID
+    public var handle: GenerationDeferredHandle
+    public init(model: ModelRef, thinkingLevel: ModelThinkingLevel? = nil, cutoff: EntryID, handle: GenerationDeferredHandle) {
+        self.model = model; self.thinkingLevel = thinkingLevel; self.cutoff = cutoff; self.handle = handle
+    }
+}
+/// Answered or terminated run saved for afterRun hooks.
+public struct GenerationRunSummary: Codable, Sendable {
+    public enum Reason: String, Codable, Sendable { case answer, terminate }
+    public var reason: Reason
+    public var first: EntryID
+    public var answer: EntryID
+    public var last: EntryID
+    public init(reason: Reason, first: EntryID, answer: EntryID, last: EntryID) {
+        self.reason = reason; self.first = first; self.answer = answer; self.last = last
+    }
+}
 /// The persisted phase, request, and tool state of a generation task.
 public struct GenerationCheckpoint: TaskCheckpoint {
     /// The persisted phase used to resume this built-in task.
@@ -55,6 +76,10 @@ public struct GenerationCheckpoint: TaskCheckpoint {
         case poll
         /// Selects the usage totals of tool execution.
         case tools
+        /// The answer was saved and afterRun hooks have not yet created tasks.
+        case finish
+        /// The run waits for tasks created by afterRun hooks.
+        case drain
     }
     /// The saved generation phase used on resume.
     public var phase: Phase
@@ -76,6 +101,8 @@ public struct GenerationCheckpoint: TaskCheckpoint {
     public var cutoff: EntryID?
     /// The clock deadline in milliseconds.
     public var until: Int64?
+    /// A deferred request retained when its poll failed.
+    public var poll: GenerationRetryPoll?
     /// The provider handle used to poll or cancel a deferred request.
     public var handle: GenerationDeferredHandle?
     /// The next deferred request poll time, in milliseconds.
@@ -86,23 +113,34 @@ public struct GenerationCheckpoint: TaskCheckpoint {
     public var tools: [TaskID]?
     /// The work waiting for execution or publication.
     public var pending: [String]?
+    /// The run summary saved for afterRun hooks.
+    public var run: GenerationRunSummary?
+    /// The answer saved while afterRun tasks drain.
+    public var answer: EntryID?
+    /// The tasks saved while an answered run drains.
+    public var tasks: [TaskID]?
     /// Saves the generation phase and optional request, retry, and tool state.
     public init(phase: Phase, attempt: Int? = nil, compacted: TaskID? = nil, overflow: String? = nil, threshold: Bool? = nil,
                 model: ModelRef? = nil, thinkingLevel: ModelThinkingLevel? = nil,
                 streamOptions: ConversationStreamOptions? = nil, cutoff: EntryID? = nil,
-                until: Int64? = nil, handle: GenerationDeferredHandle? = nil, pollAt: Int64? = nil,
-                assistant: EntryID? = nil, tools: [TaskID]? = nil, pending: [String]? = nil) {
+                until: Int64? = nil, poll: GenerationRetryPoll? = nil, handle: GenerationDeferredHandle? = nil, pollAt: Int64? = nil,
+                assistant: EntryID? = nil, tools: [TaskID]? = nil, pending: [String]? = nil,
+                run: GenerationRunSummary? = nil, answer: EntryID? = nil, tasks: [TaskID]? = nil) {
         self.phase = phase; self.attempt = attempt; self.compacted = compacted; self.overflow = overflow; self.threshold = threshold
         self.model = model; self.thinkingLevel = thinkingLevel; self.streamOptions = streamOptions
-        self.cutoff = cutoff; self.until = until; self.handle = handle; self.pollAt = pollAt
-        self.assistant = assistant; self.tools = tools; self.pending = pending
+        self.cutoff = cutoff; self.until = until; self.poll = poll; self.handle = handle; self.pollAt = pollAt
+        self.assistant = assistant; self.tools = tools; self.pending = pending; self.run = run; self.answer = answer; self.tasks = tasks
     }
 }
 /// The built-in generation definition installed in every registry.
 public let generationTask = TaskDefinition<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>(
-    name: "pi.generation", version: 1, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
+    name: "pi.generation", version: 2, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
     phase: { task, runtime, context in try await runGeneration(task.checkpoint, runtime, context) },
-    abort: { task, runtime, context in try await abortGeneration(task.checkpoint, runtime, context) }
+    abort: { task, runtime, context in try await abortGeneration(task.checkpoint, runtime, context) },
+    migrate: { input, checkpoint, _ in
+        // v1.5.2 generation.ts:171-174 preserves both values.
+        (try input.decode(GenerationInput.self), try checkpoint.decode(GenerationCheckpoint.self))
+    }
 )
 /// Creates the built-in generation task for the conversation.
 public func createGeneration(tx: Transaction, conversationId: ConversationID) async throws -> TaskID {
@@ -115,6 +153,10 @@ private func runGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRu
     switch checkpoint.phase {
     case .prepare: try await prepareGeneration(checkpoint, runtime, context)
     case .request: try await requestGeneration(checkpoint, runtime, context)
+    case .finish, .drain:
+        // The scheduler blocks these before reservation. Fail closed if a direct
+        // caller bypasses that guard; never treat the phase as completed.
+        throw TaskDefinitionError("Generation phase \(checkpoint.phase.rawValue) requires D5")
     case .retry:
         let until = try required(checkpoint.until, "until")
         if until > (try runtime.now()) {
