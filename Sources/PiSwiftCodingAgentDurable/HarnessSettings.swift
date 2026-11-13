@@ -15,6 +15,8 @@ public func harnessSettings(from settingsManager: SettingsManager, afterFailedRu
         return HarnessSettings(
             stream: ConversationStreamOptions(
                 timeoutMs: provider.timeoutMs ?? (idle == 0 ? Int(Int32.max) : idle),
+                websocketConnectTimeoutMs: settingsManager.getWebSocketConnectTimeoutMs(),
+                thinkingBudgets: settingsManager.getThinkingBudgets(),
                 maxRetries: provider.maxRetries,
                 maxRetryDelayMs: provider.maxRetryDelayMs
             ),

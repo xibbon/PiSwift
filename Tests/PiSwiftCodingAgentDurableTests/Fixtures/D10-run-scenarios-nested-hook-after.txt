@@ -1,0 +1,7 @@
+pi.user: Use tools.
+pi.system
+pi.assistant: call outer
+pi.tool-result: outer replaced
+pi.assistant: Tool answer.
+scenario.after: after complete
+run=idle inbox=0 ending=none

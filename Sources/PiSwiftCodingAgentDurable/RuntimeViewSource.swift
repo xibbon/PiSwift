@@ -8,7 +8,7 @@ import Synchronization
 /// Stores view changes and schedules one notification for each group of changes.
 /// Listeners run on a private serial queue, after the change (upstream `setImmediate`),
 /// never on the main thread by default: a UI host hops to its main actor itself.
-internal final class RuntimeViewSource: DurableViewSource {
+internal final class RuntimeViewSource: DurableHostViewSource {
     private static let notifications = DispatchQueue(label: "PiSwiftCodingAgentDurable.view-notifications")
 
     private struct State: Sendable {
@@ -24,19 +24,40 @@ internal final class RuntimeViewSource: DurableViewSource {
         var faultedTasks = Set<TaskID>()
         var faultReports: [String: Int] = [:]
         var parkedNotices = Set<TaskID>()
+        var transcript: TranscriptView?
+        var openMode: DurableOpenMode = .write
+        var transcriptMode: DurableTranscriptMode = .compatibility
+        var outcomes: [DurableTaskOutcome] = []
+        var lastRunFailure: TaskID?
     }
 
     private let state: Mutex<State>
     private let schedule: @Sendable (@escaping @Sendable () -> Void) -> Void
 
     init(_ view: DurableView,
+         transcript: TranscriptView? = nil,
+         openMode: DurableOpenMode = .write,
+         transcriptMode: DurableTranscriptMode = .compatibility,
          schedule: (@Sendable (@escaping @Sendable () -> Void) -> Void)? = nil) {
         state = Mutex(State(view: view, nextNotice: (view.notices.map(\.id).max() ?? 0) + 1,
-                            graph: view.tasks, tasksVisible: view.tasks != nil))
+                            graph: view.tasks, tasksVisible: view.tasks != nil,
+                            transcript: transcript, openMode: openMode, transcriptMode: transcriptMode,
+                            lastRunFailure: try? decodeLiveOf(view.conversation).runFailure?.taskId))
         self.schedule = schedule ?? { callback in Self.notifications.async(execute: callback) }
     }
 
     func current() -> DurableView { state.withLock { $0.view } }
+
+    func hostCurrent() -> DurableHostView {
+        state.withLock { state in
+            let transcript = state.transcript ?? TranscriptView(
+                conversation: state.view.conversation.conversation,
+                docs: state.view.conversation.docs,
+                items: state.view.conversation.entries.map(TranscriptItem.entry))
+            return DurableHostView(legacy: state.view, transcript: transcript,
+                                   mode: state.openMode, graph: state.graph, outcomes: state.outcomes)
+        }
+    }
 
     func subscribe(_ listener: @escaping @Sendable () -> Void) -> DurableViewSubscription {
         let id = state.withLock { state -> Int? in
@@ -52,26 +73,50 @@ internal final class RuntimeViewSource: DurableViewSource {
         }
     }
 
-    func updateConversation(_ value: ConversationView) {
-        update { view in
+    func updateConversation(_ value: ConversationView, transcript: TranscriptView? = nil) {
+        change { state in
+            if let transcript { state.transcript = transcript }
+            var view = state.view
             // v1.5.2 D4: retain the transcript already shown by this host while the watch trims.
-            var entries = view.conversation.conversation.id == value.conversation.id ? view.conversation.entries : []
-            let known = Set(entries.map(\.id))
-            entries += value.entries.filter { !known.contains($0.id) }
-            entries.sort { $0.id < $1.id }
+            var entries = value.entries
+            if state.transcriptMode == .compatibility {
+                entries = view.conversation.conversation.id == value.conversation.id ? view.conversation.entries : []
+                let known = Set(entries.map(\.id))
+                entries += value.entries.filter { !known.contains($0.id) }
+                entries.sort { $0.id < $1.id }
+            }
             let displayed = ConversationView(conversation: value.conversation, entries: entries, docs: value.docs)
             view = DurableView(session: view.session, conversation: displayed,
+                               conversations: view.conversations, models: view.models,
+                               notices: view.notices, tasks: view.tasks, terminal: view.terminal)
+            state.view = view
+            if state.transcriptMode == .compatibility,
+               let failure = try? decodeLiveOf(value).runFailure,
+               state.lastRunFailure != failure.taskId,
+               failure.reason != .aborted {
+                state.lastRunFailure = failure.taskId
+                let detail = failure.detail.flatMap { try? JSONValue.string($0).jsonText() }
+                let message = "No answer: \(failure.reason.rawValue)" + (detail.map { " " + $0 } ?? "")
+                if !state.view.notices.contains(where: { $0.message == message }) {
+                    Self.appendNotice(&state, .error, message)
+                }
+            }
+        }
+    }
+
+    func replaceConversation(_ value: ConversationView, transcript: TranscriptView? = nil) {
+        change { state in
+            state.transcript = transcript
+            state.lastRunFailure = try? decodeLiveOf(value).runFailure?.taskId
+            let view = state.view
+            state.view = DurableView(session: view.session, conversation: value,
                                conversations: view.conversations, models: view.models,
                                notices: view.notices, tasks: view.tasks, terminal: view.terminal)
         }
     }
 
-    func replaceConversation(_ value: ConversationView) {
-        update { view in
-            view = DurableView(session: view.session, conversation: value,
-                               conversations: view.conversations, models: view.models,
-                               notices: view.notices, tasks: view.tasks, terminal: view.terminal)
-        }
+    func updateTranscript(_ transcript: TranscriptView) {
+        change { $0.transcript = transcript }
     }
 
     func updateTasks(_ value: TaskGraph?, visible: Bool = true) {
@@ -86,9 +131,8 @@ internal final class RuntimeViewSource: DurableViewSource {
         change { $0.restarts[record.id] = record.restarts }
     }
 
-    func record(_ publication: CommitPublication, graph: TaskGraph? = nil) {
+    func record(_ publication: CommitPublication) {
         change { state in
-            if let graph { state.graph = graph }
             var summaries = state.view.conversations
             for change in publication.changes {
                 switch change {
@@ -109,6 +153,10 @@ internal final class RuntimeViewSource: DurableViewSource {
                     case .completing(let value, _), .terminal(let value, _): outcome = value
                     default: continue
                     }
+                    state.outcomes.removeAll { $0.id == record.id }
+                    state.outcomes.append(.init(id: record.id, kind: record.kind,
+                                                 conversationId: record.conversationId, outcome: outcome))
+                    if state.outcomes.count > 100 { state.outcomes.removeFirst(state.outcomes.count - 100) }
                     if case .faulted(let error, _) = outcome,
                        state.faultedTasks.insert(record.id).inserted {
                         Self.appendNotice(&state, .error, error.message, category: .taskFault,
@@ -129,6 +177,13 @@ internal final class RuntimeViewSource: DurableViewSource {
         change { Self.appendNotice(&$0, level, message) }
     }
 
+    func unanswered(_ message: String) {
+        change { state in
+            guard !state.view.notices.contains(where: { $0.message == message }) else { return }
+            Self.appendNotice(&state, .error, message)
+        }
+    }
+
     private static func appendNotice(_ state: inout State, _ level: Notice.Level, _ message: String,
                                      category: Notice.Category = .operation,
                                      taskId: TaskID? = nil, taskKind: String? = nil,
@@ -139,7 +194,7 @@ internal final class RuntimeViewSource: DurableViewSource {
         else { conversationId = info?.task?.conversationId }
         let notice = Notice(id: replacing ?? state.nextNotice, level: level, message: message,
                             category: category, taskId: taskId, taskKind: taskKind,
-                            reportType: info?.type, extensionName: info?.extension,
+                            reportType: info?.kind, extensionName: info?.extension,
                             conversationId: conversationId, reportInfo: info)
         if replacing == nil { state.nextNotice += 1 }
         let notices = replacing.map { id in view.notices.map { $0.id == id ? notice : $0 } }
@@ -157,20 +212,20 @@ internal final class RuntimeViewSource: DurableViewSource {
                 let category: Notice.Category
                 let level: Notice.Level
                 switch info {
-                case .taskParked: category = .taskParked; level = .warning
                 case .taskFaulted: category = .taskFault; level = .error
                 // v1.5.2 D5a scheduler.ts:2716–2744: keep an interruption
                 // report distinct from a later fault of the same task.
                 case .taskInterrupted: category = .report; level = .error
                 case .extensionError: category = .extensionError; level = .warning
-                case .storageFailed, .sessionFailed: category = .sessionFailed; level = .error
+                case .storageFailed: category = .sessionFailed; level = .error
+                case .migrationFailed: category = .report; level = .error
+                case .hostError: category = .report; level = .error
                 default: category = .report; level = .warning
                 }
                 let previous = state.view.notices.last {
                     $0.category == category && (category == .sessionFailed ||
                         ((category == .taskFault || category == .taskParked) && $0.taskId == info.task?.id))
                 }
-                if case .taskParked(let task, _) = info { state.parkedNotices.insert(task.id) }
                 if case .taskFaulted(let task, _, _) = info { state.faultedTasks.insert(task.id) }
                 Self.appendNotice(&state, level, report.message, category: category,
                                   taskId: info.task?.id, taskKind: info.task?.kind,
@@ -242,9 +297,12 @@ internal final class RuntimeViewSource: DurableViewSource {
         let shouldSchedule = state.withLock { state in
             guard !state.finished else { return false }
             let previous = state.view
+            let previousTranscript = state.transcript
+            let previousOutcomes = state.outcomes
             body(&state)
             refreshWork(&state)
-            guard state.view != previous, !state.scheduled else { return false }
+            guard state.view != previous || state.transcript != previousTranscript || state.outcomes != previousOutcomes,
+                  !state.scheduled else { return false }
             state.scheduled = true
             return true
         }

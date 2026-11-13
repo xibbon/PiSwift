@@ -32,7 +32,7 @@ internal final class SessionLocation: Sendable {
     let created: Bool
     private let descriptor: Mutex<Int32?>
 
-    fileprivate init(directory: String, cwd: String, created: Bool, descriptor: Int32) {
+    fileprivate init(directory: String, cwd: String, created: Bool, descriptor: Int32?) {
         self.id = URL(fileURLWithPath: directory).lastPathComponent
         self.directory = directory
         self.database = URL(fileURLWithPath: directory).appendingPathComponent("session.sqlite").path
@@ -69,7 +69,9 @@ internal final class SessionLocation: Sendable {
 internal func selectSession(
     _ cwdInput: String,
     continueSession: Bool,
-    agentDirectory: String? = nil
+    agentDirectory: String? = nil,
+    acquireLock: Bool = true,
+    sessionID: String? = nil
 ) async throws -> SessionLocation {
     // Normalize dot components before realpath, as upstream's resolve() does.
     let absolute = cwdInput.hasPrefix("/") ? cwdInput : FileManager.default.currentDirectoryPath + "/" + cwdInput
@@ -85,7 +87,15 @@ internal func selectSession(
     try manager.createDirectory(at: root, withIntermediateDirectories: true)
 
     let directory: URL
-    if continueSession {
+    if let sessionID {
+        guard continueSession, sessionDirectoryNameMatches(sessionID) else {
+            throw SessionLocationError.noSession(cwd: cwd)
+        }
+        directory = root.appendingPathComponent(sessionID)
+        guard (try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])).map({
+            $0.isDirectory == true && $0.isSymbolicLink != true
+        }) == true else { throw SessionLocationError.noSession(cwd: cwd) }
+    } else if continueSession {
         let entries = try manager.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
         )
@@ -105,6 +115,9 @@ internal func selectSession(
         try manager.createDirectory(at: directory, withIntermediateDirectories: false)
     }
 
+    if !acquireLock {
+        return SessionLocation(directory: directory.path, cwd: cwd, created: false, descriptor: nil)
+    }
     let lockPath = directory.appendingPathComponent("session.lock").path
     let fd = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
     guard fd >= 0 else {
@@ -139,4 +152,33 @@ private func sessionDirectoryNameMatches(_ name: String) -> Bool {
     return bytes.count == 50 && bytes[13] == 45
         && bytes.prefix(13).allSatisfy { (48...57).contains($0) }
         && bytes.suffix(36).allSatisfy { (48...57).contains($0) || (97...102).contains($0) || $0 == 45 }
+}
+
+/// Lists saved Swift durable sessions for a working directory, newest first.
+public func listDurableSessions(cwd: String? = nil) async throws -> [DurableSessionView] {
+    try await listDurableSessions(cwd: cwd, agentDirectory: getAgentDir())
+}
+
+internal func listDurableSessions(cwd: String?, agentDirectory: String) async throws -> [DurableSessionView] {
+    let input = cwd ?? FileManager.default.currentDirectoryPath
+    let absolute = input.hasPrefix("/") ? input : FileManager.default.currentDirectoryPath + "/" + input
+    guard let resolved = realpath(URL(fileURLWithPath: absolute).standardized.path, nil) else {
+        throw sessionPOSIXError()
+    }
+    let path = String(cString: resolved)
+    free(resolved)
+    let hash = SHA256.hash(data: Data(path.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    let root = URL(fileURLWithPath: agentDirectory)
+        .appendingPathComponent("experimental/durable-sessions-swift")
+        .appendingPathComponent(hash)
+    guard FileManager.default.fileExists(atPath: root.path) else { return [] }
+    let entries = try FileManager.default.contentsOfDirectory(at: root,
+        includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    return try entries.filter { entry in
+        guard sessionDirectoryNameMatches(entry.lastPathComponent) else { return false }
+        let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        return values.isDirectory == true && values.isSymbolicLink != true
+    }.sorted { $0.lastPathComponent > $1.lastPathComponent }.map {
+        DurableSessionView(id: $0.lastPathComponent, directory: $0.path, cwd: path)
+    }
 }

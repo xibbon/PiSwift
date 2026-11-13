@@ -1,0 +1,3 @@
+pi.user: Capital?
+pi.assistant: Paris.
+run=idle inbox=0 ending=none

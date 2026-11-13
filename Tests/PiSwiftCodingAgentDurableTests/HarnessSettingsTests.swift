@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftAI
 import PiSwiftCodingAgent
 import PiSwiftCodingAgentDurable
 import PiSwiftDurable
@@ -31,6 +32,17 @@ import Testing
     #expect(settings.steeringMode == .all)
     #expect(settings.followUpMode == .oneAtATime)
     #expect(settings.restartLimit == 5)
+}
+
+@Test func d10HostForwardsModelOptionsAndKeepsDefaultPersistenceWindow() {
+    var source = PiSwiftCodingAgent.Settings()
+    source.websocketConnectTimeoutMs = 2_500
+    source.thinkingBudgets = .init(low: 512, high: 4_096)
+    let settings = harnessSettings(from: .inMemory(source)).resolve()
+    #expect(settings.stream.websocketConnectTimeoutMs == 2_500)
+    #expect(settings.stream.thinkingBudgets?[.low] == 512)
+    #expect(settings.stream.thinkingBudgets?[.high] == 4_096)
+    #expect(settings.progress.persistWithinMs == 1_000)
 }
 
 @Test(arguments: [0, 23_000]) func harnessSettingsUsesIdleTimeoutWhenProviderTimeoutIsAbsent(idle: Int) {

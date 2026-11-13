@@ -1,0 +1,10 @@
+model_error | task=9 | inputs=8 | first=7 | detail=Fixture context overflow
+no_model | task=9 | inputs=8 | first=7 | detail=No model is configured
+aborted | task=9 | inputs=8 | first=7 | detail=none
+reset | task=10 | inputs=9 | first=7 | detail=none
+interrupted | task=9 | inputs=8 | first=7 | detail=The host stopped while the model was answering, on attempt 1
+restart_limit | task=9 | inputs=8 | first=7 | detail=The generation was interrupted 8 times in a row in its prepare phase
+nothing_to_answer | task=10 | inputs=9 | first=7 | detail=none
+turn_limit | task=10 | inputs=9 | first=7 | detail=1 turn
+orphaned | task=9 | inputs=8 | first=7 | detail=task_too_old
+faulted | task=9 | inputs=8 | first=7 | detail=Fixture model provider failed

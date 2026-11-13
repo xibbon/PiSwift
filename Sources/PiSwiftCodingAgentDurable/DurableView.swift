@@ -28,6 +28,7 @@ public struct Notice: Sendable, Equatable, Codable {
     public enum Category: String, Sendable, Codable {
         case operation
         case report
+        @available(*, deprecated, message: "Use ReportInfo.kind through DurableHostView.notices")
         case taskParked
         case taskFault
         case extensionError
@@ -164,6 +165,7 @@ public enum DurableActivity: String, Sendable, Equatable, Codable {
     case idle
     case progressing
     case sleeping
+    @available(*, deprecated, message: "Use DurableRunActivity.blocked")
     case parked
     case blocked
 }
@@ -227,6 +229,7 @@ public struct DurableView: Sendable, Equatable, Codable {
     /// The session location.
     public let session: DurableSessionView
     /// The transcript and built-in documents of the shown conversation.
+    @available(*, deprecated, message: "Use DurableHostView.transcript and DurableHostView.live")
     public let conversation: ConversationView
     /// The conversations available for selection.
     public let conversations: [ConversationSummary]
@@ -235,18 +238,23 @@ public struct DurableView: Sendable, Equatable, Codable {
     /// The notices produced by this open runtime.
     public let notices: [Notice]
     /// The live task graph, when the task panel is open.
+    @available(*, deprecated, message: "Use DurableHostView.tasks")
     public let tasks: TaskGraph?
     /// The final session state, when the session has ended.
     public let terminal: DurableSessionTerminal?
     /// Blocked work in the shown conversation and its owned tasks, even with the panel hidden.
+    @available(*, deprecated, message: "Use DurableHostView.tasks and outcomes")
     public let blockedTasks: [DurableBlockedTask]
     /// Durable waits in the shown conversation and its owned tasks, even with the panel hidden.
     public let sleepingTasks: [DurableSleepingTask]
     /// Whether work can progress or waits for time or user action.
+    @available(*, deprecated, message: "Use DurableHostView.activity")
     public let activity: DurableActivity
     /// Queued inputs in inbox order. They remain here after a failed run under keep.
+    @available(*, deprecated, message: "Use DurableHostView.inbox")
     public let queuedInputs: [InboxItem]
     /// Tasks that reached the restart limit and need retry or abort.
+    @available(*, deprecated, message: "Use DurableHostView.outcomes")
     public var parkedTasks: [DurableBlockedTask] { blockedTasks.filter { $0.reason == .restartLimit } }
 
     /// Creates a view snapshot for a session interface.
@@ -314,6 +322,7 @@ public final class DurableViewSubscription: Sendable {
 /// Supplies the current view and reports changes to it.
 public protocol DurableViewSource: Sendable {
     /// Returns the latest snapshot. A closed runtime retains its final snapshot.
+    @available(*, deprecated, message: "Use DurableHostViewSource.hostCurrent()")
     func current() -> DurableView
     /// Adds a change listener. Call `cancel()` on the returned subscription to remove it.
     /// The openDurable source groups changes and calls listeners on a private serial queue.
@@ -321,6 +330,11 @@ public protocol DurableViewSource: Sendable {
     /// Close schedules a final notification and removes listeners.
     /// A callback already selected for delivery can finish after cancellation.
     func subscribe(_ listener: @escaping @Sendable () -> Void) -> DurableViewSubscription
+}
+
+/// One coalesced observation point for the paged host snapshot.
+public protocol DurableHostViewSource: DurableViewSource {
+    func hostCurrent() -> DurableHostView
 }
 
 /// Selects what to do with input when the conversation is busy.
@@ -357,6 +371,37 @@ public protocol DurableController: Sendable {
     func switchConversation(_ id: ConversationID) async
 }
 
+/// Commands for a paged host. Errors also appear in the observed notices.
+public protocol DurableHostController: DurableController {
+    /// Continues an idle conversation without adding input.
+    func continueRun() async
+    /// Loads one page before the oldest retained row.
+    func loadEarlier() async
+    /// Loads one page inside a missing range.
+    func fillGap(_ gap: TranscriptGap) async
+    /// Sets the maximum number of tool rounds for future runs.
+    func setMaxTurns(_ value: Int?) async
+    /// Sets per-conversation compaction overrides.
+    func setCompactionPolicy(_ value: CompactionPolicyOverrides?) async
+}
+
+public enum DurableOpenMode: String, Sendable, Equatable, Codable {
+    case write
+    case readOnly
+}
+
+public enum DurableTranscriptMode: String, Sendable, Equatable, Codable {
+    /// Retains every row for the existing PiSwiftTui consumer.
+    case compatibility
+    /// Starts with a bounded window and loads history on request.
+    case paged
+}
+
+public enum DurableStorageKind: String, Sendable, Equatable, Codable {
+    case sqlite
+    case jsonl
+}
+
 extension DurableController {
     /// Historical default for old controller implementations.
     @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
@@ -371,11 +416,24 @@ public struct OpenDurableOptions: Sendable, Equatable, Codable {
     public let cwd: String?
     /// Opens the newest session for this directory when true. False creates a session.
     public let continueSession: Bool
+    public let mode: DurableOpenMode
+    public let transcriptMode: DurableTranscriptMode
+    public let storageKind: DurableStorageKind
+    /// An exact saved session to open. Nil selects the newest when continuing.
+    public let sessionID: String?
 
     /// Creates options for a new or continued session.
-    public init(cwd: String? = nil, continueSession: Bool = false) {
+    public init(cwd: String? = nil, continueSession: Bool = false,
+                mode: DurableOpenMode = .write,
+                transcriptMode: DurableTranscriptMode = .compatibility,
+                storageKind: DurableStorageKind = .sqlite,
+                sessionID: String? = nil) {
         self.cwd = cwd
         self.continueSession = continueSession
+        self.mode = mode
+        self.transcriptMode = transcriptMode
+        self.storageKind = storageKind
+        self.sessionID = sessionID
     }
 }
 

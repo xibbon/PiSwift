@@ -1,0 +1,10 @@
+model_error | Model request failed | The model returned an error. | Continue or change model
+no_model | No model | Select a model for this conversation. | Select model
+aborted | Run aborted | Work was stopped. | Continue
+reset | Run reset | The conversation context was reset. | Continue
+faulted | Run faulted | A task failed. | Inspect task and continue
+orphaned | Run orphaned | The saved task could not resume. | Continue
+interrupted | Run interrupted | Work stopped before an answer. | Continue
+restart_limit | Restart limit | A task stopped after repeated restarts. | Continue
+nothing_to_answer | No answer needed | The run had no input to answer. | Submit input
+turn_limit | Turn limit reached | The run used its allowed tool rounds. | Continue

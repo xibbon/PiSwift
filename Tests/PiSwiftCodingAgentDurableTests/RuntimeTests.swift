@@ -43,8 +43,13 @@ private struct RuntimePaths: Sendable {
     func remove() { try? FileManager.default.removeItem(at: base) }
 
     func open(_ models: FakeDurableModels, continueSession: Bool = false,
-              initial: (@Sendable (SettingsManager) async -> InitialAgentModel)? = nil) async throws -> OpenDurableResult {
-        try await openDurable(.init(cwd: cwd.path, continueSession: continueSession), dependencies: .init(
+              initial: (@Sendable (SettingsManager) async -> InitialAgentModel)? = nil,
+              transcriptMode: DurableTranscriptMode = .compatibility,
+              mode: DurableOpenMode = .write,
+              storageKind: DurableStorageKind = .sqlite) async throws -> OpenDurableResult {
+        try await openDurable(.init(cwd: cwd.path, continueSession: continueSession,
+                                    mode: mode, transcriptMode: transcriptMode,
+                                    storageKind: storageKind), dependencies: .init(
             agentDirectory: agent.path,
             makeModels: { _ in
                 DurableRuntimeModels(models: models, available: models.models, initial: initial ?? { settings in
@@ -540,4 +545,151 @@ private func runtimeToolCall(_ name: String, arguments: [String: AnyCodable]) ->
         await continued.close()
     }
     #endif
+
+    @Test(.timeLimit(.minutes(1)))
+    func pagedHostLoadsThreePagesWhileCompatibilityStillShowsAllRows() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        let models = runtimeModels()
+        let created = try await paths.open(models)
+        let database = created.view.current().session.directory + "/session.sqlite"
+        await created.close()
+
+        let storage = try await SqliteStorage.open(path: database)
+        let harness = try await Harness.open(storage: storage,
+            options: .init(models: models, registry: createRegistry()), context: .background)
+        let root = try await harness.root(context: .background)
+        _ = try await root.commit({ tx in
+            for index in 1...500 {
+                _ = try await tx.appendEntry(root.id,
+                    value: .init(kind: "note", data: .string("row \(index)")))
+            }
+        }, context: .background)
+        try await harness.close(context: .background)
+
+        let paged = try await paths.open(models, continueSession: true, transcriptMode: .paged)
+        #expect(paged.hostView.hostCurrent().rows.count <= 201)
+        #expect(paged.hostView.hostCurrent().rows.first?.item == .earlier)
+        let before = paged.hostView.hostCurrent().rows.count
+        for _ in 1...3 { await paged.hostController.loadEarlier() }
+        #expect(paged.hostView.hostCurrent().rows.count == before + 150)
+        #expect(paged.hostView.hostCurrent().rows.last?.id == .entry(root.id,
+            try #require(paged.hostView.hostCurrent().transcript.items.compactMap {
+                if case .entry(let entry) = $0 { return entry.id }; return nil
+            }.last)))
+        await paged.close()
+
+        let legacy = try await paths.open(models, continueSession: true)
+        #expect(legacy.view.current().conversation.entries.count == 500)
+        await legacy.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func readOnlyViewerOpensBesideWriterAndRefreshes() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        let models = runtimeModels(responses: [.message(chatAssistant("answer"))])
+        let writer = try await paths.open(models)
+        let viewer = try await paths.open(models, continueSession: true,
+                                          transcriptMode: .paged, mode: .readOnly)
+        #expect(viewer.hostView.hostCurrent().openMode == .readOnly)
+        #expect(viewer.hostView.hostCurrent().transcript.items.isEmpty)
+        await writer.controller.submit("hello", whenBusy: .steer)
+        try await runtimeWaitForAnswer(writer, "answer")
+        let refreshed = try await viewer.refresh()
+        #expect(refreshed.hostView.hostCurrent().rows.contains {
+            if case .entry(let entry) = $0.item { return entry.kind == "pi.assistant" }
+            return false
+        })
+        await refreshed.close()
+        await writer.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func jsonlReadOnlyRefreshKeepsRowsAndShowsOfflineGap() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        let models = runtimeModels(responses: [
+            .message(chatAssistant("first answer")), .message(chatAssistant("second answer"))
+        ])
+        let first = try await paths.open(models, storageKind: .jsonl)
+        await first.controller.submit("first", whenBusy: .steer)
+        try await runtimeWaitForAnswer(first, "first answer")
+        await first.close()
+
+        let viewer = try await paths.open(models, continueSession: true,
+                                          transcriptMode: .paged, mode: .readOnly,
+                                          storageKind: .jsonl)
+        let retained = viewer.hostView.hostCurrent().rows.compactMap { row -> EntryID? in
+            if case .entry(let entry) = row.item { return entry.id }
+            return nil
+        }
+        #expect(!retained.isEmpty)
+        let writer = try await paths.open(models, continueSession: true, storageKind: .jsonl)
+        let writes = (1...250).map { EntryDraft(kind: "note", data: .string("offline \($0)")) }
+        _ = try await writer.submitAtomically("second", whenBusy: .steer, writes: writes)
+        let refreshed = try await viewer.refresh()
+        #expect(refreshed.hostView.hostCurrent().rows.contains {
+            if case .gap = $0.item { return true }; return false
+        })
+        #expect(refreshed.hostView.hostCurrent().rows.contains {
+            if case .entry(let entry) = $0.item { return retained.contains(entry.id) }
+            return false
+        })
+        let gap = try #require(refreshed.hostView.hostCurrent().rows.compactMap { row -> TranscriptGap? in
+            if case .gap(let gap) = row.item { return gap }; return nil
+        }.first)
+        let beforeFill = refreshed.hostView.hostCurrent().rows.count
+        await refreshed.hostController.fillGap(gap)
+        // v1.5.2 D10: the default watch is 50 rows; one gap fill adds one 50-row page.
+        #expect(refreshed.hostView.hostCurrent().rows.count > beforeFill)
+        await refreshed.close()
+        await writer.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func pagedHostShowsTurnLimitAndContinuesIdleConversation() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        try Data("one\n".utf8).write(to: paths.cwd.appendingPathComponent("one.txt"))
+        let models = runtimeModels(responses: [
+            .message(runtimeToolCall("read", arguments: ["path": AnyCodable("one.txt")])),
+            .message(chatAssistant("finished after continue"))
+        ])
+        let result = try await paths.open(models, transcriptMode: .paged)
+        await result.hostController.setMaxTurns(1)
+        await result.hostController.submit("read one", whenBusy: .steer)
+        try await eventually {
+            result.hostView.hostCurrent().ending?.reason == .turnLimit
+        }
+        #expect(result.hostView.hostCurrent().ending?.detail == "1 turn")
+        #expect(!result.hostView.hostCurrent().notices.contains { $0.message.hasPrefix("No answer:") })
+        try await result.continueRun()
+        try await eventually {
+            result.hostView.hostCurrent().rows.contains { row in
+                guard case .entry(let entry) = row.item, entry.kind == "pi.assistant" else { return false }
+                return (try? entry.messages()?.compactMap { textOf($0) }.joined()) == "finished after continue"
+            }
+        }
+        #expect(result.hostView.hostCurrent().ending == nil)
+        await result.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func continueRejectsBusyConversationWithTaggedError() async throws {
+        let paths = try RuntimePaths()
+        defer { paths.remove() }
+        let held = HarnessGatedResponse(message: chatAssistant("later"))
+        let result = try await paths.open(runtimeModels(responses: [held.step]), transcriptMode: .paged)
+        await result.hostController.submit("start", whenBusy: .steer)
+        try await eventually { held.reached.isSignalled }
+        do {
+            try await result.continueRun()
+            Issue.record("continue accepted a busy conversation")
+        } catch is ConversationBusy {
+            // The tag returns this typed error while a run is active.
+        }
+        held.release()
+        await result.close()
+    }
 }
