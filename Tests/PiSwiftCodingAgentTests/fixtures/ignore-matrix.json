@@ -1,0 +1,4792 @@
+{
+  "schemaVersion": 2,
+  "versions": {
+    "rg": "ripgrep 15.2.0",
+    "fd": null
+  },
+  "cases": [
+    {
+      "name": "plain-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "plain-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "plain-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "plain-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-wildcard-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-wildcard-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-wildcard-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "root.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-wildcard-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-negation-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n!keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-negation-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n!keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-negation-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n!keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-negation-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n!keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-negation-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n!sub/keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-negation-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n!sub/keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-negation-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n!sub/keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-directory-negation-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/\n!sub/keep.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-anchored-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-anchored-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-anchored-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-anchored-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-path-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-path-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-path-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "root-path-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "sub/drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-scope-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-scope-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-scope-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-scope-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-negation-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "!keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-negation-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "!keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-negation-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "!keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-negation-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "*.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "!keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "deep-scope-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/.gitignore": "keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "deep-scope-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/.gitignore": "keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "deep-scope-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/.gitignore": "keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "deep-scope-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/.gitignore": "drop.txt\n",
+        "sub/deep/.gitignore": "keep.txt\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "ignore-source-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".ignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "root.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "ignore-source-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".ignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "ignore-source-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".ignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "root.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "ignore-source-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".ignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "rgignore-source-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".rgignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "root.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "rgignore-source-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".rgignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "rgignore-source-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".rgignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "root.txt",
+          "sibling/keep.txt",
+          "sub/deep/keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "rgignore-source-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".hidden/drop.txt": "needle\n",
+        ".rgignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/keep.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "fdignore-source-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".fdignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "fdignore-source-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".fdignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "fdignore-source-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".fdignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "fdignore-source-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".fdignore": "drop.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "escaped-hash-no-repo-root",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "\\#literal.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "#literal.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "#literal.txt",
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "escaped-hash-no-repo-sub",
+      "gitRepository": false,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "\\#literal.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "#literal.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "escaped-hash-repo-root",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "\\#literal.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "#literal.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".hidden/drop.txt",
+          "drop.txt",
+          "keep.txt",
+          "root.txt",
+          "sibling/drop.txt",
+          "sibling/keep.txt",
+          "sub/deep/drop.txt",
+          "sub/deep/keep.txt",
+          "sub/drop.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "escaped-hash-repo-sub",
+      "gitRepository": true,
+      "searchPath": "sub",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "\\#literal.txt\n",
+        ".hidden/drop.txt": "needle\n",
+        "#literal.txt": "needle\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "root.txt": "needle\n",
+        "sibling/drop.txt": "needle\n",
+        "sibling/keep.txt": "needle\n",
+        "sub/deep/drop.txt": "needle\n",
+        "sub/deep/keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "deep/drop.txt",
+          "deep/keep.txt",
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "info-exclude",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".git/info/exclude": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "root.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "global-core-excludes",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "home/.gitconfig": "[core]\n  excludesFile = <ROOT>/home/ignore\n",
+        "home/ignore": "drop.txt\n",
+        "root.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "core",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "global-xdg-fallback",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "root.txt": "needle\n",
+        "xdg/git/ignore": "drop.txt\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "xdg",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "global-core-no-repo",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "home/.gitconfig": "[core]\n  excludesFile = <ROOT>/home/ignore\n",
+        "home/ignore": "drop.txt\n",
+        "root.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "core",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "drop.txt",
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "global-xdg-no-repo",
+      "gitRepository": false,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "root.txt": "needle\n",
+        "xdg/git/ignore": "drop.txt\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "xdg",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "drop.txt",
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--no-require-git",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-repository-from-parent",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [
+        "nested/.git"
+      ],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        "nested/drop.txt": "needle\n",
+        "nested/keep.txt": "needle\n",
+        "root.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "nested/drop.txt",
+          "nested/keep.txt",
+          "root.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "nested-repository-search-root",
+      "gitRepository": true,
+      "searchPath": "nested",
+      "directories": [
+        "nested/.git"
+      ],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        "nested/drop.txt": "needle\n",
+        "nested/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "explicit-ignored-file",
+      "gitRepository": true,
+      "searchPath": "drop.txt",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        "drop.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": true,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": [
+          "drop.txt"
+        ]
+      },
+      "find": null
+    },
+    {
+      "name": "explicit-file-inside-ignored-directory",
+      "gitRepository": true,
+      "searchPath": "blocked/drop.txt",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "blocked/\n",
+        "blocked/drop.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": true,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": [
+          "drop.txt"
+        ]
+      },
+      "find": null
+    },
+    {
+      "name": "explicit-ignored-directory",
+      "gitRepository": true,
+      "searchPath": "blocked",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "blocked/\n",
+        "blocked/drop.txt": "needle\n",
+        "blocked/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "drop.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "positive-glob-ignored-file",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "drop.txt\n",
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": "drop.txt",
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "drop.txt",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "drop.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "positive-glob-in-ignored-directory",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "blocked/\n",
+        "blocked/drop.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": "drop.txt",
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "drop.txt",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": []
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "negative-glob",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": "!drop.txt",
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "!drop.txt",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "negative-glob-leading-dot",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "drop.txt": "needle\n",
+        "keep.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": "!./drop.txt",
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "!drop.txt",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "symlink-to-file",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {
+        "link.txt": "target.txt"
+      },
+      "files": {
+        "keep.txt": "needle\n",
+        "target.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "target.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "explicit-symlink-file",
+      "gitRepository": true,
+      "searchPath": "link.txt",
+      "directories": [],
+      "symlinks": {
+        "link.txt": "target.txt"
+      },
+      "files": {
+        "target.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": true,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": [
+          "link.txt"
+        ]
+      },
+      "find": null
+    },
+    {
+      "name": "symlink-to-ignored-directory",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {
+        "alias": "blocked"
+      },
+      "files": {
+        ".gitignore": "blocked/\n",
+        "blocked/drop.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "escaped-hash-and-bang",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "!bang.txt": "needle\n",
+        ".gitignore": "\\#hash.txt\n\\!bang.txt\n",
+        "#hash.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "character-class",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "[ab].txt\n",
+        "a.txt": "needle\n",
+        "b.txt": "needle\n",
+        "c.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "c.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "trailing-spaces",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "space  \n",
+        "keep.txt": "needle\n",
+        "space": "needle\n",
+        "space ": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "keep.txt",
+          "space "
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "double-star",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "**/drop.txt\n",
+        "drop.txt": "needle\n",
+        "sub/drop.txt": "needle\n",
+        "sub/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "sub/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "git-metadata-content",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".git/marker.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          ".git/marker.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-xcodeproj",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.xcodeproj/project.pbxproj": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.xcodeproj/project.pbxproj",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-xcworkspace",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.xcworkspace/contents.xcworkspacedata": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.xcworkspace/contents.xcworkspacedata",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-playground",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.playground/Contents.swift": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.playground/Contents.swift",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-bundle",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.bundle/Contents/Resources/data.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.bundle/Contents/Resources/data.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-framework",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.framework/Resources/data.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.framework/Resources/data.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "package-app",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        "Foo.app/Contents/Resources/data.txt": "needle\n",
+        "keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "Foo.app/Contents/Resources/data.txt",
+          "keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    },
+    {
+      "name": "three-hundred-rule-directories",
+      "gitRepository": true,
+      "searchPath": ".",
+      "directories": [],
+      "symlinks": {},
+      "files": {
+        ".gitignore": "d299/drop.txt\n",
+        "d000/.ignore": "drop.txt\n",
+        "d001/.ignore": "drop.txt\n",
+        "d002/.ignore": "drop.txt\n",
+        "d003/.ignore": "drop.txt\n",
+        "d004/.ignore": "drop.txt\n",
+        "d005/.ignore": "drop.txt\n",
+        "d006/.ignore": "drop.txt\n",
+        "d007/.ignore": "drop.txt\n",
+        "d008/.ignore": "drop.txt\n",
+        "d009/.ignore": "drop.txt\n",
+        "d010/.ignore": "drop.txt\n",
+        "d011/.ignore": "drop.txt\n",
+        "d012/.ignore": "drop.txt\n",
+        "d013/.ignore": "drop.txt\n",
+        "d014/.ignore": "drop.txt\n",
+        "d015/.ignore": "drop.txt\n",
+        "d016/.ignore": "drop.txt\n",
+        "d017/.ignore": "drop.txt\n",
+        "d018/.ignore": "drop.txt\n",
+        "d019/.ignore": "drop.txt\n",
+        "d020/.ignore": "drop.txt\n",
+        "d021/.ignore": "drop.txt\n",
+        "d022/.ignore": "drop.txt\n",
+        "d023/.ignore": "drop.txt\n",
+        "d024/.ignore": "drop.txt\n",
+        "d025/.ignore": "drop.txt\n",
+        "d026/.ignore": "drop.txt\n",
+        "d027/.ignore": "drop.txt\n",
+        "d028/.ignore": "drop.txt\n",
+        "d029/.ignore": "drop.txt\n",
+        "d030/.ignore": "drop.txt\n",
+        "d031/.ignore": "drop.txt\n",
+        "d032/.ignore": "drop.txt\n",
+        "d033/.ignore": "drop.txt\n",
+        "d034/.ignore": "drop.txt\n",
+        "d035/.ignore": "drop.txt\n",
+        "d036/.ignore": "drop.txt\n",
+        "d037/.ignore": "drop.txt\n",
+        "d038/.ignore": "drop.txt\n",
+        "d039/.ignore": "drop.txt\n",
+        "d040/.ignore": "drop.txt\n",
+        "d041/.ignore": "drop.txt\n",
+        "d042/.ignore": "drop.txt\n",
+        "d043/.ignore": "drop.txt\n",
+        "d044/.ignore": "drop.txt\n",
+        "d045/.ignore": "drop.txt\n",
+        "d046/.ignore": "drop.txt\n",
+        "d047/.ignore": "drop.txt\n",
+        "d048/.ignore": "drop.txt\n",
+        "d049/.ignore": "drop.txt\n",
+        "d050/.ignore": "drop.txt\n",
+        "d051/.ignore": "drop.txt\n",
+        "d052/.ignore": "drop.txt\n",
+        "d053/.ignore": "drop.txt\n",
+        "d054/.ignore": "drop.txt\n",
+        "d055/.ignore": "drop.txt\n",
+        "d056/.ignore": "drop.txt\n",
+        "d057/.ignore": "drop.txt\n",
+        "d058/.ignore": "drop.txt\n",
+        "d059/.ignore": "drop.txt\n",
+        "d060/.ignore": "drop.txt\n",
+        "d061/.ignore": "drop.txt\n",
+        "d062/.ignore": "drop.txt\n",
+        "d063/.ignore": "drop.txt\n",
+        "d064/.ignore": "drop.txt\n",
+        "d065/.ignore": "drop.txt\n",
+        "d066/.ignore": "drop.txt\n",
+        "d067/.ignore": "drop.txt\n",
+        "d068/.ignore": "drop.txt\n",
+        "d069/.ignore": "drop.txt\n",
+        "d070/.ignore": "drop.txt\n",
+        "d071/.ignore": "drop.txt\n",
+        "d072/.ignore": "drop.txt\n",
+        "d073/.ignore": "drop.txt\n",
+        "d074/.ignore": "drop.txt\n",
+        "d075/.ignore": "drop.txt\n",
+        "d076/.ignore": "drop.txt\n",
+        "d077/.ignore": "drop.txt\n",
+        "d078/.ignore": "drop.txt\n",
+        "d079/.ignore": "drop.txt\n",
+        "d080/.ignore": "drop.txt\n",
+        "d081/.ignore": "drop.txt\n",
+        "d082/.ignore": "drop.txt\n",
+        "d083/.ignore": "drop.txt\n",
+        "d084/.ignore": "drop.txt\n",
+        "d085/.ignore": "drop.txt\n",
+        "d086/.ignore": "drop.txt\n",
+        "d087/.ignore": "drop.txt\n",
+        "d088/.ignore": "drop.txt\n",
+        "d089/.ignore": "drop.txt\n",
+        "d090/.ignore": "drop.txt\n",
+        "d091/.ignore": "drop.txt\n",
+        "d092/.ignore": "drop.txt\n",
+        "d093/.ignore": "drop.txt\n",
+        "d094/.ignore": "drop.txt\n",
+        "d095/.ignore": "drop.txt\n",
+        "d096/.ignore": "drop.txt\n",
+        "d097/.ignore": "drop.txt\n",
+        "d098/.ignore": "drop.txt\n",
+        "d099/.ignore": "drop.txt\n",
+        "d100/.ignore": "drop.txt\n",
+        "d101/.ignore": "drop.txt\n",
+        "d102/.ignore": "drop.txt\n",
+        "d103/.ignore": "drop.txt\n",
+        "d104/.ignore": "drop.txt\n",
+        "d105/.ignore": "drop.txt\n",
+        "d106/.ignore": "drop.txt\n",
+        "d107/.ignore": "drop.txt\n",
+        "d108/.ignore": "drop.txt\n",
+        "d109/.ignore": "drop.txt\n",
+        "d110/.ignore": "drop.txt\n",
+        "d111/.ignore": "drop.txt\n",
+        "d112/.ignore": "drop.txt\n",
+        "d113/.ignore": "drop.txt\n",
+        "d114/.ignore": "drop.txt\n",
+        "d115/.ignore": "drop.txt\n",
+        "d116/.ignore": "drop.txt\n",
+        "d117/.ignore": "drop.txt\n",
+        "d118/.ignore": "drop.txt\n",
+        "d119/.ignore": "drop.txt\n",
+        "d120/.ignore": "drop.txt\n",
+        "d121/.ignore": "drop.txt\n",
+        "d122/.ignore": "drop.txt\n",
+        "d123/.ignore": "drop.txt\n",
+        "d124/.ignore": "drop.txt\n",
+        "d125/.ignore": "drop.txt\n",
+        "d126/.ignore": "drop.txt\n",
+        "d127/.ignore": "drop.txt\n",
+        "d128/.ignore": "drop.txt\n",
+        "d129/.ignore": "drop.txt\n",
+        "d130/.ignore": "drop.txt\n",
+        "d131/.ignore": "drop.txt\n",
+        "d132/.ignore": "drop.txt\n",
+        "d133/.ignore": "drop.txt\n",
+        "d134/.ignore": "drop.txt\n",
+        "d135/.ignore": "drop.txt\n",
+        "d136/.ignore": "drop.txt\n",
+        "d137/.ignore": "drop.txt\n",
+        "d138/.ignore": "drop.txt\n",
+        "d139/.ignore": "drop.txt\n",
+        "d140/.ignore": "drop.txt\n",
+        "d141/.ignore": "drop.txt\n",
+        "d142/.ignore": "drop.txt\n",
+        "d143/.ignore": "drop.txt\n",
+        "d144/.ignore": "drop.txt\n",
+        "d145/.ignore": "drop.txt\n",
+        "d146/.ignore": "drop.txt\n",
+        "d147/.ignore": "drop.txt\n",
+        "d148/.ignore": "drop.txt\n",
+        "d149/.ignore": "drop.txt\n",
+        "d150/.ignore": "drop.txt\n",
+        "d151/.ignore": "drop.txt\n",
+        "d152/.ignore": "drop.txt\n",
+        "d153/.ignore": "drop.txt\n",
+        "d154/.ignore": "drop.txt\n",
+        "d155/.ignore": "drop.txt\n",
+        "d156/.ignore": "drop.txt\n",
+        "d157/.ignore": "drop.txt\n",
+        "d158/.ignore": "drop.txt\n",
+        "d159/.ignore": "drop.txt\n",
+        "d160/.ignore": "drop.txt\n",
+        "d161/.ignore": "drop.txt\n",
+        "d162/.ignore": "drop.txt\n",
+        "d163/.ignore": "drop.txt\n",
+        "d164/.ignore": "drop.txt\n",
+        "d165/.ignore": "drop.txt\n",
+        "d166/.ignore": "drop.txt\n",
+        "d167/.ignore": "drop.txt\n",
+        "d168/.ignore": "drop.txt\n",
+        "d169/.ignore": "drop.txt\n",
+        "d170/.ignore": "drop.txt\n",
+        "d171/.ignore": "drop.txt\n",
+        "d172/.ignore": "drop.txt\n",
+        "d173/.ignore": "drop.txt\n",
+        "d174/.ignore": "drop.txt\n",
+        "d175/.ignore": "drop.txt\n",
+        "d176/.ignore": "drop.txt\n",
+        "d177/.ignore": "drop.txt\n",
+        "d178/.ignore": "drop.txt\n",
+        "d179/.ignore": "drop.txt\n",
+        "d180/.ignore": "drop.txt\n",
+        "d181/.ignore": "drop.txt\n",
+        "d182/.ignore": "drop.txt\n",
+        "d183/.ignore": "drop.txt\n",
+        "d184/.ignore": "drop.txt\n",
+        "d185/.ignore": "drop.txt\n",
+        "d186/.ignore": "drop.txt\n",
+        "d187/.ignore": "drop.txt\n",
+        "d188/.ignore": "drop.txt\n",
+        "d189/.ignore": "drop.txt\n",
+        "d190/.ignore": "drop.txt\n",
+        "d191/.ignore": "drop.txt\n",
+        "d192/.ignore": "drop.txt\n",
+        "d193/.ignore": "drop.txt\n",
+        "d194/.ignore": "drop.txt\n",
+        "d195/.ignore": "drop.txt\n",
+        "d196/.ignore": "drop.txt\n",
+        "d197/.ignore": "drop.txt\n",
+        "d198/.ignore": "drop.txt\n",
+        "d199/.ignore": "drop.txt\n",
+        "d200/.ignore": "drop.txt\n",
+        "d201/.ignore": "drop.txt\n",
+        "d202/.ignore": "drop.txt\n",
+        "d203/.ignore": "drop.txt\n",
+        "d204/.ignore": "drop.txt\n",
+        "d205/.ignore": "drop.txt\n",
+        "d206/.ignore": "drop.txt\n",
+        "d207/.ignore": "drop.txt\n",
+        "d208/.ignore": "drop.txt\n",
+        "d209/.ignore": "drop.txt\n",
+        "d210/.ignore": "drop.txt\n",
+        "d211/.ignore": "drop.txt\n",
+        "d212/.ignore": "drop.txt\n",
+        "d213/.ignore": "drop.txt\n",
+        "d214/.ignore": "drop.txt\n",
+        "d215/.ignore": "drop.txt\n",
+        "d216/.ignore": "drop.txt\n",
+        "d217/.ignore": "drop.txt\n",
+        "d218/.ignore": "drop.txt\n",
+        "d219/.ignore": "drop.txt\n",
+        "d220/.ignore": "drop.txt\n",
+        "d221/.ignore": "drop.txt\n",
+        "d222/.ignore": "drop.txt\n",
+        "d223/.ignore": "drop.txt\n",
+        "d224/.ignore": "drop.txt\n",
+        "d225/.ignore": "drop.txt\n",
+        "d226/.ignore": "drop.txt\n",
+        "d227/.ignore": "drop.txt\n",
+        "d228/.ignore": "drop.txt\n",
+        "d229/.ignore": "drop.txt\n",
+        "d230/.ignore": "drop.txt\n",
+        "d231/.ignore": "drop.txt\n",
+        "d232/.ignore": "drop.txt\n",
+        "d233/.ignore": "drop.txt\n",
+        "d234/.ignore": "drop.txt\n",
+        "d235/.ignore": "drop.txt\n",
+        "d236/.ignore": "drop.txt\n",
+        "d237/.ignore": "drop.txt\n",
+        "d238/.ignore": "drop.txt\n",
+        "d239/.ignore": "drop.txt\n",
+        "d240/.ignore": "drop.txt\n",
+        "d241/.ignore": "drop.txt\n",
+        "d242/.ignore": "drop.txt\n",
+        "d243/.ignore": "drop.txt\n",
+        "d244/.ignore": "drop.txt\n",
+        "d245/.ignore": "drop.txt\n",
+        "d246/.ignore": "drop.txt\n",
+        "d247/.ignore": "drop.txt\n",
+        "d248/.ignore": "drop.txt\n",
+        "d249/.ignore": "drop.txt\n",
+        "d250/.ignore": "drop.txt\n",
+        "d251/.ignore": "drop.txt\n",
+        "d252/.ignore": "drop.txt\n",
+        "d253/.ignore": "drop.txt\n",
+        "d254/.ignore": "drop.txt\n",
+        "d255/.ignore": "drop.txt\n",
+        "d256/.ignore": "drop.txt\n",
+        "d257/.ignore": "drop.txt\n",
+        "d258/.ignore": "drop.txt\n",
+        "d259/.ignore": "drop.txt\n",
+        "d260/.ignore": "drop.txt\n",
+        "d261/.ignore": "drop.txt\n",
+        "d262/.ignore": "drop.txt\n",
+        "d263/.ignore": "drop.txt\n",
+        "d264/.ignore": "drop.txt\n",
+        "d265/.ignore": "drop.txt\n",
+        "d266/.ignore": "drop.txt\n",
+        "d267/.ignore": "drop.txt\n",
+        "d268/.ignore": "drop.txt\n",
+        "d269/.ignore": "drop.txt\n",
+        "d270/.ignore": "drop.txt\n",
+        "d271/.ignore": "drop.txt\n",
+        "d272/.ignore": "drop.txt\n",
+        "d273/.ignore": "drop.txt\n",
+        "d274/.ignore": "drop.txt\n",
+        "d275/.ignore": "drop.txt\n",
+        "d276/.ignore": "drop.txt\n",
+        "d277/.ignore": "drop.txt\n",
+        "d278/.ignore": "drop.txt\n",
+        "d279/.ignore": "drop.txt\n",
+        "d280/.ignore": "drop.txt\n",
+        "d281/.ignore": "drop.txt\n",
+        "d282/.ignore": "drop.txt\n",
+        "d283/.ignore": "drop.txt\n",
+        "d284/.ignore": "drop.txt\n",
+        "d285/.ignore": "drop.txt\n",
+        "d286/.ignore": "drop.txt\n",
+        "d287/.ignore": "drop.txt\n",
+        "d288/.ignore": "drop.txt\n",
+        "d289/.ignore": "drop.txt\n",
+        "d290/.ignore": "drop.txt\n",
+        "d291/.ignore": "drop.txt\n",
+        "d292/.ignore": "drop.txt\n",
+        "d293/.ignore": "drop.txt\n",
+        "d294/.ignore": "drop.txt\n",
+        "d295/.ignore": "drop.txt\n",
+        "d296/.ignore": "drop.txt\n",
+        "d297/.ignore": "drop.txt\n",
+        "d298/.ignore": "drop.txt\n",
+        "d299/.ignore": "drop.txt\n",
+        "d299/drop.txt": "needle\n",
+        "d299/keep.txt": "needle\n"
+      },
+      "grepGlob": null,
+      "findPattern": "*.txt",
+      "globalConfig": "none",
+      "fileSearch": false,
+      "grep": {
+        "args": [
+          "--no-config",
+          "--json",
+          "--line-number",
+          "--color=never",
+          "--hidden",
+          "--",
+          "needle",
+          "."
+        ],
+        "paths": [
+          "d299/keep.txt"
+        ]
+      },
+      "find": {
+        "args": [
+          "--color=never",
+          "--hidden",
+          "--glob",
+          "--max-results",
+          "1001",
+          "--",
+          "*.txt",
+          "<SEARCH_ROOT>"
+        ],
+        "paths": null
+      }
+    }
+  ]
+}

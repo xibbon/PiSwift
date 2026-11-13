@@ -69,8 +69,9 @@ internal enum LocalFileListing {
         else { rootPath = Array(root.utf8) }
         let processDirectory = FileManager.default.currentDirectoryPath
         let useGitignore = options?.gitignore ?? true
-        let globalPath = useGitignore ? GitIgnoreSources.globalPath(environment: environment, processDirectory: processDirectory, context: context) : nil
-        let global = try globalPath.map { try LocalListingPath.rules(Array($0.utf8), context: context) } ?? []
+        let check: @Sendable () throws -> Void = { try LocalFS.check(context) }
+        let globalPath = useGitignore ? GitIgnoreSources.globalPath(environment: environment, processDirectory: processDirectory, check: check) : nil
+        let global = try globalPath.map { try LocalListingPath.rules(Array($0.utf8), check: check) } ?? []
         var layers: [GitIgnoreLayer] = []
         if useGitignore {
             var parents: [[UInt8]] = [], path = rootPath
@@ -81,7 +82,7 @@ internal enum LocalFileListing {
             }
             for parent in parents.reversed() {
                 try LocalFS.check(context, path: root)
-                layers.append(try .init(path: parent, processDirectory: processDirectory, context: context))
+                layers.append(try .init(path: parent, processDirectory: processDirectory, check: check))
             }
         }
         let started = ContinuousClock.now
@@ -131,7 +132,7 @@ internal enum LocalFileListing {
             }
             entries.append(.init(path: text, kind: kind)); bytes += size
             if kind == .directory {
-                if useGitignore { layers.append(try .init(path: path, processDirectory: processDirectory, context: context)) }
+                if useGitignore { layers.append(try .init(path: path, processDirectory: processDirectory, check: check)) }
                 frames.append(Frame(path: path, relative: relative, names: try names(path, context: context, hooks: hooks)))
             }
         }
