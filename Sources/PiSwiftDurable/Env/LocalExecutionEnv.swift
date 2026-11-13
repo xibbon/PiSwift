@@ -269,7 +269,7 @@ public final class LocalExecutionEnv: ExecutionEnv {
         }
     }
     /// Starts a snapshot watch. iOS uses polling, including when native mode is requested.
-    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
+    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
         let base = cwd
         let resolved = targets.map { WatchTarget(path: LocalFS.resolve($0.path, cwd: base), recursive: $0.recursive, exclude: $0.exclude) }
         return await LocalFileWatcher.start(targets: resolved, mode: watchOptions.mode, maxDirectories: watchOptions.maxDirectories,

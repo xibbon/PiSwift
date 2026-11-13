@@ -4,8 +4,14 @@ import PiSwiftChord
 public struct JsonlStorageOptions: Sendable {
     /// Flush each sidecar before the main marker. The default is false.
     public var fsync: Bool
-    /// Creates storage options. Sidecar flushes are disabled by default.
-    public init(fsync: Bool = false) { self.fsync = fsync }
+    /// Opens a snapshot without file changes. The default is false.
+    /// Recovery skips torn lines and unconfirmed tails in memory. It creates no directory,
+    /// repairs no files, and reclaims no sidecars. Commits fail on this storage.
+    public var readOnly: Bool
+    /// Creates storage options. File flushes and read-only mode are disabled by default.
+    public init(fsync: Bool = false, readOnly: Bool = false) {
+        self.fsync = fsync; self.readOnly = readOnly
+    }
 }
 
 /// A complete record or committed state is invalid.
@@ -18,6 +24,16 @@ public struct JsonlCorruptionError: Error, Sendable, CustomStringConvertible {
     public var description: String { message }
     /// Creates a corruption error with a message and optional cause.
     public init(message: String, cause: (any Error)? = nil) { self.message = message; self.cause = cause }
+}
+
+/// A commit was requested on read-only storage. No data was written.
+public struct JsonlStorageReadOnlyError: Error, Sendable, CustomStringConvertible {
+    /// The error message.
+    public let message = "JSONL storage is open read-only"
+    /// The error message for display.
+    public var description: String { message }
+    /// Creates a read-only storage error.
+    public init() {}
 }
 
 /// An I/O failure has an uncertain result. Open the storage again before use.
@@ -63,6 +79,8 @@ struct JsonlLine<Value: Sendable>: Sendable {
 struct JsonlParsedFile<Value: Sendable>: Sendable {
     let path: String
     let lines: [JsonlLine<Value>]
+    /// The number of bytes read, including a torn final line.
+    let size: Int64
 }
 struct JsonlRecordKey: Hashable, Sendable {
     let file: String

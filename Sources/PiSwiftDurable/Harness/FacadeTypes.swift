@@ -138,6 +138,9 @@ public struct HarnessWake: Sendable, Equatable {
 }
 /// Host services and live settings required to open a harness.
 public struct HarnessOptions: Sendable {
+    /// Refuses writes and task scheduling when true. Reads and watches remain available.
+    /// This option does not make the storage backend read-only.
+    public var readOnly: Bool
     /// The model service used by this harness or task.
     public let models: HarnessModelsProvider
     /// The host identity applied over the pi and model service defaults.
@@ -162,67 +165,67 @@ public struct HarnessOptions: Sendable {
     public var onReport: (@Sendable (Report) -> Void)?
     /// Supplies host model, registry, clock, settings, and environment services.
     public init(models: any DurableModels, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: (@Sendable (Report) -> Void)? = nil) {
         let wrapped = harnessModels(models, identity: identity)
-        self.models = { wrapped }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
+        self.readOnly = readOnly; self.models = { wrapped }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
         self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
     }
     @available(*, deprecated, message: "Use the single Report callback")
     public init(models: any DurableModels, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: @escaping @Sendable (any Error, ReportInfo) -> Void) {
-        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env,
+        self.init(models: models, registry: registry, identity: identity, readOnly: readOnly, settings: settings, env: env,
             clock: clock, now: now, setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
             onReport: { (report: Report) in onReport(report.error, report.info) })
     }
     /// Adapts a callback that receives only the original error.
     public init(models: any DurableModels, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: @escaping @Sendable (any Error) -> Void) {
-        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env, clock: clock, now: now,
+        self.init(models: models, registry: registry, identity: identity, readOnly: readOnly, settings: settings, env: env, clock: clock, now: now,
                   setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
                   onReport: { (report: Report) in onReport(report.error) })
     }
 
     /// Supplies host model, registry, clock, settings, and environment services.
     public init(models: @escaping HarnessModelsProvider, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: (@Sendable (Report) -> Void)? = nil) {
-        self.models = { harnessModels(try models(), identity: identity) }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
+        self.readOnly = readOnly; self.models = { harnessModels(try models(), identity: identity) }; self.identity = identity; self.registry = registry; self.settings = settings; self.env = env
         self.clock = clock; self.now = now; self.setTimer = setTimer; self.onWake = onWake; self.conversationCreated = conversationCreated; self.onReport = onReport
     }
     @available(*, deprecated, message: "Use the single Report callback")
     public init(models: @escaping HarnessModelsProvider, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: @escaping @Sendable (any Error, ReportInfo) -> Void) {
-        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env,
+        self.init(models: models, registry: registry, identity: identity, readOnly: readOnly, settings: settings, env: env,
             clock: clock, now: now, setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
             onReport: { (report: Report) in onReport(report.error, report.info) })
     }
     /// Adapts a callback that receives only the original error.
     public init(models: @escaping HarnessModelsProvider, registry: any RegistryReader, identity: ClientIdentity? = nil,
-                settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
+                readOnly: Bool = false, settings: HarnessSettingsProvider? = nil, env: HarnessEnvFactory? = nil,
                 clock: any DurableClock = SystemDurableClock(), now: (@Sendable () -> Int64)? = nil,
                 setTimer: HarnessSetTimer? = nil, onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
                 conversationCreated: (@Sendable (Transaction, ConversationRecord) async throws -> Void)? = nil,
                 onReport: @escaping @Sendable (any Error) -> Void) {
-        self.init(models: models, registry: registry, identity: identity, settings: settings, env: env, clock: clock, now: now,
+        self.init(models: models, registry: registry, identity: identity, readOnly: readOnly, settings: settings, env: env, clock: clock, now: now,
                   setTimer: setTimer, onWake: onWake, conversationCreated: conversationCreated,
                   onReport: { (report: Report) in onReport(report.error) })
     }

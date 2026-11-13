@@ -1,3 +1,4 @@
+// v1.5.2 D9: watcher callback conformance follows durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import PiSwiftChord
@@ -172,8 +173,8 @@ public final class FaultInjectingFileSystem: FileSystem {
     public func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> {
         return await base.openDirReader(path, context: context)
     }
-    /// Starts a watch and delivers path changes, overflow, or errors.
-    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
+    /// Starts a watch and delivers path changes, overflow, or a final failure.
+    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
         return await base.watch(targets, onChange: onChange, context: context)
     }
     /// Resolves the canonical path through the environment.

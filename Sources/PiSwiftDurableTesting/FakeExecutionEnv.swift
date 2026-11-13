@@ -1,3 +1,4 @@
+// v1.5.2 D9: watcher fakes use FileChange and stop from durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import PiSwiftChord
@@ -199,7 +200,7 @@ public final class FakeExecutionEnv: ExecutionEnv {
         await listDir(path, context: context).map { FakeDirReader($0) as any DirReader }
     }
     /// Returns notSupported; the fake environment does not publish file changes.
-    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
+    public func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
         .failure(FileError(.notSupported, message: "Fake file watches are not supported"))
     }
     /// Returns the normalized absolute path in the fake file system.

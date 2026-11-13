@@ -136,7 +136,7 @@ public final class Session: Sendable {
         self.cacheNow = cacheNow ?? now
         let cached = SessionCachedStorage(storage, conversationCapacity: cacheBounds.conversations,
                                           taskCapacity: cacheBounds.tasks, submissionCapacity: cacheBounds.submissions)
-        let guarded = GuardedStorage(cached, latch: latch)
+        let guarded = GuardedStorage(readOnly ? storage : cached, latch: latch)
         let writer = SessionWriter(storage: guarded, latch: latch,
             fail: { [weak guarded] error in
                 if error as? SessionError == .closed, guarded?.closing == true { return }
@@ -240,6 +240,10 @@ public final class Session: Sendable {
     internal func latestEntryId(_ id: ConversationID, context: ChordContext) async throws -> EntryID? {
         try await touch(SessionKeys.conversationKey(id))
         try await touch(SessionKeys.appendKey(id))
+        if readOnly {
+            return try await storage.scanEntries(.init(conversationId: id, order: .descending),
+                limit: 1, cursor: nil, context: context).items.first?.id
+        }
         return try await tails.latest(id) {
             try await storage.scanEntries(.init(conversationId: id, order: .descending),
                                           limit: 1, cursor: nil, context: context).items.first?.id
@@ -252,6 +256,7 @@ public final class Session: Sendable {
                                    context: ChordContext) async throws -> EntryRecord? {
         try await touch(SessionKeys.conversationKey(id))
         try await touch(SessionKeys.appendKey(id))
+        if readOnly { return try await storage.findLatestHeadMarker(id, atOrBeforeEntryId: cutoff, context: context) }
         return try await tails.marker(id, atOrBefore: cutoff) {
             try await storage.findLatestHeadMarker(id, atOrBeforeEntryId: cutoff, context: context)
         }

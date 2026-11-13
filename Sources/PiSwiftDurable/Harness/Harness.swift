@@ -59,12 +59,12 @@ public final class Harness: Sendable {
             let session = try await Session.openWithDocumentRetention(storage: storage, now: now,
                 documentRetentionMs: { settings().documentRetentionMs },
                 documentTimer: .host(timers),
-                persistWithinMs: { settings().progress.persistWithinMs },
+                persistWithinMs: { settings().progress.persistWithinMs }, readOnly: options.readOnly,
                 hooks: hooks, onReport: report, context: context)
             let storage = session.storage
             let reference = Mutex(WeakHarness())
             let scheduler = TaskScheduler(session: session, registry: options.registry, models: options.models,
-                timers: timers, now: now, onWake: options.onWake, settings: settings,
+                timers: timers, now: now, readOnly: options.readOnly, onWake: options.onWake, settings: settings,
                 agent: { id, snapshot, callContext in
                     let state = try await session.snapshot(AgentDoc, conversationId: id, context: callContext)
                     return resolveAgent(state: state, snapshot: snapshot, settings: settings(), report: { error, name in report(error, .extensionError(extension: name, conversationId: id)) })
@@ -81,7 +81,7 @@ public final class Harness: Sendable {
                 settleOutcome: { tx, record, outcome in try await settleSchedulerOutcome(tx: tx, record: record, outcome: outcome) },
                 withdrawInputs: { tx, id in try await withdrawQueuedInputs(tx: tx, conversationId: id) })
             hooks.scheduler.withLock { $0 = scheduler }
-            let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, resume: { scheduler.resume() })
+            let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, readOnly: options.readOnly, resume: { try scheduler.resume() })
             let harness = try Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)
             reference.withLock { $0.value = harness }
             do { try await scheduler.open(context: context) }
@@ -102,7 +102,7 @@ public final class Harness: Sendable {
     /// The terminal result after backend close.
     public var closed: SessionCloseResult { get async { await session.closed } }
     /// Starts task scheduling after a harness is opened or paused.
-    public func resume() throws { try assertOpen(); tasks.resume() }
+    public func resume() throws { try assertOpen(); try tasks.resume() }
     /// Releases this object's resources and rejects later operations.
     public func close(context: ChordContext) async throws {
         closeStarted.withLock { $0 = true }
@@ -196,13 +196,13 @@ public final class Harness: Sendable {
     /// Waits for a terminal task outcome and returns its durable receipt.
     public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in
-            try assertOpen(); tasks.resume(); return try await tasks.waitForTask(id: id, context: context)
+            try assertOpen(); try tasks.resume(); return try await tasks.waitForTask(id: id, context: context)
         }
     }
     /// Waits until all ordinary scheduled work is idle across the harness.
     public func waitForIdle(context: ChordContext) async throws {
         try await withTaskCancellationContext(context) { context in
-            try assertOpen(); tasks.resume(); try await tasks.waitForIdle(conversationId: nil, context: context)
+            try assertOpen(); try tasks.resume(); try await tasks.waitForIdle(conversationId: nil, context: context)
         }
     }
     /// Sums current model and tool usage across all stored conversations.

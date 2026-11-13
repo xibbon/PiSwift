@@ -107,7 +107,7 @@ public struct TextLine: Sendable, Equatable {
 public protocol TextLineReader: Sendable {
     /// Reads the next line, or returns nil at end of file.
     func readLine(context: ChordContext) async -> Result<TextLine?, FileError>
-    /// Closes this reader or watcher and releases its resources.
+    /// Closes this reader and releases its resources.
     func close(context: ChordContext) async
 }
 /// The line interval to locate in an opened binary file.
@@ -149,7 +149,7 @@ public protocol BinaryReader: Sendable {
     func read(offset: Int64, length: Int, context: ChordContext) async -> Result<[UInt8], FileError>
     /// Finds byte ranges and line counts for the selected lines.
     func scanLines(options: ScanLinesOptions, context: ChordContext) async -> Result<LineScan, FileError>
-    /// Closes this reader or watcher and releases its resources.
+    /// Closes this reader and releases its resources.
     func close(context: ChordContext) async
 }
 /// Optional hidden-file and name exclusions for a watch.
@@ -174,14 +174,23 @@ public struct WatchTarget: Sendable {
         self.path = path; self.recursive = recursive; self.exclude = exclude
     }
 }
-/// A file watch notification; overflow requires a fresh scan.
-public enum WatchChange: Sendable {
-    /// The supplied paths changed.
+/// A tagged file watch notification.
+public enum FileChange: Sendable {
+    /// Something at or below these paths can have changed. Calls can be spurious.
     case paths([String])
-    /// Changes were lost; scan the watched paths again.
+    /// Coverage was uncertain. Scan all watched paths again.
     case overflow
-    /// The file watch failed.
-    case error(FileError)
+    /// The watcher stopped with this error. No more calls follow.
+    case failed(FileError)
+
+    /// The upstream notification tag.
+    public var kind: String {
+        switch self {
+        case .paths: "paths"
+        case .overflow: "overflow"
+        case .failed: "failed"
+        }
+    }
 }
 /// The mechanism used by a file watcher.
 public enum WatchMode: String, Sendable {
@@ -190,12 +199,12 @@ public enum WatchMode: String, Sendable {
     /// The watch checks for changes by polling.
     case polling
 }
-/// An active file watch that the owner must close.
+/// An active file watch that the owner must stop.
 public protocol FileWatcher: Sendable {
-    /// The watch mechanism used by this implementation.
+    /// The watch mechanism. Polling can miss a change undone between scans.
     var mode: WatchMode { get }
-    /// Closes this reader or watcher and releases its resources.
-    func close(context: ChordContext) async
+    /// Stops the watch. No callback starts after this returns. Repeated calls are safe.
+    func stop(context: ChordContext) async
 }
 /// One page from an opened directory reader.
 public struct DirectoryPage: Sendable {
@@ -210,7 +219,7 @@ public struct DirectoryPage: Sendable {
 public protocol DirReader: Sendable {
     /// Reads the next page, with at most maxEntries entries.
     func next(maxEntries: Int, context: ChordContext) async -> Result<DirectoryPage, FileError>
-    /// Closes this reader or watcher and releases its resources.
+    /// Closes this reader and releases its resources.
     func close(context: ChordContext) async
 }
 /// Text or binary data to write to a file.
@@ -300,8 +309,8 @@ public protocol FileSystem: Sendable {
     func listFiles(_ path: String, options: ListFilesOptions?, context: ChordContext) async -> Result<FileListing, FileError>
     /// Opens a paged directory reader.
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError>
-    /// Starts a watch and delivers path changes, overflow, or errors.
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError>
+    /// Starts a watch and delivers path changes, overflow, or a final failure.
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError>
     /// Resolves the canonical path through the environment.
     func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError>
     /// Returns whether the supplied path exists.

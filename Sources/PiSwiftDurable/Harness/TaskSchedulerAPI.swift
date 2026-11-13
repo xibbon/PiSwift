@@ -78,7 +78,7 @@ extension TaskScheduler {
             for queuedID in withdraw { try await withdrawInputs(tx, queuedID) }
             return reached
         }, context: context)
-        resume()
+        try resume()
         if background { for id in reached { _ = try await waitForTask(id: id, context: context) } }
         try await waitForIdle(conversationId: id, context: context)
     }

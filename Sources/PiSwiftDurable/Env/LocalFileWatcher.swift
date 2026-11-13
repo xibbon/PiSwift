@@ -39,7 +39,7 @@ actor LocalFileWatcher: FileWatcher {
         var file: Bool { kind == UInt32(S_IFREG) }
     }
     private let targets: [Target]
-    private let onChange: @Sendable (WatchChange) -> Void
+    private let onChange: @Sendable (FileChange) -> Void
     private let maxDirectories: Int
     private let pollIntervalMilliseconds: Int
     private nonisolated let currentMode: Mutex<WatchMode>
@@ -70,7 +70,7 @@ actor LocalFileWatcher: FileWatcher {
 
     private init(targets: [WatchTarget], mode: WatchMode, maxDirectories: Int,
                  pollIntervalMilliseconds: Int, nativeHooks: LocalNativeWatchHooks,
-                 onChange: @escaping @Sendable (WatchChange) -> Void) {
+                 onChange: @escaping @Sendable (FileChange) -> Void) {
         self.targets = targets.map { Target(path: $0.path, recursive: $0.recursive == true,
             hidden: $0.exclude?.hidden == true, names: Set($0.exclude?.names ?? [])) }
         self.currentMode = Mutex(mode)
@@ -93,7 +93,7 @@ actor LocalFileWatcher: FileWatcher {
     static func start(targets: [WatchTarget], mode: WatchMode?, maxDirectories: Int = 10_000,
                       pollIntervalMilliseconds: Int = 2000, forceNativeFailure: Bool = false,
                       nativeHooks: LocalNativeWatchHooks = .init(),
-                      onChange: @escaping @Sendable (WatchChange) -> Void,
+                      onChange: @escaping @Sendable (FileChange) -> Void,
                       context: ChordContext) async -> Result<any FileWatcher, FileError> {
         if context.abortSignal?.aborted == true {
             return .failure(FileError(.aborted, message: "File operation aborted"))
@@ -112,23 +112,23 @@ actor LocalFileWatcher: FileWatcher {
         do {
             try await watcher.establish(forceNativeFailure: forceNativeFailure, context: context)
             if context.abortSignal?.aborted == true {
-                await watcher.stop()
+                await watcher.stopWatching()
                 return .failure(FileError(.aborted, message: "File operation aborted"))
             }
             return .success(watcher)
         } catch let error as FileError {
-            await watcher.stop()
+            await watcher.stopWatching()
             return .failure(error)
         } catch {
-            await watcher.stop()
+            await watcher.stopWatching()
             return .failure(FileError(.invalid, message: String(describing: error)))
         }
     }
 
-    func close(context: ChordContext) async { stop() }
+    func stop(context: ChordContext) async { stopWatching() }
 
     private func establish(forceNativeFailure: Bool, context: ChordContext) throws {
-        defer { if context.abortSignal?.aborted == true { stop() } }
+        defer { if context.abortSignal?.aborted == true { stopWatching() } }
         try LocalFS.check(context)
         snapshot = try scan()
         try LocalFS.check(context)
@@ -157,7 +157,7 @@ actor LocalFileWatcher: FileWatcher {
         schedulePoll()
     }
 
-    private func stop() {
+    private func stopWatching() {
         guard !closed else { return }
         closed = true
         timer?.cancel(); timer = nil
@@ -245,9 +245,9 @@ actor LocalFileWatcher: FileWatcher {
             if mode == .native, vnodeMailbox?.finishScan() == true { scheduleFlush() }
             #endif
         } catch let error as FileError {
-            onChange(.error(error)); stop()
+            onChange(.failed(error)); stopWatching()
         } catch {
-            onChange(.error(FileError(.invalid, message: String(describing: error)))); stop()
+            onChange(.failed(FileError(.invalid, message: String(describing: error)))); stopWatching()
         }
     }
 
@@ -550,6 +550,20 @@ actor LocalFileWatcher: FileWatcher {
         return true
     }
 
+    /// A loss or a mount change makes coverage uncertain, even when paths are supplied.
+    nonisolated static func nativeRequiresRescan(_ flags: FSEventStreamEventFlags) -> Bool {
+        flags & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs |
+            kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
+            kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagMount |
+            kFSEventStreamEventFlagUnmount) != 0
+    }
+
+    /// Deliver a synthetic native batch through the same actor path as FSEvents.
+    func nativeEventsForTesting(_ paths: [String], flags: FSEventStreamEventFlags) {
+        nativeEvents(paths, overflow: Self.nativeRequiresRescan(flags),
+            rootChanged: flags & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0)
+    }
+
     /// Flush pending native callbacks so tests can check delivery without a timed sleep.
     func flushNativeEventsForTesting() { stream?.flushSync() }
 
@@ -586,10 +600,7 @@ actor LocalFileWatcher: FileWatcher {
             var rootChanged = false
             var changedPaths: [String] = []
             for index in 0..<count {
-                if flags[index] & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs |
-                    kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
-                    kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagMount |
-                    kFSEventStreamEventFlagUnmount) != 0 { overflow = true }
+                if LocalFileWatcher.nativeRequiresRescan(flags[index]) { overflow = true }
                 if flags[index] & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0 { rootChanged = true }
                 if flags[index] != FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) {
                     changedPaths.append(values[index])

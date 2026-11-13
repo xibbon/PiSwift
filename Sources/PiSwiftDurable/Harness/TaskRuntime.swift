@@ -173,7 +173,7 @@ public final class TaskRuntime: Sendable {
     /// Waits for a terminal task outcome and returns its durable receipt.
     public func waitForTask(_ id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in
-            try invocation.check(); scheduler.resume()
+            try invocation.check(); try scheduler.resume()
             return try await scheduler.waitForTask(id: id, context: context.withAbortSignal(signal))
         }
     }

@@ -54,6 +54,7 @@ internal final class TaskScheduler: Sendable {
     let models: HarnessModelsProvider
     let timers: HarnessTimers
     var clock: any DurableClock { timers.clock }
+    let readOnly: Bool
     let onWake: (@Sendable (HarnessWake) throws -> Void)?
     let now: @Sendable () -> Int64
     let settings: @Sendable () -> Settings
@@ -123,6 +124,7 @@ internal final class TaskScheduler: Sendable {
     let idleWaiters = Waiters<ConversationID?, Void>()
     init(session: Session, registry: any RegistryReader, models: @escaping HarnessModelsProvider,
          timers: HarnessTimers, now: @escaping @Sendable () -> Int64,
+         readOnly: Bool = false,
          onWake: (@Sendable (HarnessWake) throws -> Void)? = nil,
          settings: @escaping @Sendable () -> Settings,
          agent: @escaping @Sendable (ConversationID, RegistrySnapshot, ChordContext) async throws -> Agent,
@@ -132,7 +134,7 @@ internal final class TaskScheduler: Sendable {
          settleOutcome: @escaping @Sendable (Transaction, TaskRecord, TaskOutcome) async throws -> Void = { _, _, _ in },
          withdrawInputs: @escaping @Sendable (Transaction, ConversationID) async throws -> Void = { _, _ in }) {
         self.session = session; storage = session.storage; self.registry = registry; self.models = models
-        self.timers = timers; self.now = now; self.onWake = onWake; self.settings = settings; resolveAgent = agent; self.env = env
+        self.timers = timers; self.now = now; self.readOnly = readOnly; self.onWake = onWake; self.settings = settings; resolveAgent = agent; self.env = env
         self.conversation = conversation; self.report = report; self.context = context.withoutAbortSignal()
         self.settleOutcome = settleOutcome; self.withdrawInputs = withdrawInputs
     }
@@ -154,23 +156,29 @@ internal final class TaskScheduler: Sendable {
             state.withLock { state in
                 for record in found {
                     state.track(record)
+                    if readOnly { continue } // v1.5.2 scheduler.ts:470
                     if case .waiting(_, _, .failFast, _) = record.state { state.failFastChecks.insert(record.id) }
                     if record.abandonOnRestart == true { state.abandoned.insert(record.id) }
                 }
             }
-            for record in found {
+            for record in found where !readOnly {
                 if case .running(let checkpoint, _) = record.state {
                     let restarts = record.restarts + 1
                     try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint), restarts: .some(restarts)))
                 }
             }
         }, context: context)
+        if readOnly { return }
         state.withLock { $0.cascadePending = true }
         scheduleReconcile()
         scheduleWake()
     }
-    func resume() { state.withLock { $0.enabled = true }; kick() }
+    func resume() throws {
+        if readOnly { throw ReadOnlySession("running tasks") }
+        state.withLock { $0.enabled = true }; kick()
+    }
     func join() async {
+        if readOnly { return }
         let (admitted, worker, reconciles) = state.withLock { ($0.joining, $0.worker, Array($0.reconciles.values)) }
         // Session close listeners end watches before cleanup aborts task signals.
         for invocation in admitted.values { invocation.controller.abort() }
@@ -340,7 +348,7 @@ internal final class TaskScheduler: Sendable {
     /// Repair durable intent separately from handler scheduling, including while paused.
     func scheduleReconcile() {
         state.withLock { state in
-            guard !state.closing, !state.reconcileScheduled else { return }
+            guard !readOnly, !state.closing, !state.reconcileScheduled else { return }
             state.reconcileScheduled = true
             let id = UUID()
             state.reconciles[id] = Task { [weak self] in

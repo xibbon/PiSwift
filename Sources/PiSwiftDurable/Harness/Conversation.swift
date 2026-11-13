@@ -49,7 +49,7 @@ public final class Conversation: Sendable {
     public func compact(instructions: String? = nil, context: ChordContext) async throws -> TaskID {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen()
-            harness.tasks.resume()
+            try harness.tasks.resume()
             return try await harness.session.commitWith({ tx in
                 try await createCompaction(tx: tx, conversationId: id,
                     input: CompactionInput(reason: .manual, instructions: instructions))
@@ -108,7 +108,7 @@ public final class Conversation: Sendable {
     /// Waits until the conversation has no active run or ordinary owned task.
     public func waitForIdle(context: ChordContext) async throws {
         try await withTaskCancellationContext(try bound(context)) { context in
-            try harness.assertOpen(); harness.tasks.resume()
+            try harness.assertOpen(); try harness.tasks.resume()
             try await harness.tasks.waitForIdle(conversationId: id, context: context)
         }
     }

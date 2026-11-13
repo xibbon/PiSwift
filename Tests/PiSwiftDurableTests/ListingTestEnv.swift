@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Synchronization
 import PiSwiftChord
 import PiSwiftDurable
@@ -101,7 +102,7 @@ final class ListingTestEnv: ExecutionEnv {
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> {
         await base.openDirReader(path, context: context)
     }
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> {
         await base.watch(targets, onChange: onChange, context: context)
     }
     func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> {

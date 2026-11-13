@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import Testing
@@ -43,7 +44,7 @@ struct ToolFixtureEnv: ExecutionEnv {
     func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError> { return await base.fileInfo(path, context: context) }
     func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError> { return await base.listDir(path, context: context) }
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> { return await base.openDirReader(path, context: context) }
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { return await base.watch(targets, onChange: onChange, context: context) }
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { return await base.watch(targets, onChange: onChange, context: context) }
     func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> {
         if let canonicalPathHook { return canonicalPathHook(path) }
         return await base.canonicalPath(path, context: context)

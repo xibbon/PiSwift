@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import Testing
@@ -37,8 +38,8 @@ struct LocalExecutionWatcherTests {
         let watcher = try opened.get()
         #expect(watcher.mode == .polling)
         #expect(overflow.withLock { $0 } == 1)
-        await watcher.close(context: .background)
-        await watcher.close(context: .background)
+        await watcher.stop(context: .background)
+        await watcher.stop(context: .background)
     }
     #endif
 }

@@ -28,6 +28,7 @@ extension TaskScheduler {
 
     /// Reads work from memory. Work below waits and held outcomes counts itself.
     func wake() -> HarnessWake {
+        if readOnly { return HarnessWake(active: false) }
         let time = Double(now())
         let view = state.withLock { $0 }
         var active = !view.invocations.isEmpty || view.reconcilingWork > 0 || view.cascadePending ||
@@ -63,7 +64,7 @@ extension TaskScheduler {
     /// Offers wakes on a separate task. No host callback runs on the Session line.
     func scheduleWake() {
         state.withLock { state in
-            guard !state.closing else { return }
+            guard !readOnly, !state.closing else { return }
             state.wakeDirty = true
             guard !state.wakeScheduled else { return }
             state.wakeScheduled = true

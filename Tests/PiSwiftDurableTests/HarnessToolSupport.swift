@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import Testing
@@ -75,7 +76,7 @@ final class HarnessToolEnvironment: ExecutionEnv, Sendable {
     func fileInfo(_ path: String, context: ChordContext) async -> Result<FileInfo, FileError> { unavailable() }
     func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError> { unavailable() }
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> { unavailable() }
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { unavailable() }
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { unavailable() }
     func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> { unavailable() }
     func exists(_ path: String, context: ChordContext) async -> Result<Bool, FileError> { unavailable() }
     func createDir(_ path: String, options: CreateDirOptions?, context: ChordContext) async -> Result<Void, FileError> { unavailable() }

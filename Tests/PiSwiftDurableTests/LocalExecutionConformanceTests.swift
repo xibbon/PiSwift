@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import Testing
@@ -32,10 +33,10 @@ private func localEnvConformanceCases(_ mode: WatchMode) -> [EnvConformanceCase]
 }
 
 private final class LocalConformanceWatchLog: Sendable {
-    private let storage = Mutex<[WatchChange]>([])
-    var changes: [WatchChange] { storage.withLock { $0 } }
-    func append(_ change: WatchChange) { storage.withLock { $0.append(change) } }
-    func wait(_ condition: @Sendable ([WatchChange]) -> Bool) async throws {
+    private let storage = Mutex<[FileChange]>([])
+    var changes: [FileChange] { storage.withLock { $0 } }
+    func append(_ change: FileChange) { storage.withLock { $0.append(change) } }
+    func wait(_ condition: @Sendable ([FileChange]) -> Bool) async throws {
         let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while !condition(changes) {
             if clock.now > deadline { throw EnvConformanceFailure("Watch deadline expired; got \(changes)") }
@@ -55,7 +56,7 @@ struct LocalExecutionConformanceTests {
     @Test("LocalExecutionEnv polling conformance", arguments: localEnvConformanceCases(.polling))
     func polling(_ testCase: EnvConformanceCase) async throws { try await testCase.run() }
 
-    // upstream env-node-conformance.test.ts:63.
+    // v1.5.2 D9: durable/test/env-node-conformance.test.ts:63–88, including the failed tag at :84.
     @Test("refuses a tree over the directory budget and stops with an error when one grows past it",
           arguments: [WatchMode.native, .polling])
     func directoryBudget(_ mode: WatchMode) async throws {
@@ -72,11 +73,11 @@ struct LocalExecutionConformanceTests {
         let watcher = try await env.watch([.init(path: "tree", recursive: true)], onChange: { log.append($0) }, context: .background).get()
         do {
             try await env.createDir("tree/d", options: nil, context: .background).get()
-            try await log.wait { $0.contains { if case .error = $0 { true } else { false } } }
-            if case .error(let error) = log.changes.last { #expect(error.code == .invalid) }
+            try await log.wait { $0.contains { if case .failed = $0 { true } else { false } } }
+            if case .failed(let error) = log.changes.last { #expect(error.code == .invalid) }
             else { Issue.record("Growing past the directory budget did not end with an error") }
-            await watcher.close(context: .background)
-        } catch { await watcher.close(context: .background); throw error }
+            await watcher.stop(context: .background)
+        } catch { await watcher.stop(context: .background); throw error }
     }
 
     // upstream env-node-conformance.test.ts:103.
@@ -131,8 +132,8 @@ struct LocalExecutionConformanceTests {
             try await log.wait { changes in
                 changes.contains { if case .paths(let paths) = $0 { paths.contains(path) } else { false } }
             }
-            await watcher.close(context: .background)
-        } catch { await watcher.close(context: .background); throw error }
+            await watcher.stop(context: .background)
+        } catch { await watcher.stop(context: .background); throw error }
     }
     #endif
 

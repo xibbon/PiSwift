@@ -3,13 +3,15 @@ import PiSwiftChord
 
 /// JSONL storage with memory indexes and recoverable sidecar files.
 /// Retains the full state in RAM. Each open replays all of main.jsonl. The main file
-/// is never compacted. Use one open storage for each directory. Opening can repair
-/// or remove file tails.
+/// is never compacted. Use one writable storage for each directory. A read-only open
+/// holds a snapshot and does not change the files. A writable open can repair file tails.
 public actor JsonlStorage: DurableStorage {
     let fileSystem: any FileSystem
     let directory: String
     let mainPath: String
     let fsync: Bool
+    let readOnly: Bool
+    var mainSize: Int64 = 0
     let memory = MemoryStorage()
     var currentOnlyDocuments = Set<Int64>()
     var liveTaskSidecars = Set<Int64>()
@@ -20,17 +22,30 @@ public actor JsonlStorage: DurableStorage {
     var queuedOperationCount: Int { waiters.count }
 
     private init(fileSystem: any FileSystem, directory: String, mainPath: String, options: JsonlStorageOptions) {
-        self.fileSystem = fileSystem; self.directory = directory; self.mainPath = mainPath; fsync = options.fsync
+        self.fileSystem = fileSystem; self.directory = directory; self.mainPath = mainPath; fsync = options.fsync; readOnly = options.readOnly
     }
 
-    /// Opens or creates a directory through the supplied file system.
+    /// Opens or creates a directory. Read-only mode opens existing files without changes.
     public static func open(directory: String, fileSystem: any FileSystem, options: JsonlStorageOptions = .init(), context: ChordContext = .background) async throws -> JsonlStorage {
         let absolute = try jsonlFileResult(await fileSystem.absolutePath(directory, context: context), action: "path resolution")
-        try jsonlFileResult(await fileSystem.createDir(absolute, options: .init(recursive: true), context: context), action: "directory creation")
+        if !options.readOnly {
+            try jsonlFileResult(await fileSystem.createDir(absolute, options: .init(recursive: true), context: context), action: "directory creation")
+        }
         let main = try jsonlFileResult(await fileSystem.joinPath([absolute, "main.jsonl"], context: context), action: "path join")
-        let storage = JsonlStorage(fileSystem: fileSystem, directory: absolute, mainPath: main, options: options)
-        try await storage.recover(context: context)
-        return storage
+        // A writer can reclaim a sidecar after recovery reads an older main file.
+        // As in v1.5.2, retry corruption only when the main file changed, with at most five attempts.
+        var attempt = 1
+        while true {
+            let storage = JsonlStorage(fileSystem: fileSystem, directory: absolute, mainPath: main, options: options)
+            do {
+                try await storage.recover(context: context)
+                return storage
+            } catch {
+                guard options.readOnly, attempt < 5, error is JsonlCorruptionError,
+                      await storage.mainChanged(context: context) else { throw error }
+                attempt += 1
+            }
+        }
     }
 
     /// Opens or creates storage through the local file system.
@@ -65,6 +80,7 @@ public actor JsonlStorage: DurableStorage {
     public func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
         await acquire(); defer { release() }
         try assertUsable()
+        if readOnly { throw JsonlStorageReadOnlyError() }
         var seqs: [Seq] = []
         var commits: [JsonlEncoded] = []
         var replacements: [(file: String, content: String)] = []
@@ -168,6 +184,11 @@ public actor JsonlStorage: DurableStorage {
         if closed { return }
         closed = true
         try await memory.close(context: context)
+    }
+
+    func mainChanged(context: ChordContext) async -> Bool {
+        guard case .success(let info) = await fileSystem.fileInfo(mainPath, context: context) else { return false }
+        return info.size != mainSize
     }
 
     func resolveFile(_ file: String, context: ChordContext) async throws -> String {

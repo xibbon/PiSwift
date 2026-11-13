@@ -141,14 +141,15 @@ internal final class Submissions: Sendable {
     private let storage: any DurableStorage
     private let now: @Sendable () -> Int64
     private let settings: @Sendable () -> Settings
-    private let resume: @Sendable () -> Void
+    private let readOnly: Bool
+    private let resume: @Sendable () throws -> Void
     private let waiters = Waiters<SubmissionID, SettledSubmission>()
     private struct State: Sendable { var closed = false; var subscriptions: [SessionSubscription] = [] }
     private let state = Mutex(State())
     internal func hasPendingWait(id: SubmissionID) -> Bool { waiters.keys.contains(id) }
     init(session: Session, storage: any DurableStorage, now: @escaping @Sendable () -> Int64,
-         settings: @escaping @Sendable () -> Settings, resume: @escaping @Sendable () -> Void) throws {
-        self.session = session; self.storage = storage; self.now = now; self.settings = settings; self.resume = resume
+         settings: @escaping @Sendable () -> Settings, readOnly: Bool = false, resume: @escaping @Sendable () throws -> Void) throws {
+        self.session = session; self.storage = storage; self.now = now; self.settings = settings; self.readOnly = readOnly; self.resume = resume
         let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in
             self?.state.withLock { $0.closed = true }; self?.waiters.rejectAll(session.failure.map { SessionFailed($0) } ?? closedError())
@@ -160,7 +161,8 @@ internal final class Submissions: Sendable {
         // JavaScript reserves the Session line before the resumed scheduler
         // gets a turn. Swift tasks can run at once, so start progress when
         // this admission returns or throws, after its Session decision.
-        defer { resume() }
+        if readOnly { throw ReadOnlySession("running tasks") }
+        defer { try? resume() }
         let id = try await session.commit({ tx in
             try await admitSubmission(tx: tx, conversationId: conversationId, draft: draft, now: now(), queueModes: settings())
         }, context: context)
@@ -171,7 +173,7 @@ internal final class Submissions: Sendable {
     func admit(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft) async throws -> SubmissionID {
         try tx.assertCanAdmitSubmission(in: session)
         try tx.context.abortSignal?.throwIfAborted()
-        resume()
+        try resume()
         return try await admitSubmission(tx: tx, conversationId: conversationId, draft: draft,
                                          now: now(), queueModes: settings())
     }
@@ -188,7 +190,7 @@ internal final class Submissions: Sendable {
         return record
     }
     func wait(id: SubmissionID, context: ChordContext) async throws -> SettledSubmission {
-        resume()
+        try resume()
         let promise: HarnessPromise<SettledSubmission> = try await session.readOnLine {
             try context.abortSignal?.throwIfAborted()
             guard let record = try await storage.submission(id, context: context) else { throw SessionError.message("Submission \(id.rawValue) does not exist") }

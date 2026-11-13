@@ -83,7 +83,8 @@ public func envConformanceCases(
             ("watch skips excluded entries and reports a rename out of them", 30_000, EnvChecks.case13),
             ("watch keeps recursive coverage where a non-recursive target overlaps", 30_000, EnvChecks.case14),
             ("watch follows a directory replaced at the same path", 30_000, EnvChecks.case15),
-            ("watch stops reporting once closed", 30_000, EnvChecks.case16),
+            // v1.5.2 D9: durable/src/testing/env-conformance.ts:386.
+            ("watch stops reporting once stopped", 30_000, EnvChecks.case16),
         ]
     }
     if capabilities.exec {

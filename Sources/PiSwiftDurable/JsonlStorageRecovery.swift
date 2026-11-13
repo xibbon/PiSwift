@@ -4,13 +4,14 @@ import PiSwiftChord
 extension JsonlStorage {
     func recover(context: ChordContext) async throws {
         let main = try await readLines(path: mainPath, name: "main.jsonl", context: context) { try jsonlParseMain($0, line: $1) }
+        mainSize = main.size
         var previousSeq: Int64 = 0
         for line in main.lines {
             guard line.value.seq.rawValue > previousSeq else { throw jsonlCorruption("Commit sequence does not strictly increase in main.jsonl") }
             previousSeq = line.value.seq.rawValue
         }
         let listed = try jsonlFileResult(await fileSystem.listDir(directory, context: context), action: "directory listing")
-        for info in listed where info.kind == .file && jsonlSidecarName(info.name, reclaim: true) {
+        for info in listed where !readOnly && info.kind == .file && jsonlSidecarName(info.name, reclaim: true) {
             _ = await fileSystem.remove(info.path, options: .init(force: true), context: context)
         }
         let files = listed.filter { $0.kind == .file && jsonlSidecarName($0.name) }.map(\.name).sorted()
@@ -126,7 +127,7 @@ extension JsonlStorage {
                     confirmedLines.append(line)
                 } else if unconfirmedAt == nil { unconfirmedAt = line.start }
             }
-            if let unconfirmedAt {
+            if let unconfirmedAt, !readOnly {
                 try jsonlFileResult(await fileSystem.truncateFile(parsed.path, size: unconfirmedAt, context: context), action: "tail truncation of \(file)")
             }
             // A filename can contain a number outside the safe ID range. It remains a parsed
@@ -144,7 +145,7 @@ extension JsonlStorage {
                 replacements.append((file, try retained.map { try $0.value.object.jsonText() + "\n" }.joined()))
             }
         }
-        await reclaimSidecars(replacements, context: context)
+        if !readOnly { await reclaimSidecars(replacements, context: context) }
         currentOnlyDocuments = currentOnly
         liveTaskSidecars = Set(finalTaskIsLive.filter(\.value).map(\.key))
     }
@@ -154,13 +155,15 @@ extension JsonlStorage {
         switch await fileSystem.readBinaryFile(path, context: context) {
         case .success(let value): bytes = value
         case .failure(let error):
-            if error.code == .notFound { return .init(path: path, lines: []) }
+            if error.code == .notFound { return .init(path: path, lines: [], size: 0) }
             throw JsonlFileError(action: "read of \(name)", cause: error)
         }
         var completeSize = bytes.count
         if completeSize > 0, bytes[completeSize - 1] != 0x0a {
             completeSize = bytes.lastIndex(of: 0x0a).map { $0 + 1 } ?? 0
-            try jsonlFileResult(await fileSystem.truncateFile(path, size: Int64(completeSize), context: context), action: "torn-line truncation of \(name)")
+            if !readOnly {
+                try jsonlFileResult(await fileSystem.truncateFile(path, size: Int64(completeSize), context: context), action: "torn-line truncation of \(name)")
+            }
         }
         var lines: [JsonlLine<Value>] = []
         var start = 0, lineNumber = 1
@@ -174,7 +177,7 @@ extension JsonlStorage {
             lines.append(.init(value: try parse(text, lineNumber), start: Int64(start)))
             start = end + 1; lineNumber += 1
         }
-        return .init(path: path, lines: lines)
+        return .init(path: path, lines: lines, size: Int64(bytes.count))
     }
 }
 

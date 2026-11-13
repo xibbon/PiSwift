@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 #if os(macOS)
 import Foundation
 import Synchronization
@@ -19,7 +20,7 @@ private final class NativeScopeLog: Sendable {
         .init(streamStarted: { paths in self.state.withLock { $0.roots.append(paths) } },
               batchDelivered: { paths in self.state.withLock { $0.callbacks.append(paths) } })
     }
-    func append(_ change: WatchChange) {
+    func append(_ change: FileChange) {
         if case .paths(let paths) = change { state.withLock { $0.paths += paths } }
     }
     func wait(_ predicate: @Sendable () -> Bool) async throws {
@@ -73,8 +74,8 @@ struct LocalExecutionNativeScopeTests {
                 try await env.createDir("later", options: nil, context: .background).get()
                 try await log.wait { wrote.withLock { $0 } && log.paths.contains(marker) }
                 #expect(watcher.mode == .native)
-                await watcher.close(context: .background)
-            } catch { await watcher.close(context: .background); throw error }
+                await watcher.stop(context: .background)
+            } catch { await watcher.stop(context: .background); throw error }
         }
     }
 
@@ -98,8 +99,8 @@ struct LocalExecutionNativeScopeTests {
                 try await env.writeFile("later/deep/file.txt", content: .text("two"), context: .background).get()
                 try await log.wait { log.paths.dropFirst(before).contains(target) }
                 #expect(watcher.mode == .native)
-                await watcher.close(context: .background)
-            } catch { await watcher.close(context: .background); throw error }
+                await watcher.stop(context: .background)
+            } catch { await watcher.stop(context: .background); throw error }
         }
     }
 
@@ -120,8 +121,8 @@ struct LocalExecutionNativeScopeTests {
                 try await env.writeFile("project/new.txt", content: .text("new"), context: .background).get()
                 try await log.wait { log.paths.contains(marker) }
                 #expect(watcher.mode == .native)
-                await watcher.close(context: .background)
-            } catch { await watcher.close(context: .background); throw error }
+                await watcher.stop(context: .background)
+            } catch { await watcher.stop(context: .background); throw error }
         }
     }
 
@@ -144,11 +145,11 @@ struct LocalExecutionNativeScopeTests {
                 try await flush(watcher)
                 #expect(!log.callbacks.dropFirst(before).joined().contains { $0.hasPrefix(outside + "/") })
                 #expect(!log.paths.contains { $0.hasPrefix(outside + "/") })
-                await watcher.close(context: .background)
-                await observer.close(context: .background)
+                await watcher.stop(context: .background)
+                await observer.stop(context: .background)
             } catch {
-                await watcher.close(context: .background)
-                await observer.close(context: .background)
+                await watcher.stop(context: .background)
+                await observer.stop(context: .background)
                 throw error
             }
         }
@@ -164,7 +165,7 @@ struct LocalExecutionNativeScopeTests {
                                            .init(path: env.cwd + "/project/sub", recursive: true),
                                            .init(path: env.cwd + "/project/sub/file.txt")], log: log)
             #expect(log.roots == [[project]])
-            await watcher.close(context: .background)
+            await watcher.stop(context: .background)
         }
     }
 }

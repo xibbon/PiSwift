@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 #if os(macOS)
 import Darwin
 import Dispatch
@@ -10,7 +11,7 @@ import PiSwiftChord
 private final class NativeBudgetLog: Sendable {
     private let state = Mutex<[String]>([])
     var paths: [String] { state.withLock { $0 } }
-    func append(_ change: WatchChange) {
+    func append(_ change: FileChange) {
         if case .paths(let paths) = change { state.withLock { $0 += paths } }
     }
     func wait(for path: String) async throws {
@@ -93,7 +94,7 @@ private struct NativeBudgetDeadline: Error {}
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
             let cpu = Double(cpuNanos() - cpuStart) / 1_000_000
             print("E-WATCH 20000-file write reportMs=\(elapsed) processCpuMs=\(cpu)")
-            await watcher.close(context: .background)
+            await watcher.stop(context: .background)
             let deadline = ContinuousClock.now.advanced(by: .seconds(5))
             while ownedFDs(under: physical) > 0 && ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
@@ -102,7 +103,7 @@ private struct NativeBudgetDeadline: Error {}
             let totalAfterClose = openFDs().count
             print("E-WATCH descriptors totalAfterClose=\(totalAfterClose) ownedBefore=\(ownedBefore) ownedAfterClose=\(ownedAfterClose)")
             #expect(ownedAfterClose == ownedBefore)
-        } catch { await watcher.close(context: .background); throw error }
+        } catch { await watcher.stop(context: .background); throw error }
     }
 
     @Test("zero vnode allowance keeps native FSEvents working")
@@ -120,8 +121,8 @@ private struct NativeBudgetDeadline: Error {}
             try Data("new".utf8).write(to: marker)
             try await log.wait(for: marker.path)
             #expect(watcher.mode == .native)
-            await watcher.close(context: .background)
-        } catch { await watcher.close(context: .background); throw error }
+            await watcher.stop(context: .background)
+        } catch { await watcher.stop(context: .background); throw error }
     }
 
     @Test("ten thousand file writes share a pending native scan")
@@ -155,8 +156,8 @@ private struct NativeBudgetDeadline: Error {}
             print("E-WATCH burst writes=10000 scans=\(scans) vnodeTasks=\(tasks)")
             #expect(tasks <= 2)
             #expect(scans <= 3)
-            await watcher.close(context: .background)
-        } catch { await watcher.close(context: .background); throw error }
+            await watcher.stop(context: .background)
+        } catch { await watcher.stop(context: .background); throw error }
     }
 }
 #endif

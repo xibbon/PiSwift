@@ -3,14 +3,14 @@ import PiSwiftDurable
 import Synchronization
 
 internal final class EnvWatchLog: Sendable {
-    private let state = Mutex<[WatchChange]>([])
-    var changes: [WatchChange] { state.withLock { $0 } }
-    func append(_ change: WatchChange) { state.withLock { $0.append(change) } }
-    static func covers(_ change: WatchChange, _ path: String) -> Bool {
+    private let state = Mutex<[FileChange]>([])
+    var changes: [FileChange] { state.withLock { $0 } }
+    func append(_ change: FileChange) { state.withLock { $0.append(change) } }
+    static func covers(_ change: FileChange, _ path: String) -> Bool {
         switch change {
         case .overflow: return true
         case .paths(let paths): return paths.contains { path == $0 || path.hasPrefix($0 + "/") || path.hasPrefix($0 + "\\") }
-        case .error: return false
+        case .failed: return false
         }
     }
     func wait(for path: String, from: Int) async throws {
@@ -27,7 +27,7 @@ internal final class EnvWatchLog: Sendable {
 internal struct EnvWatchChecks: Sendable {
     let env: any ExecutionEnv
     let log: EnvWatchLog
-    var changes: [WatchChange] { log.changes }
+    var changes: [FileChange] { log.changes }
     func absolute(_ path: String) async throws -> String {
         try await env.absolutePath(path, context: EnvChecks.context).get()
     }
@@ -44,8 +44,8 @@ extension EnvChecks {
         let watcher = try await env.watch(targets, onChange: { log.append($0) }, context: Self.context).get()
         do {
             try await body(EnvWatchChecks(env: env, log: log))
-            await watcher.close(context: Self.context)
-        } catch { await watcher.close(context: Self.context); throw error }
+            await watcher.stop(context: Self.context)
+        } catch { await watcher.stop(context: Self.context); throw error }
     }
 
     static func case9(_ h: Self) async throws {
@@ -120,15 +120,16 @@ extension EnvChecks {
         }
     }
 
+    // v1.5.2 D9: durable/src/testing/env-conformance.ts:386–397; stop is idempotent.
     static func case16(_ h: Self) async throws {
         let log = EnvWatchLog()
         let watcher = try await h.env.watch([.init(path: "file.txt")], onChange: { log.append($0) }, context: context).get()
         try EnvAssertions.ok(watcher.mode == .native || watcher.mode == .polling, "Watcher reports its mode")
-        await watcher.close(context: context); await watcher.close(context: context)
+        await watcher.stop(context: context); await watcher.stop(context: context)
         // A second live watch establishes that the change was observed without a fixed sleep.
         try await h.watching([.init(path: "file.txt")]) { watch in
             try await watch.expectChange("file.txt") { try await h.write("file.txt", "x") }
-            try EnvAssertions.ok(log.changes.isEmpty, "Closed watcher reported a change")
+            try EnvAssertions.ok(log.changes.isEmpty, "Stopped watcher reported a change")
         }
     }
 
