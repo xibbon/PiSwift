@@ -378,8 +378,6 @@ private final class RuntimeController: DurableHostController {
         do { try await runtime.abort() }
         catch { report(error) }
     }
-    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
-    func retryTask(_ id: TaskID) async { await command { try await $0.retryTask(id) } }
     func abortTask(_ id: TaskID) async {
         guard queue.withLock({ !$0.sealed }), runtime.harness.failure == nil else { return }
         do { try await runtime.abortTask(id) }
@@ -579,11 +577,6 @@ private actor DurableRuntime {
         }
     }
     func abort() async throws { try assertWritable(); try await current.abort(context: .background) }
-    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
-    func retryTask(_ id: TaskID) async throws {
-        try assertOpen()
-        try await harness.retryTask(id: id, context: .background)
-    }
     func abortTask(_ id: TaskID) async throws {
         try assertWritable()
         _ = try await harness.abortTask(id: id, context: .background)

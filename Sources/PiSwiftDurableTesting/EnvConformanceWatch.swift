@@ -3,9 +3,18 @@ import PiSwiftDurable
 import Synchronization
 
 internal final class EnvWatchLog: Sendable {
-    private let state = Mutex<[FileChange]>([])
-    var changes: [FileChange] { state.withLock { $0 } }
-    func append(_ change: FileChange) { state.withLock { $0.append(change) } }
+    private struct State: Sendable {
+        var changes: [FileChange] = []
+        var listener: AsyncStream<Void>.Continuation?
+    }
+    private let state = Mutex(State())
+    var changes: [FileChange] { state.withLock { $0.changes } }
+    func append(_ change: FileChange) {
+        state.withLock { value in
+            value.changes.append(change)
+            value.listener?.yield(())
+        }
+    }
     static func covers(_ change: FileChange, _ path: String) -> Bool {
         switch change {
         case .overflow: return true
@@ -14,13 +23,28 @@ internal final class EnvWatchLog: Sendable {
         }
     }
     func wait(for path: String, from: Int) async throws {
-        let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while true {
+        let (events, listener) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        state.withLock { value in
+            value.listener = listener
+            if value.changes.dropFirst(from).contains(where: { Self.covers($0, path) }) {
+                listener.yield(())
+            }
+        }
+        // This is only a hang guard. A reported change wakes the stream at once.
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(30))
+            listener.finish()
+        }
+        defer {
+            deadline.cancel()
+            state.withLock { $0.listener = nil }
+            listener.finish()
+        }
+        for await _ in events {
             let updates = Array(changes.dropFirst(from))
             if updates.contains(where: { Self.covers($0, path) }) { return }
-            if clock.now > deadline { throw EnvConformanceFailure("No change reported \(path); got \(updates)") }
-            try await clock.sleep(for: .milliseconds(20))
         }
+        throw EnvConformanceFailure("No change reported \(path); got \(Array(changes.dropFirst(from)))")
     }
 }
 

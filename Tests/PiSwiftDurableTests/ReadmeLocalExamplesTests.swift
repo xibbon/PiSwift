@@ -241,7 +241,7 @@ import PiSwiftDurableTesting
         let storage = try await JsonlStorage.open(directory: sessionDirectory,
             options: .init(fsync: true), context: context)
         let rootID = rootConversationID
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootID))],
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootID))],
             context: context)
         try await storage.close(context: context)
         let reopened = try await JsonlStorage.open(directory: sessionDirectory, context: context)

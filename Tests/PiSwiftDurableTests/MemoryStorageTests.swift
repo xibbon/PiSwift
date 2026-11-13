@@ -6,7 +6,7 @@ extension PiSwiftDurableTests {
     @Test("does not expose retained state through a prepared commit")
     func preparedCommitDetachedValues() async throws {
         let storage = MemoryStorage()
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background)
         let entryID = try EntryID(2)
         let prepared = try await storage.prepareCommit([
             .entry(value: EntryRecord(id: entryID, conversationId: rootConversationID, kind: "test", data: ["nested": [1]])),

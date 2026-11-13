@@ -101,7 +101,7 @@ private func d9Head(_ path: String) throws -> SqliteValue? {
         let id = try TaskID(500)
         let record = TaskRecord(id: id, conversationId: rootConversationID, kind: "d9.running", version: 1,
             input: .number(0), state: .running(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())), restarts: 3)
-        _ = try await storage.commit([.task(value: record)], context: .background)
+        _ = try await storage.commitOne([.task(value: record)], context: .background)
         let before = try d9Head(path)
         let wakes = SessionTestLog<HarnessWake>()
         let viewer = try await d9Open(SqliteStorage.open(path: path), wakes: wakes)
@@ -116,9 +116,9 @@ private func d9Head(_ path: String) throws -> SqliteValue? {
         _ = await doc.stop()
         // Read-only records bypass the Session cache (session.ts:306,320).
         let changed = record.replacing(state: .pending(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())))
-        _ = try await storage.commit([.task(value: changed)], context: .background)
+        _ = try await storage.commitOne([.task(value: changed)], context: .background)
         #expect(try await viewer.getTask(id: id, context: .background) == changed)
-        _ = try await storage.commit([.task(value: record)], context: .background)
+        _ = try await storage.commitOne([.task(value: record)], context: .background)
         let afterExternal = try d9Head(path)
         try await viewer.close(context: .background)
         #expect(try d9Head(path) == afterExternal)
@@ -181,7 +181,7 @@ private func d9Head(_ path: String) throws -> SqliteValue? {
         let storage = try await JsonlStorage.open(directory: directory.path)
         let record = TaskRecord(id: try TaskID(20), conversationId: rootConversationID, kind: "d9.running",
             version: 1, input: .number(0), state: .running(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())))
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)), .task(value: record)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), .task(value: record)], context: .background)
         try await storage.close(context: .background)
         let before = try d9Bytes(directory)
         let reopened = try await JsonlStorage.open(directory: directory.path, options: .init(readOnly: storageReadOnly))
@@ -219,7 +219,7 @@ private func d9Head(_ path: String) throws -> SqliteValue? {
         try setup.registry.install(Extension(name: "d9", tasks: [AnyTaskDefinition(definition)]))
         let record = TaskRecord(id: try TaskID(20), conversationId: rootConversationID, kind: definition.name,
             version: 1, input: .number(0), state: .pending(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())), abandonOnRestart: true)
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)), .task(value: record)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), .task(value: record)], context: .background)
         let viewer = try await d9Open(storage, setup: setup, wakes: wakes)
         try setup.registry.install(Extension(name: "d9", tasks: [AnyTaskDefinition(definition)]))
         _ = try await viewer.inspect(context: .background)

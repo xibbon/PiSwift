@@ -93,7 +93,7 @@ struct SqliteIsolationTests {
     @Test func activeMultiQueryReadFinishesBeforeConcurrentClose() async throws {
         let gate = ReadGate()
         let storage = try await SqliteStorage.open(executor: GatedSqliteExecutor(gate: gate))
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)), .entry(value: EntryRecord(id: EntryID(2), conversationId: rootConversationID, kind: "probe"))], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), .entry(value: EntryRecord(id: EntryID(2), conversationId: rootConversationID, kind: "probe"))], context: .background)
         gate.arm()
         let read = Task { try await storage.scanEntries(.init(conversationId: rootConversationID), limit: 10, cursor: nil, context: .background) }
         try await gate.waitUntil { $0.admitted }
@@ -114,13 +114,13 @@ struct SqliteIsolationTests {
         let storage = try await SqliteStorage.open(executor: GatedSqliteExecutor(gate: gate))
         let create: JSONValue = ["type": "document.create", "record": ["id": 5, "kind": "replaced", "scope": ["kind": "session"]], "content": ["kind": "base", "version": 1, "value": ["value": 1]]]
         let replace: JSONValue = ["type": "document.change", "id": 5, "content": ["kind": "base", "version": 1, "value": ["value": 2]]]
-        _ = try await storage.commit([create.decode(StorageWrite.self)], context: .background)
+        _ = try await storage.commitOne([create.decode(StorageWrite.self)], context: .background)
         gate.arm()
         let read = Task { try await storage.document(DocumentID(5), at: .current, context: .background) }
         try await gate.waitUntil { $0.admitted }
         let commit = Task {
             gate.state.withLock { $0.outsideStarted = true }
-            return try await storage.commit([replace.decode(StorageWrite.self)], context: .background)
+            return try await storage.commitOne([replace.decode(StorageWrite.self)], context: .background)
         }
         try await gate.waitUntil { $0.outsideStarted }
         gate.release.signal()
@@ -133,7 +133,7 @@ struct SqliteIsolationTests {
     @Test func injectedRollbackFailureUsesSqliteRollbackError() async throws {
         let storage = try await SqliteStorage.open(executor: GatedSqliteExecutor(gate: ReadGate()))
         await storage.escapeNextCommit()
-        await #expect(throws: SqliteRollbackError.self) { _ = try await storage.commit([], context: .background) }
+        await #expect(throws: SqliteRollbackError.self) { _ = try await storage.commitOne([], context: .background) }
         try await storage.close(context: .background)
     }
 
@@ -142,6 +142,6 @@ struct SqliteIsolationTests {
         await storage.failClose()
         await #expect(throws: IsolationTestError.closeFailed) { try await storage.close(context: .background) }
         await #expect(throws: IsolationTestError.closeFailed) { try await storage.close(context: .background) }
-        await #expect(throws: DurableStorageError.closed(backend: "SqliteStorage")) { _ = try await storage.commit([], context: .background) }
+        await #expect(throws: DurableStorageError.closed(backend: "SqliteStorage")) { _ = try await storage.commitOne([], context: .background) }
     }
 }

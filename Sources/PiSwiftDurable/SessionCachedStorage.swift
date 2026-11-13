@@ -180,9 +180,6 @@ internal final class SessionCachedStorage: DurableStorage {
             }
         }
     }
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
-        try await backend.commit(writes, context: context)
-    }
     func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
         try await backend.commit(batches, receive: receive, context: context)
     }

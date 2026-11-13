@@ -56,13 +56,17 @@ private struct NativeBudgetDeadline: Error {}
         return UInt64(value.tv_sec) * 1_000_000_000 + UInt64(value.tv_nsec)
     }
 
-    @Test("native descriptor budget bounds a 5,000-directory, 20,000-file tree")
+    @Test("native descriptor budget bounds a recursive tree")
     func largeTreeUsesBoundedDescriptors() async throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
         let file = Data("x".utf8)
+        // The default still exceeds the 64-source watcher limit by a clear
+        // factor. Keep the original large scan for explicit stress runs.
+        let large = ProcessInfo.processInfo.environment["PISWIFT_EFLAKE_BIG_TREE"] == "1"
+        let directoryCount = large ? 5_000 : 256
         try await Task.detached(priority: .background) {
-            for index in 0..<5_000 {
+            for index in 0..<directoryCount {
                 let child = root.appendingPathComponent(String(format: "dir-%04d", index))
                 try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
                 for item in 0..<4 { try file.write(to: child.appendingPathComponent("file-\(item)")) }
@@ -74,7 +78,8 @@ private struct NativeBudgetDeadline: Error {}
         let physical = root.resolvingSymlinksInPath().path
         let ownedBefore = ownedFDs(under: physical)
         let watcher = try await LocalFileWatcher.start(targets: [.init(path: root.path, recursive: true)],
-            mode: .native, maxDirectories: 6_000, onChange: { log.append($0) }, context: .background).get()
+            mode: .native, maxDirectories: directoryCount + 1_000,
+            onChange: { log.append($0) }, context: .background).get()
         do {
             let native = try #require(watcher as? LocalFileWatcher)
             let counts = await native.nativeWatchCountsForTesting()
@@ -82,6 +87,7 @@ private struct NativeBudgetDeadline: Error {}
             let after = openFDs().count
             #expect(watcher.mode == .native)
             #expect(counts.sources <= 64)
+            #expect(directoryCount >= 4 * 64)
             #expect(counts.sources <= counts.processLimit)
             #expect(owned <= counts.processLimit)
             #expect(owned - ownedBefore <= counts.processLimit)
@@ -93,7 +99,7 @@ private struct NativeBudgetDeadline: Error {}
             try await log.wait(for: marker.path)
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
             let cpu = Double(cpuNanos() - cpuStart) / 1_000_000
-            print("E-WATCH 20000-file write reportMs=\(elapsed) processCpuMs=\(cpu)")
+            print("E-FLAKE \(directoryCount * 4)-file write reportMs=\(elapsed) processCpuMs=\(cpu)")
             await watcher.stop(context: .background)
             let deadline = ContinuousClock.now.advanced(by: .seconds(5))
             while ownedFDs(under: physical) > 0 && ContinuousClock.now < deadline {

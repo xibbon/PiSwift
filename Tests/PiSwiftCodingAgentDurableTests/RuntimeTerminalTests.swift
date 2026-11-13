@@ -96,7 +96,7 @@ private struct HostDirectory: Sendable {
         #expect(result.view.current().notices.last?.category == .sessionFailed)
         #expect(result.view.current().notices.last?.taskId == nil)
         #expect(result.view.current().notices.last?.taskKind == nil)
-        #expect(result.view.current().parkedTasks.isEmpty)
+        #expect(result.view.current().blockedTasks.isEmpty)
         let reopened = try await selectSession(directory.cwd, continueSession: true, agentDirectory: directory.agent)
         reopened.release()
     }

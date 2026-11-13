@@ -110,10 +110,14 @@ async function resume(kind, path, scenario, ids, rootId) {
     onReport: report => reports.push(json(report)) }, context);
   const afterOpen = json(await harness.getTask(ids.task, context));
   harness.resume();
-  const terminal = await Promise.race([
-    harness.waitForTask(ids.task, context),
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${scenario.name} did not settle`)), 10000)),
-  ]);
+  let deadline;
+  let terminal;
+  try {
+    terminal = await Promise.race([
+      harness.waitForTask(ids.task, context),
+      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error(`${scenario.name} did not settle`)), 10000); }),
+    ]);
+  } finally { clearTimeout(deadline); }
   if (ids.owner !== undefined) await harness.waitForTask(ids.owner, context);
   const after = await snapshot(storage, ids, rootId);
   const live = json(await harness.snapshot(LiveDoc, rootId, context));

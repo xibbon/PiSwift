@@ -9,7 +9,7 @@ struct JsonlRecoveryTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(id, value: ["text": "kept"])], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(id, value: ["text": "kept"])], context: .background)
             let name = jsonlDocName(id)
             let sidecar = try Data(contentsOf: directory.appendingPathComponent(name))
             let main = try Data(contentsOf: directory.appendingPathComponent("main.jsonl"))
@@ -19,7 +19,7 @@ struct JsonlRecoveryTests {
             let reopened = try await jsonlOpen(directory)
             #expect(try Data(contentsOf: directory.appendingPathComponent(name)).count == sidecar.count)
             #expect(try Data(contentsOf: directory.appendingPathComponent("main.jsonl")).count == main.count)
-            #expect(try await reopened.commit([.documentChange(id: id, content: .delta(version: 1, ops: []))], context: .background).rawValue == 3)
+            #expect(try await reopened.commitOne([.documentChange(id: id, content: .delta(version: 1, ops: []))], context: .background).rawValue == 3)
             try await reopened.close(context: .background)
         }
     }
@@ -27,8 +27,8 @@ struct JsonlRecoveryTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: TaskID = try await storage.mintId()
-            _ = try await storage.commit([.task(value: jsonlTask(id))], context: .background)
-            _ = try await storage.commit([.task(value: jsonlTask(id, terminal: true))], context: .background)
+            _ = try await storage.commitOne([.task(value: jsonlTask(id))], context: .background)
+            _ = try await storage.commitOne([.task(value: jsonlTask(id, terminal: true))], context: .background)
             let name = jsonlTaskName(id)
             #expect(!jsonlExists(directory, name))
             let line: JSONValue = ["format": 1, "type": "record", "seq": 4, "ordinal": 0,
@@ -39,7 +39,7 @@ struct JsonlRecoveryTests {
             #expect(try await reopened.task(id, context: .background) == jsonlTask(id, terminal: true))
             // v1.5.2 D2: jsonl-storage.test.ts:1123-1124 stores a real conversation.
             let next: ConversationID = try await reopened.mintId()
-            #expect(try await reopened.commit([.conversation(value: ConversationRecord(id: next))], context: .background).rawValue == 4)
+            #expect(try await reopened.commitOne([.conversation(value: ConversationRecord(id: next))], context: .background).rawValue == 4)
             try await reopened.close(context: .background)
         }
     }
@@ -47,7 +47,7 @@ struct JsonlRecoveryTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(id, value: [:])], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(id, value: [:])], context: .background)
             try Data().write(to: directory.appendingPathComponent(jsonlDocName(id)))
             try await jsonlExpectError("Missing confirmed sidecar record") { _ = try await jsonlOpen(directory) }
         }
@@ -56,8 +56,8 @@ struct JsonlRecoveryTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(id)], context: .background)
-            _ = try await storage.commit([jsonlDelta(id, 1)], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(id)], context: .background)
+            _ = try await storage.commitOne([jsonlDelta(id, 1)], context: .background)
             let name = jsonlDocName(id)
             let lines = try jsonlLines(directory, name)
             #expect(lines.count == 2)
@@ -80,7 +80,7 @@ struct JsonlRecoveryTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(id, value: [:])], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(id, value: [:])], context: .background)
             let name = jsonlDocName(id)
             var record = try JSONValue(jsonText: #require(jsonlLines(directory, name).first))
             var object = try #require(record.objectValue)

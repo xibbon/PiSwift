@@ -33,15 +33,31 @@ private func localEnvConformanceCases(_ mode: WatchMode) -> [EnvConformanceCase]
 }
 
 private final class LocalConformanceWatchLog: Sendable {
-    private let storage = Mutex<[FileChange]>([])
-    var changes: [FileChange] { storage.withLock { $0 } }
-    func append(_ change: FileChange) { storage.withLock { $0.append(change) } }
-    func wait(_ condition: @Sendable ([FileChange]) -> Bool) async throws {
-        let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !condition(changes) {
-            if clock.now > deadline { throw EnvConformanceFailure("Watch deadline expired; got \(changes)") }
-            try await clock.sleep(for: .milliseconds(20))
+    private struct State: Sendable {
+        var changes: [FileChange] = []
+        var listener: AsyncStream<Void>.Continuation?
+    }
+    private let storage = Mutex(State())
+    var changes: [FileChange] { storage.withLock { $0.changes } }
+    func append(_ change: FileChange) {
+        storage.withLock { value in
+            value.changes.append(change)
+            value.listener?.yield(())
         }
+    }
+    func wait(_ condition: @Sendable ([FileChange]) -> Bool) async throws {
+        // E-FLAKE: Wait for a retained callback. The test time limit detects a lost callback.
+        let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { listener in
+            storage.withLock { value in
+                value.listener = listener
+                if condition(value.changes) { listener.yield(()) }
+            }
+        }
+        defer { storage.withLock { value in value.listener?.finish(); value.listener = nil } }
+        for await _ in updates {
+            if condition(changes) { return }
+        }
+        throw CancellationError()
     }
 }
 
@@ -57,7 +73,7 @@ struct LocalExecutionConformanceTests {
     func polling(_ testCase: EnvConformanceCase) async throws { try await testCase.run() }
 
     // v1.5.2 D9: durable/test/env-node-conformance.test.ts:63–88, including the failed tag at :84.
-    @Test("refuses a tree over the directory budget and stops with an error when one grows past it",
+    @Test("refuses a tree over the directory budget and stops with an error when one grows past it", .timeLimit(.minutes(1)),
           arguments: [WatchMode.native, .polling])
     func directoryBudget(_ mode: WatchMode) async throws {
         let directory = try localConformanceDirectory()
@@ -117,7 +133,7 @@ struct LocalExecutionConformanceTests {
     }
 
     #if os(macOS)
-    @Test("native watch failure emits overflow and continues with polling")
+    @Test("native watch failure emits overflow and continues with polling", .timeLimit(.minutes(1)))
     func nativeFailureFallsBackToPolling() async throws {
         let directory = try localConformanceDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

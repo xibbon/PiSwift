@@ -24,7 +24,7 @@ private func d2StoreLegacyRunning(_ path: URL, _ id: TaskID) async throws {
     guard case .sleeping(let checkpoint, _, _) = record.state else {
         throw TaskDefinitionError("Expected sleep before legacy conversion")
     }
-    _ = try await storage.commit([.task(value: record.replacing(state: .running(checkpoint: checkpoint)))], context: .background)
+    _ = try await storage.commitOne([.task(value: record.replacing(state: .running(checkpoint: checkpoint)))], context: .background)
     try await storage.close(context: .background)
 }
 

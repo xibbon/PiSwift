@@ -88,8 +88,11 @@ async function resume(kind, path, ids, rootId) {
   const store = await storage(kind, path);
   const harness = await Harness.open(store, { models: createModels(), registry: createRegistry(), now: () => clock }, context);
   harness.resume();
-  await Promise.race([harness.waitForTask(ids.taskId, context),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Phase did not settle')), 10000))]);
+  let deadline;
+  try {
+    await Promise.race([harness.waitForTask(ids.taskId, context),
+      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Phase did not settle')), 10000); })]);
+  } finally { clearTimeout(deadline); }
   const post = await snapshot(store, rootId);
   await harness.close(context);
   return post;

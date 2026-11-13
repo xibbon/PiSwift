@@ -9,7 +9,7 @@ import Testing
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("piswift-d9-host-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let writer = try await JsonlStorage.open(directory: directory.path)
-    _ = try await writer.commit([.conversation(value: .init(id: rootConversationID))], context: .background)
+    _ = try await writer.commit([[.conversation(value: .init(id: rootConversationID))]], receive: { _, _ in }, context: .background)
     try await writer.close(context: .background)
     let main = directory.appendingPathComponent("main.jsonl")
     let before = try Data(contentsOf: main)

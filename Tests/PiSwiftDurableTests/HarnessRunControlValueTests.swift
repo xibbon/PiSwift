@@ -134,7 +134,7 @@ import PiSwiftDurableTesting
             _ = try await appendGenerationAssistant(tx: tx, conversationId: rootConversationID, message: message)
         }, context: .background)
         let publications = Mutex<[CommitPublication]>([])
-        let listener = try session.subscribeCommits { publication, _ in publications.withLock { $0.append(publication) } }
+        let listener = try session.observeCommits(.init(advance: { publication, _ in publications.withLock { $0.append(publication) } }, end: { _ in }))
         try await session.commit({ tx in
             _ = try await appendGenerationAssistant(tx: tx, conversationId: rootConversationID, message: message)
         }, context: .background)
@@ -146,7 +146,7 @@ import PiSwiftDurableTesting
         #expect(usage.ops.contains(.set(["models", "faux/faux-1", "totalTokens"], .number(20))))
         #expect(usage.ops.allSatisfy { if case .set(_, .number) = $0 { true } else { false } })
         #expect(publication.changes.contains { if case .entry = $0 { true } else { false } })
-        listener.cancel()
+        listener.detach()
         try await session.close(context: .background)
     }
 

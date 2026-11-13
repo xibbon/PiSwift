@@ -6,7 +6,7 @@ import PiSwiftDurableTesting
 
 @Suite struct HarnessTaskStructuredRecoveryTests {
     // upstream structured:891,906,921,948,1291,1461,1490
-    @Test(arguments: ["waiting-settled", "failFast", "held-drained", "held-live", "marked-owner"])
+    @Test(.timeLimit(.minutes(1)), arguments: ["waiting-settled", "failFast", "held-drained", "held-live", "marked-owner"])
     func reopensOwnershipAndReconcilesDurableIntent(mode: String) async throws {
         let directory = try sqliteTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -38,7 +38,7 @@ import PiSwiftDurableTesting
             writes.append(.conversation(value: ConversationRecord(id: ownedConversation, owner: ConversationOwner(conversationId: rootConversationID, taskId: parent))))
             writes.append(.task(value: TaskRecord(id: grandchild, conversationId: ownedConversation, kind: "test.structured-recovery", version: 1, input: .number(2), state: .pending(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint())))))
         }
-        _ = try await storage.commit(writes, context: .background)
+        _ = try await storage.commitOne(writes, context: .background)
         try await storage.close(context: .background)
         let clock = TestClock()
         let log = SessionTestLog<Int>()
@@ -74,7 +74,15 @@ import PiSwiftDurableTesting
         if mode == "held-live" {
             try harness.resume()
             let idle = settled { try await root.waitForIdle(context: .background) }
-            try await harnessEventually { clock.pendingSleeperCount == 2 }
+            // The count remains two until this test advances the clock. Yield
+            // the executor while the recovered invocations register sleepers.
+            let deadline = ContinuousClock.now + .seconds(30)
+            while clock.pendingSleeperCount != 2 {
+                guard ContinuousClock.now < deadline else {
+                    throw TaskDefinitionError("Recovered sleepers did not register")
+                }
+                try await Task.sleep(for: .milliseconds(1))
+            }
             #expect(!idle.isSettled)
             #expect(try await harness.getTask(id: parent, context: .background)?.state.status == "completing")
             clock.advance(by: 1_000)

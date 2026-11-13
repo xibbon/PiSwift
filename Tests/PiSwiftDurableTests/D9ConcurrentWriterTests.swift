@@ -146,7 +146,7 @@ private enum D9WriterError: Error { case earlyExit, readyTimeout, exitTimeout, w
         try await jsonlRoot(writer)
         let taskId: TaskID = try await writer.mintId()
         #expect(taskId.rawValue == 2)
-        _ = try await writer.commit([.task(value: jsonlTask(taskId, phase: "initial"))], context: .background)
+        _ = try await writer.commitOne([.task(value: jsonlTask(taskId, phase: "initial"))], context: .background)
         let opens = ProcessInfo.processInfo.environment["PISWIFT_D9_FULL"] == "1" ? 2_000 : 200
         let (viewer, output) = try d9NodeViewer(live, signal: root.appendingPathComponent("viewer-ready"), opens: opens)
         defer { if viewer.isRunning { viewer.terminate() } }
@@ -176,7 +176,7 @@ private enum D9WriterError: Error { case earlyExit, readyTimeout, exitTimeout, w
         let controlWriter = try await JsonlStorage.open(directory: control.path)
         try await jsonlRoot(controlWriter)
         let controlTaskId: TaskID = try await controlWriter.mintId()
-        _ = try await controlWriter.commit([.task(value: jsonlTask(controlTaskId, phase: "initial"))], context: .background)
+        _ = try await controlWriter.commitOne([.task(value: jsonlTask(controlTaskId, phase: "initial"))], context: .background)
         for i in 1...count {
             _ = try await controlWriter.commit([
                 [.task(value: jsonlTask(controlTaskId, phase: "\(i).a"))],

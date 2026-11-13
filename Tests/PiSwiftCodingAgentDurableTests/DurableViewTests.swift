@@ -78,7 +78,7 @@ func agentOfReturnsEmptyStateWhenDocumentCannotBeDecoded(document: JSONObject) {
     #expect(OpenDurableOptions().continueSession == false)
     #expect(OpenDurableOptions(cwd: "/project", continueSession: true).continueSession)
     #expect(view.blockedTasks.isEmpty)
-    #expect(view.parkedTasks.isEmpty)
+    #expect(view.blockedTasks.isEmpty)
     #expect(view.sleepingTasks.isEmpty)
     #expect(view.activity == .idle)
     #expect(view.queuedInputs.isEmpty)

@@ -52,13 +52,13 @@ private actor TransactionProbe {
 struct SqliteFacadeTests {
     @Test func preparesStatementsOnceAcrossStorageTransactions() async throws {
         let storage = try await SqliteStorage.open(path: ":memory:")
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background)
         let entries = try (2...101).map { id in StorageWrite.entry(value: EntryRecord(id: try EntryID(Int64(id)), conversationId: rootConversationID, kind: "cached")) }
-        _ = try await storage.commit(entries, context: .background)
-        _ = try await storage.commit([.entry(value: EntryRecord(id: EntryID(102), conversationId: rootConversationID, kind: "cached-again"))], context: .background)
+        _ = try await storage.commitOne(entries, context: .background)
+        _ = try await storage.commitOne([.entry(value: EntryRecord(id: EntryID(102), conversationId: rootConversationID, kind: "cached-again"))], context: .background)
         #expect(try await storage.entry(EntryID(2), context: .background)?.entry.kind == "cached")
         #expect(try await storage.entry(EntryID(102), context: .background)?.entry.kind == "cached-again")
-        await #expect(throws: DurableStorageError.idAlreadyOwned(id: 1, recordType: "conversation")) { _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) }
+        await #expect(throws: DurableStorageError.idAlreadyOwned(id: 1, recordType: "conversation")) { _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) }
         #expect(try await storage.entry(EntryID(2), context: .background)?.entry.kind == "cached")
         #expect(await storage.sqlitePrepareCounts().values.allSatisfy { $0 == 1 })
         try await storage.close(context: .background)
@@ -86,7 +86,7 @@ struct SqliteFacadeTests {
         try await probe.close()
         let storage = try await SqliteStorage.open(path: ":memory:")
         let sequences = try await withThrowingTaskGroup(of: Seq.self) { group in
-            for _ in 0..<32 { group.addTask { try await storage.commit([], context: .background) } }
+            for _ in 0..<32 { group.addTask { try await storage.commitOne([], context: .background) } }
             var values: [Seq] = []
             for try await seq in group { values.append(seq) }
             return values
@@ -136,12 +136,12 @@ struct SqliteFacadeTests {
         let storage = try await SqliteStorage.open(executor: RejectingSettlementExecutor())
         await storage.rejectNextSettlement()
         await #expect(throws: D2TestError.self) {
-            _ = try await storage.commit([.entry(value: EntryRecord(id: EntryID(200), conversationId: rootConversationID, kind: "rejected"))], context: .background)
+            _ = try await storage.commitOne([.entry(value: EntryRecord(id: EntryID(200), conversationId: rootConversationID, kind: "rejected"))], context: .background)
         }
         let first: EntryID = try await storage.mintId()
         #expect(first.rawValue == 2)
         #expect(try await storage.entry(EntryID(200), context: .background) == nil)
-        _ = try await storage.commit([.entry(value: EntryRecord(id: EntryID(100), conversationId: rootConversationID, kind: "accepted"))], context: .background)
+        _ = try await storage.commitOne([.entry(value: EntryRecord(id: EntryID(100), conversationId: rootConversationID, kind: "accepted"))], context: .background)
         let adopted: EntryID = try await storage.mintId()
         #expect(adopted.rawValue == 101)
         try await storage.close(context: .background)
@@ -149,7 +149,7 @@ struct SqliteFacadeTests {
 
     @Test func admittedMultiQueryReadsFinishBeforeClose() async throws {
         let storage = try await SqliteStorage.open(path: ":memory:")
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)), .entry(value: EntryRecord(id: EntryID(2), conversationId: rootConversationID, kind: "probe"))], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), .entry(value: EntryRecord(id: EntryID(2), conversationId: rootConversationID, kind: "probe"))], context: .background)
         // Each admitted actor call finishes its synchronous queries before returning.
         #expect(try await storage.scanEntries(.init(conversationId: rootConversationID), limit: 10, cursor: nil, context: .background).items.map(\.id.rawValue) == [2])
         #expect(try await storage.entry(rootConversationID, id: EntryID(2), context: .background)?.entry.kind == "probe")
@@ -166,10 +166,10 @@ struct SqliteFacadeTests {
             let storage = try await SqliteStorage.open(path: ":memory:")
             let create: JSONValue = ["type": "document.create", "record": ["id": 5, "kind": "replaced", "scope": ["kind": "session"]], "content": ["kind": "base", "version": 1, "value": ["value": 1]]]
             let replace: JSONValue = ["type": "document.change", "id": 5, "content": ["kind": "base", "version": 1, "value": ["value": 2]]]
-            _ = try await storage.commit([create.decode(StorageWrite.self)], context: .background)
+            _ = try await storage.commitOne([create.decode(StorageWrite.self)], context: .background)
             let read = Task { try await storage.document(DocumentID(5), at: .current, context: .background) }
             for _ in 0..<yields { await Task.yield() }
-            let commit = Task { try await storage.commit([replace.decode(StorageWrite.self)], context: .background) }
+            let commit = Task { try await storage.commitOne([replace.decode(StorageWrite.self)], context: .background) }
             let stored = try await read.value
             _ = try await commit.value
             #expect(stored?.value == ["value": 1] || stored?.value == ["value": 2])

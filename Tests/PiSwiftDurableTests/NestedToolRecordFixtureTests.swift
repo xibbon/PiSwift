@@ -51,7 +51,7 @@ struct NestedToolRecordFixtureTests {
         let checkpoints = try #require(value["checkpoints"]?.arrayValue)
         for batch in try #require(value["batches"]?.arrayValue) {
             let writes = try #require(batch["writes"]?.arrayValue).map(typedWrite)
-            let seq = try await storage.commit(writes, context: .background)
+            let seq = try await storage.commitOne(writes, context: .background)
             #expect(try JSONValue(encoding: seq) == batch["seq"])
             for checkpoint in checkpoints where checkpoint["seq"] == batch["seq"] {
                 try await compare(storage, reads: #require(checkpoint["reads"]?.arrayValue))

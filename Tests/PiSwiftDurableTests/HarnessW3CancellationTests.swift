@@ -58,7 +58,7 @@ import PiSwiftDurableTesting
         let owner = try #require(try await storage.task(ids.0, context: .background))
         let failed = try #require(try await storage.task(ids.1, context: .background))
         let waiting = TaskState.waiting(checkpoint: try JSONValue(encoding: HarnessTaskCheckpoint()), on: [ids.1, ids.2], policy: .failFast)
-        _ = try await storage.commit([
+        _ = try await storage.commitOne([
             .task(value: TaskRecord(id: owner.id, conversationId: owner.conversationId, kind: owner.kind, version: owner.version, input: owner.input, state: waiting, abortRequested: true, abortReason: .restart)),
             .task(value: failed.replacing(state: .terminal(outcome: .failed(error: .init(message: "failed")))))
         ], context: .background)

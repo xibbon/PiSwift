@@ -52,7 +52,7 @@ struct CodemodeFixtureTests {
             let writesJSON = try #require(batch["writes"])
             let writes = try writesJSON.decode([StorageWrite].self)
             #expect(try JSONValue(encoding: writes) == writesJSON)
-            let seq = try await storage.commit(writes, context: .background)
+            let seq = try await storage.commitOne(writes, context: .background)
             #expect(try JSONValue(encoding: seq) == batch["seq"])
             for snapshot in snapshots where snapshot["seq"] == batch["seq"] {
                 for (key, definition, scope) in definitions {

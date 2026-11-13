@@ -47,7 +47,7 @@ struct D4CurrentFixtureTests {
             let raw = try #require(batch["writes"])
             let writes = try raw.decode([StorageWrite].self)
             #expect(try JSONValue(encoding: writes) == raw)
-            #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+            #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
             for checkpoint in data["checkpoints"]?.arrayValue ?? [] where checkpoint["seq"] == batch["seq"] {
                 try await compare(storage, reads: #require(checkpoint["reads"]?.arrayValue))
             }
@@ -120,7 +120,7 @@ struct D4CurrentFixtureTests {
             let raw = try #require(batch["writes"])
             let writes = try raw.decode([StorageWrite].self)
             #expect(try JSONValue(encoding: writes) == raw)
-            #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+            #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
             let expected: JSONValue?
             if batch["seq"] == 67 { expected = data["after64"] }
             else if batch["seq"] == data["baseBatch"]?["seq"] { expected = data["after65"] }

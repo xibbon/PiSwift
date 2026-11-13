@@ -222,7 +222,7 @@ struct HarnessDeferredProgressD7Tests {
         let storage = ControlledStorage()
         let opened = try await openChat(storage: storage, setup: setup, models: manual)
         let stored = SessionTestLog<CommitPublication>()
-        let subscription = try opened.harness.subscribeCommits { publication, _ in stored.append(publication) }
+        let subscription = try opened.harness.observeCommits(.init(advance: { publication, _ in stored.append(publication) }, end: { _ in }))
         let input = try await generationSubmit(opened)
         try await eventually { manual.seen.withLock { !$0.isEmpty } }
         generationPartial(manual, text: "partial for audit")
@@ -244,7 +244,7 @@ struct HarnessDeferredProgressD7Tests {
         #expect(auditEntry.data == .string("partial for audit"))
         generationFinal(manual)
         _ = try await input.wait(context: .background)
-        subscription.cancel(); try await opened.harness.close(context: .background)
+        subscription.detach(); try await opened.harness.close(context: .background)
     }
 }
 

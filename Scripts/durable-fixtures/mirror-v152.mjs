@@ -1,10 +1,9 @@
 // Build a disposable source-only mirror of the unmodified v1.5.2 tag.
 // Keep this separate from mirror.mjs so v1.4.0 fixtures remain reproducible.
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { cachedMirror } from './mirror-cache.mjs';
 
 export const upstreamRepository = '/Users/miguel/cvs/pi/pi-mono';
 export const upstreamTag = 'v1.5.2';
@@ -16,9 +15,9 @@ function completion(child) {
   });
 }
 
-export async function mirrorV152({ dependencies = [] } = {}) {
-  const directory = await mkdtemp(join(tmpdir(), 'piswift-durable-v152-'));
-  try {
+export async function mirrorV152({ dependencies = [], mutable = false } = {}) {
+  return cachedMirror({ tag: upstreamTag, generatorURL: import.meta.url, dependencies, mutable,
+    build: async directory => {
     const names = ['chord', 'durable', 'ai', 'telemetry', 'schema', 'codemode'];
     const archive = spawn('git', ['-C', upstreamRepository, 'archive', upstreamTag,
       ...names.map(name => `packages/${name}/src`)], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -48,15 +47,8 @@ export async function mirrorV152({ dependencies = [] } = {}) {
       });
       await writeFile(join(directory, `packages/${name}/package.json`), JSON.stringify({ type: 'module', exports }));
       const packageName = name === 'chord' ? 'chord' : `pi-${name}`;
-      await symlink(join(directory, `packages/${name}`), join(directory, 'node_modules/@earendil-works', packageName));
+      await symlink(join('..', '..', 'packages', name), join(directory, 'node_modules/@earendil-works', packageName));
     }
-    return {
-      directory,
-      import: path => import(pathToFileURL(join(directory, path)).href),
-      close: () => rm(directory, { recursive: true, force: true }),
-    };
-  } catch (error) {
-    await rm(directory, { recursive: true, force: true });
-    throw error;
-  }
+    },
+  });
 }

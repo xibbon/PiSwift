@@ -9,19 +9,33 @@ import CoreServices
 #endif
 
 private final class D9WatchLog: Sendable {
-    private let state = Mutex<[FileChange]>([])
-    var changes: [FileChange] { state.withLock { $0 } }
-    func append(_ change: FileChange) { state.withLock { $0.append(change) } }
-    func wait(_ predicate: @Sendable ([FileChange]) -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !predicate(changes) {
-            if ContinuousClock.now > deadline { throw D9WatchDeadline() }
-            try await Task.sleep(for: .milliseconds(10))
+    private struct State: Sendable {
+        var changes: [FileChange] = []
+        var listener: AsyncStream<Void>.Continuation?
+    }
+    private let state = Mutex(State())
+    var changes: [FileChange] { state.withLock { $0.changes } }
+    func append(_ change: FileChange) {
+        state.withLock { value in
+            value.changes.append(change)
+            value.listener?.yield(())
         }
     }
+    func wait(_ predicate: @Sendable ([FileChange]) -> Bool) async throws {
+        // E-FLAKE: Wait for a retained callback. The test time limit detects a lost callback.
+        let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { listener in
+            state.withLock { value in
+                value.listener = listener
+                if predicate(value.changes) { listener.yield(()) }
+            }
+        }
+        defer { state.withLock { value in value.listener?.finish(); value.listener = nil } }
+        for await _ in updates {
+            if predicate(changes) { return }
+        }
+        throw CancellationError()
+    }
 }
-
-private struct D9WatchDeadline: Error {}
 
 struct FileWatcherD9Tests {
     // v1.5.2 D9: durable/src/env/index.ts:127–130.
@@ -45,7 +59,7 @@ struct FileWatcherD9Tests {
     }
 
     // v1.5.2 D9: durable/test/env-node-conformance.test.ts:63–88 and env/index.ts:124–140.
-    @Test(arguments: [WatchMode.native, .polling])
+    @Test(.timeLimit(.minutes(1)), arguments: [WatchMode.native, .polling])
     func failedIsFinalAndStopIsIdempotent(_ mode: WatchMode) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pi-d9-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -84,8 +98,49 @@ struct FileWatcherD9Tests {
     }
 
     #if os(macOS)
+    // E-FLAKE round 1: unrelated native events must not keep moving the
+    // 50 ms flush. The churn continues for ten seconds after the first event.
+    @Test(.timeLimit(.minutes(1))) func unrelatedNativeChurnCannotStarveWatchedChange() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pi-d9-churn-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let noise = directory.appendingPathComponent("noise.txt")
+        let watched = directory.appendingPathComponent("watched.txt")
+        let log = D9WatchLog()
+        let watcher = try await LocalFileWatcher.start(targets: [.init(path: directory.path, recursive: true)],
+            mode: .native, onChange: { log.append($0) }, context: .background).get()
+        let churn = Task {
+            let until = ContinuousClock.now + .seconds(10)
+            var number = 0
+            while ContinuousClock.now < until && !Task.isCancelled {
+                try Data(repeating: UInt8(number % 251), count: 16 + number % 2).write(to: noise)
+                number += 1
+                try await Task.sleep(for: .milliseconds(2))
+            }
+        }
+        do {
+            try await log.wait { changes in
+                changes.contains { if case .paths(let paths) = $0 { paths.contains(noise.path) } else { false } }
+            }
+            let written = ContinuousClock.now
+            try Data("watched".utf8).write(to: watched)
+            try await log.wait { changes in
+                changes.contains { if case .paths(let paths) = $0 { paths.contains(watched.path) } else { false } }
+            }
+            let latency = written.duration(to: .now)
+            #expect(latency < .seconds(8))
+            try await churn.value
+            await watcher.stop(context: .background)
+        } catch {
+            churn.cancel()
+            _ = try? await churn.value
+            await watcher.stop(context: .background)
+            throw error
+        }
+    }
+
     // v1.5.2 D9: durable/src/env/index.ts:120–130; overflow requires a full rescan.
-    @Test func nativeLossFlagsEmitOverflowAndScanWithoutPaths() async throws {
+    @Test(.timeLimit(.minutes(1))) func nativeLossFlagsEmitOverflowAndScanWithoutPaths() async throws {
         let lost = [kFSEventStreamEventFlagMustScanSubDirs, kFSEventStreamEventFlagUserDropped,
             kFSEventStreamEventFlagKernelDropped, kFSEventStreamEventFlagEventIdsWrapped,
             kFSEventStreamEventFlagMount, kFSEventStreamEventFlagUnmount]

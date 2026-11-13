@@ -12,7 +12,7 @@ struct SessionCachePublicationD3bTests {
         let backend = ControlledStorage()
         let session = try await Session.open(storage: backend, context: .background)
         let published = SessionTestLog<Seq>()
-        _ = try session.subscribeCommits { commit, _ in published.append(commit.seq) }
+        _ = try session.observeCommits(.init(advance: { commit, _ in published.append(commit.seq) }, end: { _ in }))
         _ = try await createConversation(session)
         let gate = await backend.holdPublication(at: 2)
         let failing = Task { try await createConversation(session) }

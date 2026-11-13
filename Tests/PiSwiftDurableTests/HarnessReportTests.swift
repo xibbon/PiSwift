@@ -266,7 +266,7 @@ private func openReportHarness(_ tasks: [AnyTaskDefinition] = [],
         try registry.install(Extension(name: "test", tasks: [AnyTaskDefinition(definition)]))
         let id = try TaskID(20)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
-        _ = try await storage.commit([
+        _ = try await storage.commitOne([
             .conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: TaskRecord(id: id, conversationId: rootConversationID, kind: definition.name, version: 1,
                 input: .number(0), state: .running(checkpoint: checkpoint), abortRequested: abortRequested, restarts: 1))

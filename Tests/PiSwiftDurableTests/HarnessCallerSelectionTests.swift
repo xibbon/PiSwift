@@ -199,17 +199,17 @@ private func selectionCall(_ name: String) -> AssistantMessage {
         try await opened.root.configure(change: .init(tools: .set(.exact([grow])), modelTools: .set(.exact([grow])),
             instructions: .set("Keep this.")), context: .background)
         let operations = Mutex<[Delta.Op]>([])
-        let subscription = try opened.harness.subscribeCommits { publication, _ in
+        let subscription = try opened.harness.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes {
                 if case .document(let document) = change, document.record.kind == AgentDoc.definition.kind {
                     operations.withLock { $0 += document.ops }
                 }
             }
-        }
+        }, end: { _ in }))
         try await opened.root.commit({ tx in
             try await addTools(tx: tx, conversationId: opened.root.id, added: ["extra", "extra"])
         }, context: .background)
-        subscription.cancel()
+        subscription.detach()
         #expect(operations.withLock { $0 } == [
             .splice(["tools"], index: 1, remove: 0, items: ["extra"]),
             .splice(["modelTools"], index: 1, remove: 0, items: ["extra"])

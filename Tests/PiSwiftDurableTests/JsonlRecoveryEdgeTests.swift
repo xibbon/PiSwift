@@ -31,7 +31,7 @@ struct JsonlRecoveryEdgeTests {
             try Data(text.utf8).write(to: directory.appendingPathComponent("main.jsonl"))
             let storage = try await JsonlStorage.open(directory: directory.path)
             #expect(try await storage.conversation(rootConversationID, context: .background) != nil)
-            #expect(try await storage.commit([], context: .background) == Seq(3))
+            #expect(try await storage.commitOne([], context: .background) == Seq(3))
             try await storage.close(context: .background)
         }
     }
@@ -41,7 +41,7 @@ struct JsonlRecoveryEdgeTests {
             let text = "{\"format\":1,\"type\":\"commit\",\"seq\":2,\"writes\":[]}\n{\"format\":1,\"type\":\"commit\",\"seq\":9,\"writes\":[]}\n"
             try Data(text.utf8).write(to: directory.appendingPathComponent("main.jsonl"))
             let storage = try await JsonlStorage.open(directory: directory.path)
-            #expect(try await storage.commit([], context: .background) == Seq(10))
+            #expect(try await storage.commitOne([], context: .background) == Seq(10))
             try await storage.close(context: .background)
         }
     }

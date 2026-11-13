@@ -12,7 +12,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
     const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
     process.exit(run.status ?? 1);
 }
-const source = await mirror({ dependencies: ['typebox@1.3.27'] });
+const source = await mirror({ dependencies: ['typebox@1.3.27'], mutable: true });
 const cwd = await mkdtemp(join(tmpdir(), 'piswift-read-oracle-'));
 try {
     // Only the isolated mirror receives this dependency. Upstream source remains unchanged.

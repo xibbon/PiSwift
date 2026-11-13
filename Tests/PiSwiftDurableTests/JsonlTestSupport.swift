@@ -17,7 +17,7 @@ func jsonlOpen(_ directory: URL, fsync: Bool = false, fileSystem: (any FileSyste
     try await JsonlStorage.open(directory: directory.path, fileSystem: fileSystem ?? LocalExecutionEnv(cwd: directory.path), options: .init(fsync: fsync))
 }
 func jsonlRoot(_ storage: any DurableStorage) async throws {
-    _ = try await storage.commit([.conversation(value: .init(id: rootConversationID))], context: .background)
+    _ = try await storage.commitOne([.conversation(value: .init(id: rootConversationID))], context: .background)
 }
 func jsonlTask(_ id: TaskID, phase: String = "ready", terminal: Bool = false) -> TaskRecord {
     .init(id: id, conversationId: rootConversationID, kind: "test.task", version: 1, input: .null,

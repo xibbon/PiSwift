@@ -47,7 +47,7 @@ private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value
     if let hooks { try setup.registry.install(Extension(name: "hooks", hooks: [hook(hooks)])) }
     setup.models.setResponses([.message(nestedValueCall("probe")), .message(chatAssistant("done"))])
     let opened = try await openChat(setup: setup)
-    let subscription = try opened.harness.subscribeCommits { publication, _ in
+    let subscription = try opened.harness.observeCommits(.init(advance: { publication, _ in
         for change in publication.changes {
             guard case .document(let document) = change, document.record.kind == NestedCallDoc.definition.kind,
                   !document.ops.isEmpty, let value = document.value else { continue }
@@ -57,11 +57,11 @@ private func nestedValues(_ tools: [ToolRegistration], names: [String] = ["value
                 }
             } catch { Issue.record(error) }
         }
-    }
+    }, end: { _ in }))
     let input = try await opened.root.submit(.input(content: .text("go")), context: .background)
     #expect(try await input.wait(context: .background).status == "done")
     try await opened.harness.waitForIdle(context: .background)
-    subscription.cancel()
+    subscription.detach()
     let entries = try await allEntries(opened.root)
     try await opened.harness.close(context: .background)
     return .init(received: received.withLock { $0 }, stored: stored.withLock { $0 }, entries: entries)

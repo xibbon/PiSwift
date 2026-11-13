@@ -8,10 +8,8 @@ private let reportTask = ReportTask(id: try! TaskID(1), kind: "test.task", conve
     ReportInfo.storageFailed,
     .taskInterrupted(task: reportTask, reason: .restartLimit, restarts: 5),
     .taskInterrupted(task: reportTask, extension: "test", reason: .interrupted, restarts: 3),
-    ReportInfo.sessionFailed,
     .taskFaulted(task: reportTask, extension: "test", reason: .threw),
     .taskFaulted(task: reportTask, reason: .restartLimit),
-    .taskParked(task: reportTask, extension: "test"),
     .migrationFailed(task: reportTask),
     .taskError(task: reportTask, extension: "test"),
     .taskOutdated(task: reportTask, reason: .missingTask),
@@ -42,6 +40,19 @@ func reportInfoUsesTheUpstreamTaggedJSONShape(info: ReportInfo) throws {
     case .hostError(let callback, _): #expect(json["callback"] == .string(callback.rawValue))
     default: #expect(json["reason"] == nil && json["callback"] == nil)
     }
+}
+
+@Test func historicalSessionReportDecodesButCannotBeEmitted() throws {
+    let oldSession = try JSONValue.object(["kind": "session_failed"]).decode(ReportInfo.self)
+    #expect(oldSession == .sessionFailed)
+    #expect(throws: (any Error).self) { _ = try JSONValue(encoding: oldSession) }
+}
+
+@Test func historicalParkedReportDecodesButCannotBeEmitted() throws {
+    let oldTask = try JSONValue.object(["kind": "task_parked", "task": JSONValue(encoding: reportTask),
+        "extension": "test"]).decode(ReportInfo.self)
+    #expect(oldTask == .taskParked(task: reportTask, extension: "test"))
+    #expect(throws: (any Error).self) { _ = try JSONValue(encoding: oldTask) }
 }
 
 @Test func reportSourcesKeepTheUpstreamStringValues() {

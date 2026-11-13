@@ -170,7 +170,7 @@ struct D1SqliteMigrationTests {
         let sleeping = TaskRecord(id: sleepingID, conversationId: rootConversationID,
             kind: "test.sleeping", version: 1, input: ["value": "retained"],
             state: .sleeping(checkpoint: ["phase": "resume", "opaque": ["b": 2, "a": 1]], until: 1_700_000_000_000.5))
-        _ = try await writer.commit([.task(value: sleeping)], context: .background)
+        _ = try await writer.commitOne([.task(value: sleeping)], context: .background)
         #expect(try await writer.task(sleepingID, context: .background) == sleeping)
         try await writer.close(context: .background)
         let reopened = try await SqliteStorage.open(path: path, prefix: prefix)

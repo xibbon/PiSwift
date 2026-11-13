@@ -9,9 +9,9 @@ struct JsonlReclamationTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(id)], context: .background)
-            _ = try await storage.commit([jsonlBase(id, 10)], context: .background)
-            _ = try await storage.commit([jsonlDelta(id, 11)], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(id)], context: .background)
+            _ = try await storage.commitOne([jsonlBase(id, 10)], context: .background)
+            _ = try await storage.commitOne([jsonlDelta(id, 11)], context: .background)
             #expect(try jsonlLines(directory, jsonlDocName(id)).count == 2)
             let reopened = try await jsonlOpen(directory)
             #expect(try await reopened.document(id, at: .current, context: .background)?.value == ["count": 11])
@@ -22,10 +22,10 @@ struct JsonlReclamationTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let id: DocumentID = try await storage.mintId()
-            let created = try await storage.commit([jsonlCreate(id, kind: "rewindable", scope: .conversation(conversationId: rootConversationID), history: .rewindable, fork: .asOf)], context: .background)
-            let changed = try await storage.commit([jsonlDelta(id, 1)], context: .background)
-            _ = try await storage.commit([jsonlBase(id, 2)], context: .background)
-            _ = try await storage.commit([.documentRetire(id: id)], context: .background)
+            let created = try await storage.commitOne([jsonlCreate(id, kind: "rewindable", scope: .conversation(conversationId: rootConversationID), history: .rewindable, fork: .asOf)], context: .background)
+            let changed = try await storage.commitOne([jsonlDelta(id, 1)], context: .background)
+            _ = try await storage.commitOne([jsonlBase(id, 2)], context: .background)
+            _ = try await storage.commitOne([.documentRetire(id: id)], context: .background)
             #expect(try jsonlLines(directory, jsonlDocName(id)).count == 3)
             let reopened = try await jsonlOpen(directory)
             #expect(try await reopened.document(id, at: .sequence(created), context: .background)?.value == ["count": 0])
@@ -42,10 +42,10 @@ struct JsonlReclamationTests {
             let session: DocumentID = try await storage.mintId()
             let latest: DocumentID = try await storage.mintId()
             let taskDoc: DocumentID = try await storage.mintId()
-            let created = try await storage.commit([.task(value: jsonlTask(task)), jsonlCreate(session, kind: "session", value: [:]),
+            let created = try await storage.commitOne([.task(value: jsonlTask(task)), jsonlCreate(session, kind: "session", value: [:]),
                 jsonlCreate(latest, kind: "latest", value: [:], scope: .conversation(conversationId: rootConversationID), history: .latest, fork: .current),
                 jsonlCreate(taskDoc, kind: "task", value: [:], scope: .task(taskId: task))], context: .background)
-            let retired = try await storage.commit([.documentRetire(id: session), .documentRetire(id: latest), .documentRetire(id: taskDoc), .task(value: jsonlTask(task, terminal: true))], context: .background)
+            let retired = try await storage.commitOne([.documentRetire(id: session), .documentRetire(id: latest), .documentRetire(id: taskDoc), .task(value: jsonlTask(task, terminal: true))], context: .background)
             for name in [jsonlDocName(session), jsonlDocName(latest), jsonlDocName(taskDoc), jsonlTaskName(task)] { #expect(!jsonlExists(directory, name)) }
             let reopened = try await jsonlOpen(directory)
             #expect(try await reopened.task(task, context: .background) == jsonlTask(task, terminal: true))

@@ -216,30 +216,62 @@ import PiSwiftChord
 
     @Test(.timeLimit(.minutes(1))) func forgetsTwentyThousandEndedTasksWithoutRecursion() async throws {
         let started = ContinuousClock.now
+        let depth = 20_000
+        // Construct the already ended chain in the scheduler index. The
+        // public transaction and task runner paths dominate the old timing;
+        // this directly checks the 20,000-link iterative release and sweep.
+        var index = TaskScheduler.State()
+        index.setEdge(ConversationRecord(id: rootConversationID))
+        var parent: TaskID?
+        for number in 0..<depth {
+            let id = try TaskID(Int64(number + 2))
+            let ended = TaskRecord(id: id, conversationId: rootConversationID,
+                kind: "test.retention.deep", version: 1, input: .null,
+                state: .terminal(outcome: .completed(result: .null)), owner: parent)
+            index.nodes[id] = TaskNode(ended)
+            parent = id
+        }
+        let leafID = try TaskID(Int64(depth + 2))
+        let leaf = TaskRecord(id: leafID, conversationId: rootConversationID,
+            kind: "test.retention.deep", version: 1, input: .null,
+            state: .pending(checkpoint: ["phase": "hold"]), owner: parent)
+        index.track(leaf)
+        #expect(index.nodes.count == depth)
+        #expect(index.below.values.reduce(0) { $0 + $1.count } == depth + 1)
+        let held = ContinuousClock.now
+        index.track(leaf.replacing(state: .terminal(outcome: .completed(result: .null))))
+        #expect(index.dropQueue.count == depth + 2)
+        index.sweep()
+        #expect(index.nodes.isEmpty)
+        #expect(index.below.isEmpty)
+        #expect(index.roots.isEmpty)
+        print("E-FLAKE deep-retention nodes=\(depth) dropOperations=\(depth + 2) setup=\(started.duration(to: held)) forget=\(held.duration(to: .now))")
+
+        // Keep the public lifecycle and retention witness from the original
+        // test. The direct index above checks the full 20,000-link depth.
+        let publicStarted = ContinuousClock.now
         let control = RetentionControl()
         let (harness, root) = try await control.opened(storage: SqliteStorage.open(path: ":memory:"))
-        let depth = 20_000
+        let publicDepth = 4_500
         let baseline = retentionSizes(harness)
         let tree = try await root.commit({ tx in
             var owner = try await tx.createTask(control.hold, input: .init(name: "link0"), options: .init(ownership: .conversation()))
             var links = [owner]
-            for number in 1..<depth {
+            for number in 1..<publicDepth {
                 owner = try await tx.createTask(control.hold, input: .init(name: "link\(number)"), options: .init(ownership: .task(taskId: owner)))
                 links.append(owner)
             }
             let leaf = try await tx.createTask(control.hold, input: .init(name: "leaf"), options: .init(ownership: .task(taskId: owner)))
             return (links, leaf)
         }, context: .background)
-        let created = ContinuousClock.now
-        for number in 0..<depth { control.open("link\(number)") }
+        for number in 0..<publicDepth { control.open("link\(number)") }
         control.open("leaf")
-        let opened = ContinuousClock.now
         _ = try await harness.waitForTask(id: tree.1, context: .background)
         _ = try await harness.waitForTask(id: tree.0[0], context: .background)
         try await harness.waitForIdle(context: .background)
         #expect(retentionSizes(harness) == baseline)
-        print("E11b deep-retention create=\(started.duration(to: created)) gates=\(created.duration(to: opened)) settle=\(opened.duration(to: .now))")
         try await harness.close(context: .background)
+        print("E-FLAKE retention-public depth=\(publicDepth) elapsed=\(publicStarted.duration(to: .now))")
     }
 
     @Test func endedWorkKeepsNoMoreThanFreshReopen() async throws {

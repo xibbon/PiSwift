@@ -9,7 +9,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(run.status ?? 1);
 }
-const source = await mirror({ dependencies: ['typebox@1.3.27', 'quickjs-wasi@3.6.2'] });
+const source = await mirror({ dependencies: ['typebox@1.3.27', 'quickjs-wasi@3.6.2'], mutable: true });
 try {
   // The shared mirror has no codemode package. Add the exact tag source in /tmp.
   const archive = execFileSync('git', ['-C', upstreamRepository, 'archive', upstreamTag, 'packages/codemode/src'], { maxBuffer: 32 * 1024 * 1024 });

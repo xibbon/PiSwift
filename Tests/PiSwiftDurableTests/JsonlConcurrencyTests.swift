@@ -47,13 +47,13 @@ struct JsonlConcurrencyTests {
                 await gate.holdOnce()
             }
         }
-        let first = Task { try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) }
+        let first = Task { try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) }
         await gate.waitForEntry()
         let read = Task { try await storage.conversation(rootConversationID, context: .background) }
         do { try await waitForQueue(storage, count: 1) }
         catch { await gate.release(); throw error }
         let entry = EntryRecord(id: try EntryID(2), conversationId: rootConversationID, kind: "message")
-        let second = Task { try await storage.commit([.entry(value: entry)], context: .background) }
+        let second = Task { try await storage.commitOne([.entry(value: entry)], context: .background) }
         do { try await waitForQueue(storage, count: 2) }
         catch { await gate.release(); throw error }
         let close = Task { try await storage.close(context: .background) }
@@ -66,10 +66,10 @@ struct JsonlConcurrencyTests {
         #expect(try await read.value == ConversationRecord(id: rootConversationID))
         #expect(try await second.value == Seq(2))
         try await close.value
-        await #expect(throws: (any Error).self) { _ = try await storage.commit([], context: .background) }
+        await #expect(throws: (any Error).self) { _ = try await storage.commitOne([], context: .background) }
         let reopened = try await JsonlStorage.open(directory: directory.path)
         #expect(try await reopened.entry(entry.id, context: .background)?.entry == entry)
-        #expect(try await reopened.commit([], context: .background) == Seq(3))
+        #expect(try await reopened.commitOne([], context: .background) == Seq(3))
         try await reopened.close(context: .background)
     }
 }

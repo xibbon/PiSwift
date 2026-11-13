@@ -26,7 +26,7 @@ import PiSwiftDurableTesting
         }
         let record = TaskRecord(id: id, conversationId: rootID, kind: "test.recovery", version: 1,
                                 input: .number(0), state: state, abortRequested: status == "marked", startedAt: 10)
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootID)), .task(value: record)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootID)), .task(value: record)], context: .background)
         try await storage.close(context: .background)
         let runs = SessionTestLog<String>()
         let definition = harnessOneStep("test.recovery", run: { task, runtime, context in
@@ -55,7 +55,7 @@ import PiSwiftDurableTesting
         let id = try TaskID(40)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
         let version: Double = mode == "newer-record" ? 2 : 1
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: TaskRecord(id: id, conversationId: rootConversationID, kind: "test.blocked", version: version,
                              input: .number(0), state: .pending(checkpoint: checkpoint)))], context: .background)
         let registry = Registry()

@@ -14,9 +14,9 @@ struct JsonlReadOnlyTests {
             try await jsonlRoot(writer)
             let live: TaskID = try await writer.mintId()
             let ended: TaskID = try await writer.mintId()
-            _ = try await writer.commit([.task(value: jsonlTask(live)), .task(value: jsonlTask(ended))], context: .background)
+            _ = try await writer.commitOne([.task(value: jsonlTask(live)), .task(value: jsonlTask(ended))], context: .background)
             fs.fail(.init(operation: .remove, call: 1, mode: .before))
-            _ = try await writer.commit([.task(value: jsonlTask(ended, terminal: true))], context: .background)
+            _ = try await writer.commitOne([.task(value: jsonlTask(ended, terminal: true))], context: .background)
             fs.clear()
             #expect(jsonlExists(directory, jsonlTaskName(ended)))
             let unconfirmed: JSONValue = ["format": 1, "type": "record", "seq": 4, "ordinal": 0,
@@ -30,7 +30,7 @@ struct JsonlReadOnlyTests {
             #expect(try await viewer.task(live, context: .background) == jsonlTask(live))
             #expect(try await viewer.task(ended, context: .background) == jsonlTask(ended, terminal: true))
             await #expect(throws: JsonlStorageReadOnlyError.self) {
-                _ = try await viewer.commit([.task(value: jsonlTask(live, phase: "next"))], context: .background)
+                _ = try await viewer.commitOne([.task(value: jsonlTask(live, phase: "next"))], context: .background)
             }
             try await viewer.close(context: .background)
             #expect(env.mutations.isEmpty)
@@ -77,9 +77,9 @@ struct JsonlReadOnlyTests {
         try await jsonlWithStorage { writer, directory, _ in
             try await jsonlRoot(writer)
             let id: TaskID = try await writer.mintId()
-            _ = try await writer.commit([.task(value: jsonlTask(id))], context: .background)
+            _ = try await writer.commitOne([.task(value: jsonlTask(id))], context: .background)
             let env = JsonlReadOnlyEnv(directory, raceFile: jsonlTaskName(id)) {
-                _ = try await writer.commit([.task(value: jsonlTask(id, terminal: true))], context: .background)
+                _ = try await writer.commitOne([.task(value: jsonlTask(id, terminal: true))], context: .background)
             }
             let viewer = try await JsonlStorage.open(directory: directory.path, fileSystem: env, options: .init(readOnly: true))
             #expect(try await viewer.task(id, context: .background) == jsonlTask(id, terminal: true))
@@ -87,7 +87,7 @@ struct JsonlReadOnlyTests {
             try await viewer.close(context: .background)
             #expect(env.mutations.isEmpty)
             let broken: TaskID = try await writer.mintId()
-            _ = try await writer.commit([.task(value: jsonlTask(broken))], context: .background)
+            _ = try await writer.commitOne([.task(value: jsonlTask(broken))], context: .background)
             try Data().write(to: directory.appendingPathComponent(jsonlTaskName(broken)))
             let counting = JsonlReadOnlyEnv(directory)
             try await jsonlExpectError("Missing confirmed sidecar record") {
@@ -119,7 +119,7 @@ struct JsonlReadOnlyTests {
             }
             #expect(receipts.withLock { $0 } == 0)
             let id: EntryID = try await writer.mintId()
-            _ = try await writer.commit([.entry(value: .init(id: id, conversationId: rootConversationID, kind: "later"))], context: .background)
+            _ = try await writer.commitOne([.entry(value: .init(id: id, conversationId: rootConversationID, kind: "later"))], context: .background)
             #expect(try await viewer.entry(id, context: .background) == nil)
             try await viewer.close(context: .background)
             try await viewer.close(context: .background)

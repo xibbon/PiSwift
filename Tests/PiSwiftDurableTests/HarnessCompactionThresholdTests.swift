@@ -177,14 +177,14 @@ func compactionNewInput(_ chat: CompactionChat, tokens: Int = 200) async throws 
         await gate.reached.wait()
         let child = try #require(await compactionTasks(chat).first)
         let ended = Mutex<[(TaskID, Seq)]>([])
-        let subscription = try chat.harness.subscribeCommits { publication, _ in
+        let subscription = try chat.harness.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes {
                 if case .task(let record) = change, record.state.status == "terminal" {
                     ended.withLock { $0.append((record.id, publication.seq)) }
                 }
             }
-        }
-        defer { subscription.cancel() }
+        }, end: { _ in }))
+        defer { subscription.detach() }
         let generation = try #require(await compactionLive(chat).run?.taskId)
         try await chat.root.abort(context: .background)
         #expect(try await input.wait(context: .background).reason == "aborted")

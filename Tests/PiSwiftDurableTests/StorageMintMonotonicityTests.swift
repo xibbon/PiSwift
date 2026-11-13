@@ -45,7 +45,7 @@ struct StorageMintMonotonicityTests {
         ]
         for record in records {
             let write = try record.decode(StorageWrite.self)
-            _ = try await storage.commit([write], context: .background)
+            _ = try await storage.commitOne([write], context: .background)
             if backend != .memory {
                 try await storage.close(context: .background)
                 storage = try await backend.open(directory)
@@ -55,7 +55,7 @@ struct StorageMintMonotonicityTests {
             #expect(minted.rawValue > object["id"]!.int64Value!)
         }
         let before: EntryID = try await storage.mintId()
-        _ = try await storage.commit([try mintStoredEntry(50)], context: .background)
+        _ = try await storage.commitOne([try mintStoredEntry(50)], context: .background)
         let after: ConversationID = try await storage.mintId()
         #expect(after.rawValue > before.rawValue)
         try await storage.close(context: .background)
@@ -66,7 +66,7 @@ struct StorageMintMonotonicityTests {
         let directory = try mintTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         var storage = try await backend.open(directory)
-        _ = try await storage.commit([try mintStoredEntry(EntryID.maximumRawValue)], context: .background)
+        _ = try await storage.commitOne([try mintStoredEntry(EntryID.maximumRawValue)], context: .background)
         await #expect(throws: DurableStorageError.idSpaceExhausted) {
             let _: TaskID = try await storage.mintId()
         }
@@ -86,7 +86,7 @@ struct StorageMintMonotonicityTests {
         let path = directory.appendingPathComponent("ids.sqlite").path
         let storage = try await SqliteStorage.open(path: path)
         let id = EntryID.maximumRawValue
-        _ = try await storage.commit([try mintStoredEntry(id)], context: .background)
+        _ = try await storage.commitOne([try mintStoredEntry(id)], context: .background)
         try await storage.close(context: .background)
         let database = try AppleSqliteDatabase(path: path)
         defer { try? database.close() }

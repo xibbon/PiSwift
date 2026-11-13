@@ -28,11 +28,24 @@ public struct Notice: Sendable, Equatable, Codable {
     public enum Category: String, Sendable, Codable {
         case operation
         case report
-        @available(*, deprecated, message: "Use ReportInfo.kind through DurableHostView.notices")
-        case taskParked
         case taskFault
         case extensionError
         case sessionFailed
+
+        public init(from decoder: any Decoder) throws {
+            let value = try decoder.singleValueContainer().decode(String.self)
+            if value == "taskParked" { self = .report; return }
+            guard let category = Self(rawValue: value) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                    debugDescription: "Unknown notice category: \(value)"))
+            }
+            self = category
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var value = encoder.singleValueContainer()
+            try value.encode(rawValue)
+        }
     }
 
     /// The notice category for display.
@@ -74,7 +87,6 @@ public struct Notice: Sendable, Equatable, Codable {
         switch category {
         case .operation: return message
         case .report: label = "Runtime report"
-        case .taskParked: label = "Task parked"
         case .taskFault: label = "Task fault"
         case .extensionError: label = "Extension error"
         case .sessionFailed: label = "Session failed"
@@ -160,14 +172,27 @@ public enum DurableSessionTerminal: Sendable, Equatable, Codable {
 }
 
 /// The work state of the shown conversation and its owned tasks.
-/// Read blockedTasks as well: other work can progress while one task is parked.
+/// Read blockedTasks as well: other work can progress while one task is blocked.
 public enum DurableActivity: String, Sendable, Equatable, Codable {
     case idle
     case progressing
     case sleeping
-    @available(*, deprecated, message: "Use DurableRunActivity.blocked")
-    case parked
     case blocked
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        if value == "parked" { self = .blocked; return }
+        guard let activity = Self(rawValue: value) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unknown durable activity: \(value)"))
+        }
+        self = activity
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var value = encoder.singleValueContainer()
+        try value.encode(rawValue)
+    }
 }
 
 /// A task that needs a definition change or an explicit user action.
@@ -177,7 +202,7 @@ public struct DurableBlockedTask: Sendable, Equatable, Codable {
     public let reason: TaskBlockedReason
     /// The number of consecutive cutoffs without durable progress.
     public let restarts: Double
-    /// The exact parking report, or nil for other blocked reasons.
+    /// An optional historical report associated with blocked work.
     public let report: String?
 
     public init(id: TaskID, kind: String, reason: TaskBlockedReason,
@@ -253,10 +278,6 @@ public struct DurableView: Sendable, Equatable, Codable {
     /// Queued inputs in inbox order. They remain here after a failed run under keep.
     @available(*, deprecated, message: "Use DurableHostView.inbox")
     public let queuedInputs: [InboxItem]
-    /// Tasks that reached the restart limit and need retry or abort.
-    @available(*, deprecated, message: "Use DurableHostView.outcomes")
-    public var parkedTasks: [DurableBlockedTask] { blockedTasks.filter { $0.reason == .restartLimit } }
-
     /// Creates a view snapshot for a session interface.
     public init(session: DurableSessionView, conversation: ConversationView,
                 conversations: [ConversationSummary], models: [ModelSummary],
@@ -356,9 +377,6 @@ public protocol DurableController: Sendable {
     /// Aborts work in the shown conversation, including manual compaction.
     /// This command bypasses the ordered command queue.
     func abort() async
-    /// Historical command. Restart-limit tasks now end.
-    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
-    func retryTask(_ id: TaskID) async
     /// Aborts one task. This command bypasses the ordered command queue.
     func abortTask(_ id: TaskID) async
     /// Selects the next thinking level supported by the current model.
@@ -403,9 +421,6 @@ public enum DurableStorageKind: String, Sendable, Equatable, Codable {
 }
 
 extension DurableController {
-    /// Historical default for old controller implementations.
-    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
-    public func retryTask(_ id: TaskID) async {}
     /// Existing controllers can omit task abort support.
     public func abortTask(_ id: TaskID) async {}
 }

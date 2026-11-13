@@ -10,7 +10,7 @@ extension PiSwiftDurableTests {
         let submission = try SubmissionID(4), document = try DocumentID(5)
         try await storage.close(context: .background)
         let operations: [@Sendable () async throws -> Void] = [
-            { _ = try await storage.commit([], context: .background) },
+            { _ = try await storage.commitOne([], context: .background) },
             { let _: EntryID = try await storage.mintId() },
             { _ = try await storage.prepareCommit([]) },
             { _ = try await storage.conversation(conversation, context: .background) },
@@ -50,7 +50,7 @@ extension PiSwiftDurableTests {
         }
         #expect(results.allSatisfy { $0 == prepared.seq })
         #expect(try await storage.scanConversations(.init(), limit: 2, cursor: nil, context: .background).items == [record])
-        #expect(try await storage.commit([], context: .background) == Seq(8))
+        #expect(try await storage.commitOne([], context: .background) == Seq(8))
         do {
             _ = try await storage.prepareCommit([], seq: Seq(8))
             Issue.record("A non-increasing sequence did not reject")

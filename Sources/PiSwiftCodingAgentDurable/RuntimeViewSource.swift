@@ -23,7 +23,6 @@ internal final class RuntimeViewSource: DurableHostViewSource {
         var restarts: [TaskID: Double] = [:]
         var faultedTasks = Set<TaskID>()
         var faultReports: [String: Int] = [:]
-        var parkedNotices = Set<TaskID>()
         var transcript: TranscriptView?
         var openMode: DurableOpenMode = .write
         var transcriptMode: DurableTranscriptMode = .compatibility
@@ -224,7 +223,7 @@ internal final class RuntimeViewSource: DurableHostViewSource {
                 }
                 let previous = state.view.notices.last {
                     $0.category == category && (category == .sessionFailed ||
-                        ((category == .taskFault || category == .taskParked) && $0.taskId == info.task?.id))
+                        (category == .taskFault && $0.taskId == info.task?.id))
                 }
                 if case .taskFaulted(let task, _, _) = info { state.faultedTasks.insert(task.id) }
                 Self.appendNotice(&state, level, report.message, category: category,
@@ -237,16 +236,8 @@ internal final class RuntimeViewSource: DurableHostViewSource {
                 state.faultReports[report.description] = count == 1 ? nil : count - 1
                 return
             }
-            if let parked = report.parked,
-               let node = state.graph?.tasks[String(parked.id.rawValue)],
-               node.blocked == .restartLimit, node.kind == parked.kind {
-                guard state.parkedNotices.insert(parked.id).inserted else { return }
-                Self.appendNotice(&state, .warning, report.message, category: .taskParked,
-                                  taskId: parked.id, taskKind: parked.kind)
-            } else {
-                Self.appendNotice(&state, .warning, report.message, category: .report,
-                                  taskId: report.taskId, taskKind: report.taskKind)
-            }
+            Self.appendNotice(&state, .warning, report.message, category: .report,
+                              taskId: report.taskId, taskKind: report.taskKind)
         }
     }
 
@@ -313,19 +304,6 @@ internal final class RuntimeViewSource: DurableHostViewSource {
 
     private func refreshWork(_ state: inout State) {
         let work = runtimeWork(graph: state.graph, conversation: state.view.conversation, restarts: state.restarts)
-        // A saved pending task can already be parked at open, without a new core report.
-        let parked = state.graph?.tasks.values.filter { $0.blocked == .restartLimit } ?? []
-        state.parkedNotices.formIntersection(Set(parked.map(\.id)))
-        for node in parked.sorted(by: { $0.id < $1.id }) {
-            guard let count = state.restarts[node.id], state.parkedNotices.insert(node.id).inserted else { continue }
-            // A typed report can arrive before the graph hydration.
-            if state.view.notices.contains(where: {
-                $0.category == .taskParked && $0.taskId == node.id && $0.reportType == "task_parked"
-            }) { continue }
-            let report = runtimeParkingReport(id: node.id, kind: node.kind, restarts: count)
-            Self.appendNotice(&state, .warning, report, category: .taskParked,
-                              taskId: node.id, taskKind: node.kind)
-        }
         let view = state.view
         state.view = DurableView(session: view.session, conversation: view.conversation,
                                  conversations: view.conversations, models: view.models, notices: view.notices,

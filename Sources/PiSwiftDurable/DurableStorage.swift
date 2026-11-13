@@ -1,5 +1,4 @@
 import PiSwiftChord
-import Synchronization
 
 /// The accepted prefix and the validation error that stopped the next batch.
 /// A thrown error has an unknown storage outcome and is never a refusal.
@@ -34,11 +33,6 @@ public struct EntryLookup: Sendable, Equatable, Codable {
 /// Retry temporary failures inside the storage method.
 /// Context is the Chord context; Swift task cancellation does not replace it.
 public protocol DurableStorage: Sendable {
-    /// Compatibility witness for external single-batch storage test doubles.
-    /// New backends implement the batch method. The default bridge below sends
-    /// one batch and returns its receipt sequence.
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq
-
     /// Persists nonempty batches in order, one atomic commit and sequence per batch.
     /// A batch sees the state left by the preceding accepted batch. Durable checks of
     /// global IDs, document actions, and copy resolution refuse the next batch as a
@@ -114,29 +108,7 @@ public protocol DurableStorage: Sendable {
 }
 
 public extension DurableStorage {
-    /// v1.5.2 D2: adapt legacy conformers in PiSwiftTui test code, which this
-    /// order may build but may not edit. New backends override the batch method.
-    func commit(_ batches: [[StorageWrite]], receive: @Sendable (Int, Seq) -> Void, context: ChordContext) async throws -> CommitResult {
-        var sequences: [Seq] = []
-        defer { for (index, seq) in sequences.enumerated() { receive(index, seq) } }
-        for writes in batches {
-            do { sequences.append(try await commit(writes, context: context)) }
-            catch let error as DurableStorageError where error.isCommitRefusal { return CommitResult(stored: sequences.count, refused: error) }
-            catch let error as DocumentCopyFailure { return CommitResult(stored: sequences.count, refused: error) }
-        }
-        return CommitResult(stored: sequences.count)
-    }
-
     /// Default publication has no storage-specific scope.
     func publishing(_ publish: @Sendable () -> Void, context: ChordContext) async throws { publish() }
 
-    /// v1.5.2 D2: compatibility for existing direct single-batch clients and tests.
-    /// Session itself uses the batch API. A later API cleanup can remove this bridge.
-    func commit(_ writes: [StorageWrite], context: ChordContext) async throws -> Seq {
-        let receipt = Mutex<Seq?>(nil)
-        let result = try await commit([writes], receive: { _, seq in receipt.withLock { $0 = seq } }, context: context)
-        if let refused = result.refused { throw refused }
-        guard let seq = receipt.withLock({ $0 }) else { throw DurableStorageError.commitSequenceDoesNotIncrease(0) }
-        return seq
-    }
 }

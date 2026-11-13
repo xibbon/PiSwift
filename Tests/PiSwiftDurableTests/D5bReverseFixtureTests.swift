@@ -131,7 +131,7 @@ struct D5bReverseFixtureTests {
             }
             let state: TaskState = scenario == "handoff" ? .pending(checkpoint: try JSONValue(encoding: checkpoint)) :
                 .running(checkpoint: try JSONValue(encoding: checkpoint))
-            _ = try await storage.commit([.task(value: record.replacing(state: state))], context: .background)
+            _ = try await storage.commitOne([.task(value: record.replacing(state: state))], context: .background)
             try await storage.close(context: .background)
         }
         if ["continue", "turn-limit", "model-error-retry"].contains(scenario) { try await first.harness.close(context: .background) }

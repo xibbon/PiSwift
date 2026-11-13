@@ -11,7 +11,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(run.status ?? 1);
 }
 process.env.npm_config_offline = 'true';
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'], mutable: true });
 try {
   const directory = join(source.directory, 'packages/durable/test/examples');
   await mkdir(directory, { recursive: true });

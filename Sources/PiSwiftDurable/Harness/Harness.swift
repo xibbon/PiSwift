@@ -185,14 +185,6 @@ public final class Harness: Sendable {
             try assertOpen(); return try await tasks.abort(id: id, context: context)
         }
     }
-    /// Historical API. Restart-limit tasks now end and cannot be retried.
-    @available(*, deprecated, message: "Restart-limit tasks end; start new work instead")
-    public func retryTask(id: TaskID, context: ChordContext) async throws {
-        try await withTaskCancellationContext(context) { context in
-            try assertOpen()
-            throw SessionError.message("Task \(id.rawValue) cannot be retried: restart-limit tasks now end")
-        }
-    }
     /// Waits for a terminal task outcome and returns its durable receipt.
     public func waitForTask(id: TaskID, context: ChordContext) async throws -> SettledTask {
         try await withTaskCancellationContext(context) { context in

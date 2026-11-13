@@ -12,10 +12,10 @@ import PiSwiftDurableTesting
         let storage = ControlledStorage(), setup = HarnessChatSetup()
         let opened = try await openChat(storage: storage, setup: setup)
         let tasks = Mutex<[TaskRecord]>([])
-        let subscription = try opened.harness.subscribeCommits { publication, _ in
+        let subscription = try opened.harness.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes { if case .task(let record) = change { tasks.withLock { $0.append(record) } } }
-        }
-        defer { subscription.cancel() }
+        }, end: { _ in }))
+        defer { subscription.detach() }
         let held = await storage.holdCommits(), root = opened.root
         let writing = Task { try await root.commit({ tx in
             _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker"))

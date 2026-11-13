@@ -36,7 +36,7 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         let session = try await Session.open(storage: storage, context: .background)
         let conversation = try await createConversation(session)
         let publications = SessionTestLog<CommitPublication>()
-        _ = try session.subscribeCommits { publication, _ in publications.append(publication) }
+        _ = try session.observeCommits(.init(advance: { publication, _ in publications.append(publication) }, end: { _ in }))
         let published = publications.count
         await storage.base.failNextCommit(SessionKernelFailure.storage)
         await #expect(throws: SessionKernelFailure.storage) {
@@ -57,7 +57,7 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         #expect(cause as? SessionKernelFailure == .storage)
         #expect(try await storage.scanEntries(.init(conversationId: conversation), limit: 256, cursor: nil, context: .background).items.isEmpty)
         let reopened = try await Session.open(storage: storage, context: .background)
-        _ = try reopened.subscribeCommits { publication, _ in publications.append(publication) }
+        _ = try reopened.observeCommits(.init(advance: { publication, _ in publications.append(publication) }, end: { _ in }))
         let entry = try await reopened.commit({ tx in
             try await tx.appendEntry(conversation, value: EntryDraft(kind: "accepted"))
         }, context: .background)
@@ -72,9 +72,9 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         let marker = ChordContextKey<Int>("Session test")
         let context = ChordContext.background.withValue(42, for: marker)
         let values = SessionTestLog<Int>()
-        let subscription = try harness.session.subscribeCommits { _, delivered in
+        let subscription = try harness.session.observeCommits(.init(advance: { _, delivered in
             values.append(delivered.value(marker) ?? -1)
-        }
+        }, end: { _ in }))
         let before = harness.publications.count
         let result = try await harness.session.commit({ tx in
             _ = try await tx.createConversation(ownership: .ownerless())
@@ -89,7 +89,7 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         #expect(document.record.createdAt == publication.seq)
         #expect(document.value == ["count": 1])
         #expect(try await harness.session.snapshot(token, context: .background) == document.value)
-        subscription.cancel()
+        subscription.detach()
         _ = try await createConversation(harness.session)
         #expect(values.values == [42])
         try await harness.session.close(context: .background)
@@ -155,11 +155,11 @@ private enum SessionKernelFailure: Error, Equatable { case storage, callback }
         let maximumActive = Mutex(0)
         let firstEntered = SessionTestGate()
         let releaseFirst = SessionTestGate()
-        _ = try harness.session.subscribeCommits { publication, _ in
+        _ = try harness.session.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes {
                 if case .entry(let entry) = change { publications.append(entry.kind) }
             }
-        }
+        }, end: { _ in }))
         var jobs: [Task<Void, any Error>] = []
         for index in 0..<20 {
             let job = Task {

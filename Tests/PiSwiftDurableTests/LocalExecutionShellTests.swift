@@ -60,7 +60,7 @@ private func waitForShellFile(_ path: URL) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(10))
     while !FileManager.default.fileExists(atPath: path.path) {
-        if clock.now >= deadline { throw ShellTestError(message: "Shell did not create its marker within 10 seconds") }
+        if clock.now >= deadline { throw ShellTestError(message: "Shell did not create \(path.lastPathComponent) within 10 seconds") }
         try await clock.sleep(for: .milliseconds(20))
     }
 }
@@ -261,6 +261,7 @@ struct LocalExecutionShellTests {
             do { pid = try await shellChildPID(directory.appendingPathComponent("child.pid")) }
             catch { controller.abort(); _ = await execution.value; throw error }
             defer { _ = Darwin.kill(pid, SIGKILL) }
+            #expect(Darwin.kill(pid, 0) == 0)
             switch action {
             case "abort": controller.abort()
             case "cleanup": await env.cleanup(context: .background)
@@ -388,11 +389,29 @@ struct LocalExecutionShellTests {
     func idleGraceStopsCallbacks() async throws {
         try await withShellTestEnv { (env: LocalExecutionEnv, directory: URL) async throws in
             let log = ShellTextLog()
-            let result = await env.exec(.shell("printf initial; (sleep 2; touch descendant-done; printf late) &"),
+            let gate = directory.appendingPathComponent("descendant-gate")
+            guard mkfifo(gate.path, 0o600) == 0 else { throw ShellTestError(message: "Could not create descendant gate") }
+            // E-FLAKE: The tag allows a descendant to run after exec returns. Hold its write until then.
+            let command = "printf initial; (trap '' PIPE; printf ready > descendant-ready; read release < descendant-gate; printf late 2>/dev/null || :; touch descendant-done) &"
+            let result = await env.exec(.shell(command),
                 options: .init(timeout: .seconds(15), onOutput: { text, _, _ in log.append(text) }), context: .background)
             #expect(try result.get().exitCode == 0)
             #expect(log.text == "initial")
+            try await waitForShellFile(directory.appendingPathComponent("descendant-ready"))
             #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("descendant-done").path))
+            let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var writer = Darwin.open(gate.path, O_WRONLY | O_NONBLOCK)
+            while writer < 0 {
+                guard errno == ENXIO, clock.now < deadline else {
+                    throw ShellTestError(message: "Descendant did not open its gate")
+                }
+                try await clock.sleep(for: .milliseconds(20))
+                writer = Darwin.open(gate.path, O_WRONLY | O_NONBLOCK)
+            }
+            defer { _ = Darwin.close(writer) }
+            let release = Array("go\n".utf8)
+            let written = release.withUnsafeBytes { Darwin.write(writer, $0.baseAddress!, $0.count) }
+            #expect(written == release.count)
             try await waitForShellFile(directory.appendingPathComponent("descendant-done"))
             try await ContinuousClock().sleep(for: .milliseconds(200))
             #expect(log.text == "initial")

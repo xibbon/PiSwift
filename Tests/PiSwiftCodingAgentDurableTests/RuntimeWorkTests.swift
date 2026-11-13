@@ -34,20 +34,18 @@ private func faultRecord(_ id: TaskID, message: String, completing: Bool = false
 
 @Test func durableWorkFieldsAndNoticeMetadataRoundTripAndOldJSONDefaults() throws {
     let id = try TaskID(2)
-    // v1.5.2 D5a task-graph.ts:58–64: restart_limit no longer blocks a live task.
-    // Keep this codec case so a saved v1.4.0 host view can still be read.
-    let parking = runtimeParkingReport(id: id, kind: "pi.tool", restarts: 5)
+    // v1.5.2 D5a task-graph.ts:58–64: only definition problems block live tasks.
     let original = workView()
     let view = DurableView(session: original.session, conversation: original.conversation,
         conversations: [], models: [],
-        notices: [.init(id: 1, level: .warning, message: parking, category: .taskParked, taskId: id, taskKind: "pi.tool")],
-        blockedTasks: [.init(id: id, kind: "pi.tool", reason: .restartLimit, restarts: 5, report: parking)],
+        notices: [.init(id: 1, level: .warning, message: "Task definition missing", category: .report, taskId: id, taskKind: "pi.tool")],
+        blockedTasks: [.init(id: id, kind: "pi.tool", reason: .missingTask, restarts: 5)],
         sleepingTasks: [.init(id: try TaskID(3), kind: "pi.generation", phase: "retry", until: 12_345.5)],
-        activity: .parked, queuedInputs: [.init(id: try SubmissionID(4), mode: .followUp, content: "Wait")])
+        activity: .blocked, queuedInputs: [.init(id: try SubmissionID(4), mode: .followUp, content: "Wait")])
     let decoded = try JSONValue(encoding: view).decode(DurableView.self)
     #expect(decoded == view)
     #expect(decoded.tasks == nil)
-    #expect(decoded.parkedTasks == view.blockedTasks)
+    #expect(decoded.blockedTasks == view.blockedTasks)
     var old = try #require(JSONValue(encoding: original).objectValue)
     for key in ["blockedTasks", "sleepingTasks", "activity", "queuedInputs", "terminal"] { old[key] = nil }
     let legacy = try JSONValue.object(old).decode(DurableView.self)
@@ -56,6 +54,8 @@ private func faultRecord(_ id: TaskID, message: String, completing: Bool = false
     #expect(notice.category == .operation)
     #expect(notice.taskId == nil)
     #expect(notice.taskKind == nil)
+    #expect(try JSONValue.string("taskParked").decode(Notice.Category.self) == .report)
+    #expect(try JSONValue.string("parked").decode(DurableActivity.self) == .blocked)
 }
 
 // v1.5.2 D5a scheduler.ts:505–521: only registry fit can block a live task.

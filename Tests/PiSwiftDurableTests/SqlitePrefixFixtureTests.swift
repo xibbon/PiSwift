@@ -18,7 +18,7 @@ extension PiSwiftDurableTests {
         do {
             for batch in try #require(fixture()["batches"]?.arrayValue) {
                 let writes = try #require(batch["writes"]).decode([StorageWrite].self)
-                #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+                #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
             }
             try await comparePrefixReads(storage)
         } catch { try? await storage.close(context: .background); throw error }

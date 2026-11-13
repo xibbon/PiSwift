@@ -30,7 +30,7 @@ struct JsonlD2BatchTests {
         try await jsonlWithStorage { storage, directory, _ in
             try await jsonlRoot(storage)
             let document: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(document)], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(document)], context: .background)
             let before = try Data(contentsOf: directory.appendingPathComponent("main.jsonl")).count
             var entries: [EntryID] = []
             for _ in 0..<3 { entries.append(try await storage.mintId()) }
@@ -57,7 +57,7 @@ struct JsonlD2BatchTests {
             #expect(try await reopened.entry(entries[1], context: .background) != nil)
             #expect(try await reopened.entry(entries[2], context: .background) == nil)
             #expect(try await reopened.document(document, at: .current, context: .background)?.value == ["count": 2])
-            #expect(try await reopened.commit([jsonlDelta(document, 9)], context: .background) == Seq(5))
+            #expect(try await reopened.commitOne([jsonlDelta(document, 9)], context: .background) == Seq(5))
             try await reopened.close(context: .background)
             let again = try await jsonlOpen(directory)
             #expect(try await again.document(document, at: .current, context: .background)?.value == ["count": 9])
@@ -71,7 +71,7 @@ struct JsonlD2BatchTests {
             try await jsonlRoot(storage)
             let first: DocumentID = try await storage.mintId()
             let second: DocumentID = try await storage.mintId()
-            _ = try await storage.commit([jsonlCreate(first), jsonlCreate(second, kind: "second")], context: .background)
+            _ = try await storage.commitOne([jsonlCreate(first), jsonlCreate(second, kind: "second")], context: .background)
             fs.clear()
             let receipts = Mutex<[(Int, Seq, [String])]>([])
             let result = try await storage.commit([
@@ -145,7 +145,7 @@ struct JsonlD2BatchTests {
                 #expect((try await reopened.entry(id, context: .background) != nil) == (index < complete))
             }
             let next: EntryID = try EntryID(5)
-            #expect(try await reopened.commit([.entry(value: .init(id: next, conversationId: rootConversationID, kind: "next"))], context: .background).rawValue == Int64(complete + 2))
+            #expect(try await reopened.commitOne([.entry(value: .init(id: next, conversationId: rootConversationID, kind: "next"))], context: .background).rawValue == Int64(complete + 2))
             try await reopened.close(context: .background)
         }
     }

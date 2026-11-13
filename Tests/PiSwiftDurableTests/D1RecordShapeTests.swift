@@ -150,7 +150,7 @@ private func d1ScalarCarrierTaskJSON(empty: Bool = false) throws -> JSONValue {
         let inputJSON = try d1SubmissionJSON("input"), writeJSON = try d1SubmissionJSON("write")
         let running = TaskRecord(id: try TaskID(3), conversationId: rootConversationID, kind: "test.running", version: 1,
                                  input: .null, state: .running(checkpoint: ["phase": "work"]))
-        _ = try await storage.commit([.conversation(value: .init(id: rootConversationID)), .task(value: task),
+        _ = try await storage.commitOne([.conversation(value: .init(id: rootConversationID)), .task(value: task),
             .task(value: running), .submission(value: inputJSON.decode()), .submission(value: writeJSON.decode())], context: .background)
         try await storage.close(context: .background)
         storage = try await open()
@@ -172,7 +172,7 @@ private func d1ScalarCarrierTaskJSON(empty: Bool = false) throws -> JSONValue {
     @Test func transactionCopiesRetainDistinctUnicodeCarrierKeys() async throws {
         let json = try d1ScalarCarrierTaskJSON(), record = try json.decode(TaskRecord.self)
         let storage = MemoryStorage()
-        _ = try await storage.commit([.conversation(value: .init(id: rootConversationID)), .task(value: record)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: .init(id: rootConversationID)), .task(value: record)], context: .background)
         let harness = try await harnessOpen([], storage: storage)
         let root = try await harness.root(context: .background)
         try await root.commit({ tx in try tx.setTask(record.replacing().withAbortMark()) }, context: .background)
@@ -186,10 +186,10 @@ private func d1ScalarCarrierTaskJSON(empty: Bool = false) throws -> JSONValue {
     @Test func graphBuildAndCommitFramesIncludeSleepingTasks() async throws {
         let storage = MemoryStorage()
         let record = try d1TaskJSON().decode(TaskRecord.self)
-        _ = try await storage.commit([.conversation(value: .init(id: rootConversationID)), .task(value: record)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: .init(id: rootConversationID)), .task(value: record)], context: .background)
         let input = try d1SubmissionJSON("input").decode(SubmissionRecord.self)
         let write = try d1SubmissionJSON("write").decode(SubmissionRecord.self)
-        _ = try await storage.commit([.submission(value: input), .submission(value: write)], context: .background)
+        _ = try await storage.commitOne([.submission(value: input), .submission(value: write)], context: .background)
         let harness = try await harnessOpen([], storage: storage)
         let graph = try await harness.taskGraph(context: .background)
         #expect(graph.value.tasks["2"]?.state == .sleeping(phase: "resume", until: 1_234.125))

@@ -13,7 +13,7 @@ extension PiSwiftDurableTests {
         // The generator records all reads after all write batches.
         for (index, batch) in batches.enumerated() {
             let writes = try #require(batch["writes"]).decode([StorageWrite].self)
-            let actual = try await storage.commit(writes, context: .background)
+            let actual = try await storage.commitOne(writes, context: .background)
             #expect(try JSONValue(encoding: actual) == batch["seq"], "Upstream batch \(index + 1)")
         }
         for (index, read) in reads.enumerated() {

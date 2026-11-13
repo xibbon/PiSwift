@@ -212,7 +212,7 @@ struct SharedFileCloseoutTests {
                         let raw = try #require(batch["writes"])
                         let writes = try await typedWrites(raw, dataset: dataset, storage: storage)
                         #expect(try JSONValue(encoding: writes) == raw)
-                        let seq = try await storage.commit(writes, context: .background)
+                        let seq = try await storage.commitOne(writes, context: .background)
                         #expect(try JSONValue(encoding: seq) == batch["seq"])
                     }
                     try await compare(storage, reads: #require(step["reads"]?.arrayValue))

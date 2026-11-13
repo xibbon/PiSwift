@@ -77,9 +77,9 @@ import PiSwiftDurableTesting
     @Test func queuedRequestIsIdempotentAndMiddleWithdrawalIsOnePositionalRemoval() async throws {
         let (h, root) = try await openBusy()
         let changes = SessionTestLog<DocumentCommitChange>()
-        _ = try h.subscribeCommits { publication, _ in
+        _ = try h.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes { if case .document(let doc) = change, doc.record.kind == "pi.inbox" { changes.append(doc) } }
-        }
+        }, end: { _ in }))
         let x = try await root.submit(.input(content: .text("x")), context: .background)
         let y = try await root.submit(.input(content: .text("y"), requestId: "y"), context: .background)
         let z = try await root.submit(.input(content: .text("z")), context: .background)
@@ -95,9 +95,9 @@ import PiSwiftDurableTesting
         let storage = ControlledStorage()
         let (h, root) = try await openBusy(storage: storage)
         let changes = SessionTestLog<DocumentCommitChange>()
-        _ = try h.subscribeCommits { publication, _ in
+        _ = try h.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes { if case .document(let doc) = change, doc.record.kind == "pi.inbox", !doc.ops.isEmpty { changes.append(doc) } }
-        }
+        }, end: { _ in }))
         let w1 = try await root.submit(.write(entry: queuedInputNote("w")), context: .background)
         let f1 = try await root.submit(.input(content: .text("f1")), context: .background)
         let w2 = try await root.submit(.write(entry: queuedInputNote("w")), context: .background)

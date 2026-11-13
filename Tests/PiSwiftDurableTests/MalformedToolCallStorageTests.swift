@@ -14,7 +14,7 @@ import PiSwiftDurable
         let id: EntryID = try await storage.mintId()
         let record = try EntryRecord.withMessages(id: id, conversationId: rootConversationID,
             kind: "pi.assistant", messages: [.assistant(message)])
-        _ = try await storage.commit([.entry(value: record)], context: .background)
+        _ = try await storage.commitOne([.entry(value: record)], context: .background)
         let reopened = try await jsonlOpen(directory)
         let stored = try #require(try await reopened.entry(id, context: .background))
         guard case .assistant(let decoded) = try stored.entry.messages()?.first,

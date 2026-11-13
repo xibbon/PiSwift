@@ -91,12 +91,12 @@ struct SessionWriterStressD3aTests {
                 }
             }
         }
-        let subscription = try session.subscribeCommits { publication, _ in
+        let subscription = try session.observeCommits(.init(advance: { publication, _ in
             storedSeqs.append(publication.seq)
             for change in publication.changes {
                 if case .entry(let entry) = change { publications.append(entry.id) }
             }
-        }
+        }, end: { _ in }))
         let preflightIDs = conversations
         let firstCall = await controlled.holdCommits()
         let first = Task {
@@ -231,7 +231,7 @@ struct SessionWriterStressD3aTests {
         try await session.close(context: .background)
         #expect(storedSeqs.count == (await controlled.callBatchCounts.dropFirst(storedCallBefore)).reduce(0, +))
         #expect(zip(storedSeqs.values, storedSeqs.values.dropFirst()).allSatisfy { $0.0 < $0.1 })
-        subscription.cancel()
+        subscription.detach()
         for watch in watches { _ = await watch.stop() }
         if kind != "memory" {
             // v1.5.2 D7 session-deferred-commits.test.ts:638-652: clean close keeps the last watch value.

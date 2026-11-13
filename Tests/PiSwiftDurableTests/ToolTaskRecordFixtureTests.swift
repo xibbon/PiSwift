@@ -50,7 +50,7 @@ struct ToolTaskRecordFixtureTests {
     private func replay(_ storage: any DurableStorage) async throws {
         for batch in try #require(fixture()["batches"]?.arrayValue) {
             let writes = try #require(batch["writes"]?.arrayValue).map(typedWrite)
-            let seq = try await storage.commit(writes, context: .background)
+            let seq = try await storage.commitOne(writes, context: .background)
             #expect(try JSONValue(encoding: seq) == batch["seq"])
         }
         try await compare(storage)

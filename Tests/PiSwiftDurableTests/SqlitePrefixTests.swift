@@ -27,7 +27,7 @@ struct SqlitePrefixTests {
         try host.close()
 
         let storage = try await SqliteStorage.open(path: path, prefix: "pi_")
-        #expect(try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) == Seq(1))
+        #expect(try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) == Seq(1))
         try await storage.close(context: .background)
         let reopened = try await SqliteStorage.open(path: path, prefix: "pi_")
         #expect(try await reopened.conversation(rootConversationID, context: .background) == ConversationRecord(id: rootConversationID))
@@ -79,7 +79,7 @@ struct SqlitePrefixTests {
     @Test(arguments: ["A", "z", "_", "_0", "aZ_09", "sqlite", "SQLite", "sqliteX_"])
     func acceptsIdentifierPrefix(prefix: String) async throws {
         let storage = try await SqliteStorage.open(path: ":memory:", prefix: prefix)
-        #expect(try await storage.commit([], context: .background) == Seq(1))
+        #expect(try await storage.commitOne([], context: .background) == Seq(1))
         try await storage.close(context: .background)
     }
 
@@ -93,18 +93,18 @@ struct SqlitePrefixTests {
         #expect(try await second.conversation(rootConversationID, context: .background) == nil)
         #expect(try await unprefixed.conversation(rootConversationID, context: .background) == nil)
         let write: JSONValue = ["type": "entry", "value": ["id": 7, "conversationId": 1, "kind": "first"]]
-        #expect(try await first.commit([.conversation(value: ConversationRecord(id: rootConversationID)), write.decode(StorageWrite.self)], context: .background) == Seq(1))
-        #expect(try await first.commit([], context: .background) == Seq(2))
+        #expect(try await first.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), write.decode(StorageWrite.self)], context: .background) == Seq(1))
+        #expect(try await first.commitOne([], context: .background) == Seq(2))
         for storage in [second, unprefixed] {
             #expect(try await storage.entry(EntryID(7), context: .background) == nil)
-            #expect(try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) == Seq(1))
+            #expect(try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))], context: .background) == Seq(1))
         }
         for storage in [first, second, unprefixed] { try await storage.close(context: .background) }
         for (prefix, nextId, sequence) in [(Optional("first_"), Int64(8), 3), (Optional("second_"), 2, 2), (nil, 2, 2)] {
             let storage = try await SqliteStorage.open(path: path, prefix: prefix)
             let id: EntryID = try await storage.mintId()
             #expect(id.rawValue == nextId)
-            #expect(try await storage.commit([], context: .background) == Seq(Int64(sequence)))
+            #expect(try await storage.commitOne([], context: .background) == Seq(Int64(sequence)))
             #expect(try await storage.entry(EntryID(7), context: .background)?.entry.kind == (prefix == "first_" ? "first" : nil))
             try await storage.close(context: .background)
         }
@@ -131,7 +131,7 @@ struct SqlitePrefixTests {
         do { _ = try await SqliteStorage.open(path: path, prefix: "second_"); Issue.record("Missing metadata accepted") }
         catch { #expect(String(describing: error) == "Durable SQLite metadata is missing") }
         let storage = try await SqliteStorage.open(path: path)
-        #expect(try await storage.commit([], context: .background) == Seq(1))
+        #expect(try await storage.commitOne([], context: .background) == Seq(1))
         try await storage.close(context: .background)
     }
 }

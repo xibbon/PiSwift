@@ -79,7 +79,7 @@ struct D4SharedFileCloseoutTests {
                         let raw = try #require(batch["writes"])
                         let writes = try raw.decode([StorageWrite].self)
                         #expect(try JSONValue(encoding: writes) == raw)
-                        #expect(try JSONValue(encoding: await writer.commit(writes, context: .background)) == batch["seq"])
+                        #expect(try JSONValue(encoding: await writer.commitOne(writes, context: .background)) == batch["seq"])
                     }
                     try await compare(writer, reads: reads)
                 } catch { try? await writer.close(context: .background); throw error }
@@ -177,7 +177,7 @@ struct D4SharedFileCloseoutTests {
                 if name == "migrate-swift-sleep.sqlite" {
                     let write = try sleepingWrite.decode(StorageWrite.self)
                     #expect(try JSONValue(encoding: write) == sleepingWrite)
-                    #expect(try JSONValue(encoding: await storage.commit([write], context: .background)) == manifest["sleepingSeq"])
+                    #expect(try JSONValue(encoding: await storage.commitOne([write], context: .background)) == manifest["sleepingSeq"])
                 }
                 #expect(try JSONValue(encoding: await storage.task(sleepingID, context: .background)) == sleepingTask)
             } catch { try? await storage.close(context: .background); throw error }

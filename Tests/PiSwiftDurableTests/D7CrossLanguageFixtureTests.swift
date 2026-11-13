@@ -21,7 +21,7 @@ struct D7CrossLanguageFixtureTests {
             documentRetentionMs: 600_000,
             documentTimer: .init(now: { clock.now() }, sleep: { try await clock.sleep(until: $0) }),
             persistWithinMs: { 100 }, context: .background)
-        _ = try session.subscribeCommits { publication, _ in publications.append(publication) }
+        _ = try session.observeCommits(.init(advance: { publication, _ in publications.append(publication) }, end: { _ in }))
         return session
     }
 

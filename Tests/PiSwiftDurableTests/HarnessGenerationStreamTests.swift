@@ -93,9 +93,9 @@ struct HarnessGenerationStreamTests {
         let clock = TestClock(), setup = HarnessChatSetup(clock: clock), models = HarnessManualModels(base: FakeDurableModels())
         let opened = try await openChat(setup: setup, models: models), submission = try await generationSubmit(opened)
         let values = Mutex<[JSONObject]>([])
-        let listener = try opened.harness.subscribeCommits { publication, _ in
+        let listener = try opened.harness.observeCommits(.init(advance: { publication, _ in
             for change in publication.changes { if case .document(let document) = change, document.record.kind == "pi.live", let value = document.value { values.withLock { $0.append(value) } } }
-        }
+        }, end: { _ in }))
         try await eventually { models.seen.withLock { !$0.isEmpty } }
         var message = chatAssistant("", reason: .pending); message.content = []
         models.stream.push(.start(partial: message))
@@ -105,7 +105,7 @@ struct HarnessGenerationStreamTests {
         try await opened.root.abort(context: .background)
         #expect(try await submission.wait(context: .background).reason == "aborted")
         #expect(values.withLock { $0.allSatisfy { $0["generation"]?["message"] == nil } })
-        listener.cancel()
+        listener.detach()
         try await opened.harness.close(context: .background)
     }
     @Test func faultedRunConvertsPartialAndSettlesInputs() async throws {

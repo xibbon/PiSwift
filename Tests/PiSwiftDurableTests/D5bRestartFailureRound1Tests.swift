@@ -54,7 +54,7 @@ struct D5bRestartFailureRound1Tests {
         let state = TaskState.running(checkpoint: try JSONValue(encoding: checkpoint(ids.user)))
         let replacement = previousRestarts == 0 ? record.replacing(state: state) :
             record.replacing(state: state, restarts: .some(Double(previousRestarts)))
-        _ = try await storage.commit([.task(value: replacement)], context: .background)
+        _ = try await storage.commitOne([.task(value: replacement)], context: .background)
         try await storage.close(context: .background)
         return ids
     }
@@ -295,7 +295,7 @@ struct D5bRestartFailureRound1Tests {
         let ids = try await seed(path, setup: setup, checkpoint: { poll($0) })
         let storage = try await SqliteStorage.open(path: path.path)
         let record = try #require(await storage.task(ids.task, context: .background))
-        _ = try await storage.commit([.task(value: record.replacing(abortRequested: true, restarts: .some(1)))], context: .background)
+        _ = try await storage.commitOne([.task(value: record.replacing(abortRequested: true, restarts: .some(1)))], context: .background)
         try await storage.close(context: .background)
         let opened = try await openChat(storage: SqliteStorage.open(path: path.path), setup: setup)
         #expect(try await opened.harness.getTask(id: ids.task, context: .background)?.storedRestarts == 2)

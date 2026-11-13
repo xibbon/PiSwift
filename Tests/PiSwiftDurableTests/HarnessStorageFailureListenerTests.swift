@@ -94,9 +94,11 @@ import PiSwiftDurableTesting
     @Test func nonthrowingCommitAndCloseListenersAllRunAndDurableCommitStands() async throws {
         let opened = try await openTasks(tasks: []), harness = opened.harness
         let root = try await harness.root(context: .background), seen = SessionTestLog<String>()
-        let subscriptions = try [
-            harness.subscribeCommits { _, _ in seen.append("commit-one") },
-            harness.subscribeCommits { _, _ in seen.append("commit-two") },
+        let commits = try [
+            harness.observeCommits(.init(advance: { _, _ in seen.append("commit-one") }, end: { _ in })),
+            harness.observeCommits(.init(advance: { _, _ in seen.append("commit-two") }, end: { _ in }))
+        ]
+        let closes = try [
             harness.subscribeClose { seen.append("close-one") },
             harness.subscribeClose { seen.append("close-two") }
         ]
@@ -105,6 +107,7 @@ import PiSwiftDurableTesting
         try await harness.close(context: .background)
         #expect(seen.values == ["commit-one", "commit-two", "close-one", "close-two"])
         #expect(opened.reports.count == 0)
-        for subscription in subscriptions { subscription.cancel() }
+        for observation in commits { observation.detach() }
+        for subscription in closes { subscription.cancel() }
     }
 }

@@ -88,7 +88,7 @@ import PiSwiftDurableTesting
         let parent = try TaskID(20)
         let child = try TaskID(30)
         let owned = try ConversationID(40)
-        _ = try await database.commit([
+        _ = try await database.commitOne([
             .conversation(value: ConversationRecord(id: rootConversationID)),
             .conversation(value: ConversationRecord(id: owned, owner: ConversationOwner(conversationId: rootConversationID, taskId: parent))),
             .task(value: TaskRecord(id: parent, conversationId: rootConversationID, kind: "test.owned-hold", version: 1, input: .number(0), state: .completing(outcome: .failed(error: .init(message: "stored failure"))))),

@@ -30,7 +30,7 @@ struct SessionCachedStorageD3bTests {
     @Test("keeps a read only when no commit overlapped it")
     func readOverlap() async throws {
         let backend = ControlledStorage()
-        _ = try await backend.commit([.conversation(value: .init(id: rootConversationID)), .task(value: d3bTask(2))], context: .background)
+        _ = try await backend.commitOne([.conversation(value: .init(id: rootConversationID)), .task(value: d3bTask(2))], context: .background)
         let cache = SessionCachedStorage(backend)
         let held = await backend.holdTaskRead()
         let read = Task { try await cache.task(TaskID(2), context: .background) }
@@ -75,7 +75,7 @@ struct SessionCachedStorageD3bTests {
     @Test("drops a read a publication of its record overlapped, and keeps versions only for reads in flight")
     func versionsOnlyInFlight() async throws {
         let backend = ControlledStorage()
-        _ = try await backend.commit([.conversation(value: .init(id: rootConversationID)), .task(value: d3bTask(2)), .task(value: d3bTask(3))], context: .background)
+        _ = try await backend.commitOne([.conversation(value: .init(id: rootConversationID)), .task(value: d3bTask(2)), .task(value: d3bTask(3))], context: .background)
         let cache = SessionCachedStorage(backend)
         let held = await backend.holdTaskRead()
         let two = Task { try await cache.task(TaskID(2), context: .background) }

@@ -278,9 +278,9 @@ private final class RetentionEdgeNoTimer: DurableClock, Sendable {
         try await session.commit({ tx in _ = try await tx.doc(token) }, context: .background)
         try await retentionEdgeWait { clock.pendingSleeperCount == 1 }
         let publications = SessionTestLog<JSONObject?>()
-        let subscription = try session.subscribeCommits { publication, _ in
+        let subscription = try session.observeCommits(.init(advance: { publication, _ in
             for change in documentChanges(publication) { publications.append(change.value) }
-        }
+        }, end: { _ in }))
         let gate = await storage.holdCommits()
         let commit = Task { try await session.commit({ tx in try await tx.doc(token).set("count", 1) }, context: .background) }
         await gate.waitUntilEntered()
@@ -296,7 +296,7 @@ private final class RetentionEdgeNoTimer: DurableClock, Sendable {
         clock.advance(by: 1_000)
         try await session.commit({ _ in }, context: .background)
         #expect(session.documentCacheSizes.cached == 0)
-        subscription.cancel(); try await session.close(context: .background)
+        subscription.detach(); try await session.close(context: .background)
     }
 
     @Test func droppingTheSessionCancelsItsSleepingTimer() async throws {

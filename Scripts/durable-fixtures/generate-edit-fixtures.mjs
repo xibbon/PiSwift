@@ -15,7 +15,7 @@ function run(command, args) {
   if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr}`);
 }
 const directory = await mkdtemp(join(tmpdir(), 'piswift-edit-oracle-'));
-const source = await mirror();
+const source = await mirror({ mutable: true });
 try {
   const version = '8.0.4';
   const target = join(directory, version);

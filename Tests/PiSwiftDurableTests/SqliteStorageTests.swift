@@ -44,7 +44,7 @@ struct SqliteStorageTests {
         try await storage.close(context: .background)
     }
     private func commit(_ storage: SqliteStorage, _ values: [JSONValue]) async throws -> Seq {
-        try await storage.commit(sqliteWrites(values), context: .background)
+        try await storage.commitOne(sqliteWrites(values), context: .background)
     }
     private func root(_ storage: SqliteStorage) async throws {
         _ = try await commit(storage, [["type": "conversation", "value": ["id": 1]]])
@@ -60,7 +60,7 @@ struct SqliteStorageTests {
             #expect(try await reopened.entry(id, context: .background)?.commitSeq == Seq(2))
             let next: EntryID = try await reopened.mintId()
             #expect(next.rawValue == id.rawValue + 1)
-            #expect(try await reopened.commit([], context: .background) == Seq(3))
+            #expect(try await reopened.commitOne([], context: .background) == Seq(3))
             try await reopened.close(context: .background)
         }
     }

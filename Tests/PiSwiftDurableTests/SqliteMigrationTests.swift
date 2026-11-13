@@ -44,7 +44,7 @@ struct SqliteMigrationTests {
         let path = directory.appendingPathComponent("storage.sqlite").path
         let storage = try await SqliteStorage.open(path: path)
         let write: JSONValue = ["type": "entry", "value": ["id": 2, "conversationId": 1, "kind": "retained", "data": ["retained": true]]]
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)), try write.decode(StorageWrite.self)], context: .background)
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)), try write.decode(StorageWrite.self)], context: .background)
         try await storage.close(context: .background)
         let db = try AppleSqliteDatabase(path: path)
         defer { try? db.close() }

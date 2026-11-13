@@ -173,6 +173,12 @@ extension ReportInfo: Codable {
     }
     /// Writes a report with its upstream type and field names.
     public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .sessionFailed, .taskParked:
+            throw EncodingError.invalidValue(self, .init(codingPath: encoder.codingPath,
+                debugDescription: "Historical report kinds are decode-only"))
+        default: break
+        }
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(task, forKey: .task)

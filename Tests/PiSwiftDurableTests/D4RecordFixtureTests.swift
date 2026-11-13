@@ -27,7 +27,7 @@ struct D4RecordFixtureTests {
             let raw = try #require(batch["writes"])
             let writes = try raw.decode([StorageWrite].self)
             #expect(try JSONValue(encoding: writes) == raw)
-            #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+            #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
             for checkpoint in checkpoints where checkpoint["seq"] == batch["seq"] {
                 try await compare(storage, reads: #require(checkpoint["reads"]?.arrayValue))
             }

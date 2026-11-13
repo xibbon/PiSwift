@@ -6,7 +6,7 @@ import { mirror, upstreamTag } from './mirror.mjs';
 
 const fixturePath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/structured-tool-schema-v140.json', import.meta.url));
 const checking = process.argv.includes('--check');
-const source = await mirror({ dependencies: ['typebox@1.3.27'] });
+const source = await mirror({ dependencies: ['typebox@1.3.27'], mutable: true });
 try {
  await writeFile(join(source.directory,'schema-oracle.mjs'), `import { Compile } from 'typebox/compile';
 export function check(schema,value) {

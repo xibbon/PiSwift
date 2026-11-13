@@ -7,7 +7,7 @@ import { mirror, upstreamRepository, upstreamTag } from './mirror.mjs';
 
 // npm may use its local cache only. The examples use no remote model provider.
 process.env.npm_config_offline = 'true';
-const source = await mirror({ dependencies: ['typebox@1.3.27'] });
+const source = await mirror({ dependencies: ['typebox@1.3.27'], mutable: true });
 try {
   // Add the real package subpath exports needed by the example imports.
   const manifestPath = join(source.directory, 'packages/ai/package.json');

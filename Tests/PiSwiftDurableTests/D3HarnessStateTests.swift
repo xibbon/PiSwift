@@ -35,7 +35,7 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
             after = .running(checkpoint: reordered)
             #expect(try checkpoint.jsonText() != reordered.jsonText())
         }
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: d3StateRecord(id, state: .pending(checkpoint: checkpoint), restarts: 3)),
             .task(value: d3StateRecord(first, state: .pending(checkpoint: checkpoint), owner: id)),
             .task(value: d3StateRecord(second, state: .pending(checkpoint: checkpoint), owner: id))], context: .background)
@@ -60,7 +60,7 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
         let base = MemoryStorage(), events = SessionTestLog<String>(), storage = D3TestStorage(base, events: events)
         let owner = try TaskID(20), child = try TaskID(21), terminal = try TaskID(22), ready = try TaskID(23)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
-        _ = try await base.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+        _ = try await base.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: d3StateRecord(owner, state: .pending(checkpoint: checkpoint), restarts: 3)),
             .task(value: d3StateRecord(child, state: .pending(checkpoint: checkpoint), owner: owner)),
             .task(value: d3StateRecord(terminal, state: .terminal(outcome: .completed(result: .number(7))))),
@@ -99,7 +99,7 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
     @Test func graphShowsOldDefinitionAndMissingMigrationBeforeResume() async throws {
         let storage = MemoryStorage(), old = try TaskID(20), noMigration = try TaskID(21)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
-        _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+        _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: d3StateRecord(old, state: .pending(checkpoint: checkpoint), kind: "test.old", version: 2)),
             .task(value: d3StateRecord(noMigration, state: .pending(checkpoint: checkpoint), kind: "test.no-migration"))], context: .background)
         let first = harnessOneStep("test.old", version: 1) { _, _, _ in Issue.record("Old definition ran") }
@@ -120,7 +120,7 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
     @Test func closeKeepsReservationThatWasReadingItsOwnershipChain() async throws {
         let base = MemoryStorage(), storage = D3TestStorage(base), id = try TaskID(20)
         let checkpoint = try JSONValue(encoding: HarnessTaskCheckpoint())
-        _ = try await base.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+        _ = try await base.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
             .task(value: d3StateRecord(id, state: .pending(checkpoint: checkpoint)))], context: .background)
         let definition = harnessOneStep("test.state") { _, _, _ in Issue.record("Close started a handler") }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], storage: storage)

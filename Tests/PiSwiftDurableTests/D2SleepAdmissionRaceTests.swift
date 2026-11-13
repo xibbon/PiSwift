@@ -18,13 +18,14 @@ private final class AdvanceOnReadClock: DurableClock {
     func sleep(until deadline: Int64) async throws { try await base.sleep(until: deadline) }
 }
 
-@Test func defaultDeadlineTimerDoesNotAddAnOldDelayToANewTime() async throws {
+@Test(.timeLimit(.minutes(1))) func defaultDeadlineTimerDoesNotAddAnOldDelayToANewTime() async throws {
     let clock = AdvanceOnReadClock(), timers = HarnessTimers(clock: clock)
-    let wait = settled { try await timers.sleep(until: 100) }
+    // E-FLAKE: Run the timer operation in this test task. A separate task
+    // could remain unscheduled past harnessEventually's wall-clock deadline
+    // even after the test clock had already reached the target.
     do {
-        try await harnessEventually { wait.isSettled }
+        try await timers.sleep(until: 100)
         #expect(clock.base.now() == 100 && clock.base.pendingSleeperCount == 0)
-        try #require(wait.result).get()
     } catch {
         let detail = "deadline wait expired: now=\(clock.base.now()) sleepers=\(clock.base.pendingSleeperCount)"
         // Release a wrongly shifted timer before reporting the regression.

@@ -20,7 +20,7 @@ extension PiSwiftDurableTests {
         let records = try fixture()
         for batch in try #require(records["batches"]?.arrayValue) {
             let writes = try #require(batch["writes"]).decode([StorageWrite].self)
-            #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+            #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
         }
         try await compareSqliteReads(storage, records: records)
         try await storage.close(context: .background)
@@ -43,7 +43,7 @@ extension PiSwiftDurableTests {
         let records = try fixture()
         for batch in try #require(records["batches"]?.arrayValue) {
             let writes = try #require(batch["writes"]).decode([StorageWrite].self)
-            #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+            #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
         }
         try await compareSqliteReads(storage, records: records)
         try await storage.close(context: .background)

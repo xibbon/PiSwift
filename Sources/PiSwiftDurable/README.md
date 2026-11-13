@@ -213,8 +213,8 @@ Supply a fresh writable `sessionDirectory` and `context` for this storage exampl
 let storage = try await JsonlStorage.open(directory: sessionDirectory,
     options: .init(fsync: true), context: context)
 let rootID = rootConversationID
-_ = try await storage.commit([.conversation(value: ConversationRecord(id: rootID))],
-    context: context)
+_ = try await storage.commit([[.conversation(value: ConversationRecord(id: rootID))]],
+    receive: { _, _ in }, context: context)
 try await storage.close(context: context)
 let reopened = try await JsonlStorage.open(directory: sessionDirectory, context: context)
 let saved = try await reopened.conversation(rootID, context: context)

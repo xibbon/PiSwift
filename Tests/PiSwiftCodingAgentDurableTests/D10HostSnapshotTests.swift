@@ -62,8 +62,7 @@ import Testing
         let info = ReportInfo.taskInterrupted(task: .init(id: task, kind: "pi.generation", conversationId: conversation.id),
             reason: .restartLimit, restarts: 5)
         let notice = Notice(id: 1, level: .warning, message: "Work stopped", reportInfo: info)
-        let parked = Notice(id: 0, level: .warning, message: "Task parked", category: .taskParked)
-        let legacy = legacyView(conversation: conversation, notices: [parked, notice])
+        let legacy = legacyView(conversation: conversation, notices: [notice])
         let transcript = TranscriptView(conversation: conversation, docs: docs, items: [])
         let outcome = DurableTaskOutcome(id: task, kind: "pi.generation", conversationId: conversation.id,
             outcome: .aborted(reason: "User stopped work"))

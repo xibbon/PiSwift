@@ -227,6 +227,11 @@ struct D5bGenerationRunTests {
         setup.models.setResponses([.message(chatAssistant("answered")), .message(chatAssistant("second answered"))])
         let chat = try await openChat(setup: setup)
         #expect(try await generationSubmit(chat, "one").wait(context: .background).status == "done")
+        // E-FLAKE: Hold scheduler dispatch while the two submissions commit.
+        // Their queued state is then observable before the empty continue
+        // advances to the next run.
+        try await chat.root.waitForIdle(context: .background)
+        chat.harness.tasks.state.withLock { $0.enabled = false }
         let ids = try await chat.root.commit({ tx in
             let continued = try await admitSubmission(tx: tx, conversationId: chat.root.id, draft: .continue(),
                 now: 1, queueModes: resolveSettings(setup.settings))
@@ -238,6 +243,7 @@ struct D5bGenerationRunTests {
         let continued = try #require(try await chat.harness.submission(id: ids.0, context: .background))
         let queued = try #require(try await chat.harness.submission(id: ids.1, context: .background))
         #expect(try await queued.status(context: .background).status == "queued")
+        try chat.harness.resume()
         #expect(try await continued.wait(context: .background).reason == "nothing_to_answer")
         let settled = try await queued.wait(context: .background)
         #expect(settled.status == "done")
@@ -503,7 +509,7 @@ struct D5bGenerationRunTests {
         let checkpoint = GenerationCheckpoint(phase: .request, attempt: 1,
             model: ModelRef(provider: "faux", modelId: "faux-1"), thinkingLevel: .off,
             streamOptions: .init(), cutoff: seeded.2)
-        _ = try await storage.commit([.task(value: record.replacing(state: .running(checkpoint: try JSONValue(encoding: checkpoint))))], context: .background)
+        _ = try await storage.commitOne([.task(value: record.replacing(state: .running(checkpoint: try JSONValue(encoding: checkpoint))))], context: .background)
         try await storage.close(context: .background)
 
         let reopened = try await openChat(storage: SqliteStorage.open(path: path.path), setup: setup)

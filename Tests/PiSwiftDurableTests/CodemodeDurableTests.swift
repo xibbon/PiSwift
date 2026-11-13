@@ -470,7 +470,7 @@ extension CodemodeDurableTests {
         try chat.responses("save")
         let opened = try await openChat(setup: chat.setup)
         let publications = SessionTestLog<CommitPublication>()
-        let subscription = try opened.harness.subscribeCommits { value, _ in publications.append(value) }
+        let subscription = try opened.harness.observeCommits(.init(advance: { value, _ in publications.append(value) }, end: { _ in }))
         try await cdWait(opened, generationSubmit(opened).id)
         let user = try #require(try await allEntries(opened.root).first { $0.kind == "pi.user" })
         let atom = publications.values.first { value in
@@ -494,7 +494,7 @@ extension CodemodeDurableTests {
         let forked = OpenChatResult(harness: opened.harness, root: fork)
         try await cdWait(forked, generationSubmit(forked).id)
         #expect(cdText(try await cdResult(forked)).contains("[null]"))
-        subscription.cancel()
+        subscription.detach()
         try await opened.harness.close(context: .background)
     }
 
@@ -511,13 +511,13 @@ extension CodemodeDurableTests {
         try chat.responses()
         let opened = try await openChat(setup: chat.setup)
         let commits = Mutex(0)
-        let subscription = try opened.harness.subscribeCommits { value, _ in
+        let subscription = try opened.harness.observeCommits(.init(advance: { value, _ in
             if value.changes.contains(where: { if case .document(let change) = $0 { return change.record.kind == "pi.codemode.journal" }; return false }) { commits.withLock { $0 += 1 } }
-        }
+        }, end: { _ in }))
         try await cdWait(opened, generationSubmit(opened).id)
         #expect(cdText(try await cdResult(opened)).contains("50"))
         #expect(commits.withLock { $0 } < 10)
-        subscription.cancel()
+        subscription.detach()
         try await opened.harness.close(context: .background)
     }
 }

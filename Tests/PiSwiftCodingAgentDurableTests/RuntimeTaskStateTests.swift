@@ -119,7 +119,7 @@ private func taskStateTexts(_ view: DurableView, kind: String) throws -> [String
             let sleeping = try #require(view.sleepingTasks.first { $0.id == id })
             #expect(view.tasks == nil)
             #expect(view.activity == .sleeping)
-            #expect(view.parkedTasks.isEmpty)
+            #expect(view.blockedTasks.isEmpty)
             #expect(sleeping.kind == "pi.generation")
             #expect(sleeping.phase == "retry")
             #expect(sleeping.until == Double(until))

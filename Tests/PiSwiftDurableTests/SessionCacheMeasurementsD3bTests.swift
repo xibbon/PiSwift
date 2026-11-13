@@ -39,7 +39,7 @@ struct SessionCacheMeasurementsD3bTests {
             writes.append(.task(value: TaskRecord(id: id, conversationId: rootConversationID,
                 kind: "bench", version: 1, input: .null, state: .pending(checkpoint: .null))))
         }
-        _ = try await backend.commit(writes, context: .background)
+        _ = try await backend.commitOne(writes, context: .background)
         let cache = SessionCachedStorage(backend)
         cache.published(writes)
         let clock = ContinuousClock()
@@ -64,7 +64,7 @@ struct SessionCacheMeasurementsD3bTests {
                 kind: "bench", version: 1, input: .null,
                 state: .terminal(outcome: .completed(result: .null)))))
         }
-        _ = try await backend.commit(writes, context: .background)
+        _ = try await backend.commitOne(writes, context: .background)
         writes.removeAll(keepingCapacity: false)
         let session = try await Session.open(storage: backend, context: .background)
         let before = try d3bResidentKB()

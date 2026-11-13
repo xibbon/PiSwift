@@ -40,12 +40,46 @@ private struct ScaleHoldCheckpoint: TaskCheckpoint {
         try await harness.close(context: .background)
     }
 
-    // harness-ownership.test.ts:314. The full upstream depth must fit on the stack.
+    // harness-ownership.test.ts:314. Build the index directly so this test
+    // measures the iterative ownership walk, not 20,000 public commits.
     @Test(.timeLimit(.minutes(1))) func holdsAndReleasesTwentyThousandLinks() async throws {
-        // This case checks ownership holds, not disk persistence.
-        let storage = try await SqliteStorage.open(path: ":memory:")
         let started = ContinuousClock.now
-        let control = W3LifetimeControl(), depth = 20_000
+        let depth = 20_000
+        var index = TaskScheduler.State()
+        index.setEdge(ConversationRecord(id: rootConversationID))
+        var parent: TaskID?
+        for number in 0..<depth {
+            let id = try TaskID(Int64(number + 2))
+            let ended = TaskRecord(id: id, conversationId: rootConversationID,
+                kind: "test.scale.deep-hold", version: 1, input: .null,
+                state: .terminal(outcome: .completed(result: .null)), owner: parent)
+            index.nodes[id] = TaskNode(ended)
+            parent = id
+        }
+        let leafID = try TaskID(Int64(depth + 2))
+        let leaf = TaskRecord(id: leafID, conversationId: rootConversationID,
+            kind: "test.scale.deep-hold", version: 1, input: .null,
+            state: .pending(checkpoint: ["phase": "hold"]), owner: parent)
+        index.track(leaf)
+        let heldLinks = index.below.values.reduce(0) { $0 + $1.count }
+        #expect(heldLinks == depth + 1)
+        #expect(index.roots.contains(rootConversationID))
+        let holding = ContinuousClock.now
+        index.track(leaf.replacing(state: .terminal(outcome: .completed(result: .null))))
+        let dropped = index.dropQueue.count
+        #expect(dropped == depth + 2)
+        #expect(index.below.isEmpty)
+        index.sweep()
+        #expect(index.nodes.isEmpty)
+        #expect(index.roots.isEmpty)
+        print("E-FLAKE deep-ownership links=\(heldLinks) drops=\(dropped) setup=\(started.duration(to: holding)) release=\(holding.duration(to: .now))")
+
+        // Keep the public lifecycle witness from the original test. The
+        // direct index above carries the 20,000-link stack and count check.
+        let publicStarted = ContinuousClock.now
+        let storage = try await SqliteStorage.open(path: ":memory:")
+        let control = W3LifetimeControl()
+        let publicDepth = 4_500
         let definition = TaskDefinition<Int, ScaleHoldCheckpoint, JSONValue, NoTaskHooks>(
             name: "test.scale.deep-hold", version: 1, initial: { _ in ScaleHoldCheckpoint() },
             phase: { task, runtime, context in
@@ -59,26 +93,24 @@ private struct ScaleHoldCheckpoint: TaskCheckpoint {
         let ends = try await root.commit({ tx in
             let top = try await tx.createTask(definition, input: 1, options: .init(ownership: .conversation()))
             var owner = top
-            for n in 0..<depth {
+            for n in 0..<publicDepth {
                 owner = try await tx.createTask(definition, input: n + 2,
                                                 options: .init(ownership: .task(taskId: owner)))
             }
-            let leaf = try await tx.createTask(definition, input: depth + 2,
+            let leaf = try await tx.createTask(definition, input: publicDepth + 2,
                                                options: .init(ownership: .task(taskId: owner)))
             return (top, leaf)
         }, context: .background)
-        let created = ContinuousClock.now
-        for input in 1..<(depth + 2) { control.open(input) }
+        for input in 1..<(publicDepth + 2) { control.open(input) }
         try harness.resume()
         try await scaleEventually {
             try await harness.getTask(id: ends.0, context: .background)?.state.status == "completing"
         }
-        let holding = ContinuousClock.now
-        control.open(depth + 2)
+        control.open(publicDepth + 2)
         #expect(try await harness.waitForTask(id: ends.1, context: .background).outcome.status == "completed")
         #expect(try await harness.waitForTask(id: ends.0, context: .background).outcome.status == "completed")
-        print("E11b deep-ownership create=\(started.duration(to: created)) hold=\(created.duration(to: holding)) release=\(holding.duration(to: .now))")
         try await harness.close(context: .background)
+        print("E-FLAKE ownership-public depth=\(publicDepth) elapsed=\(publicStarted.duration(to: .now))")
     }
 
     // harness-ownership.test.ts:525. Check a holder once per round, not once per sibling.

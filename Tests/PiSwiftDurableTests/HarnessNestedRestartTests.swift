@@ -272,7 +272,7 @@ private func nestedRestartWorker(_ name: String, started: HarnessChatSignal,
         #expect(try await first.harness.snapshot(LiveDoc, conversationId: first.root.id, context: .background)?.nestedTools?.count == 1)
         try await first.harness.close(context: .background)
         let second = try await nestedRestartOpen(path, setup)
-        let subscription = try second.harness.subscribeCommits { publication, _ in
+        let subscription = try second.harness.observeCommits(.init(advance: { publication, _ in
             let terminalParent = publication.changes.contains { change in
                 guard case .task(let task) = change else { return false }
                 return task.kind == "pi.tool" && task.input["kind"] == "model" && task.state.status == "terminal"
@@ -283,11 +283,11 @@ private func nestedRestartWorker(_ name: String, started: HarnessChatSignal,
                 }.first
                 slotCounts.append(live?["nestedTools"]?.arrayValue?.count ?? 0)
             }
-        }
+        }, end: { _ in }))
         try second.harness.resume()
         #expect(try await nestedRestartWait(second, id).status == "done")
         #expect(attempts.withLock { $0 } == 2 && slotCounts.values == [0])
-        subscription.cancel(); try await second.harness.close(context: .background)
+        subscription.detach(); try await second.harness.close(context: .background)
     }
 
     // :518. A caller that omits an earlier unfinished call aborts it before settlement.

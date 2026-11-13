@@ -35,7 +35,7 @@ private func storeToolV1(_ path: String, setup: HarnessChatSetup, checkpoint: To
     else { state = .pending(checkpoint: try JSONValue(encoding: checkpoint)) }
     let old = TaskRecord(id: id, conversationId: record.conversationId, kind: record.kind, version: 1,
                          input: .object(input), state: state)
-    _ = try await storage.commit([.task(value: old)], context: .background)
+    _ = try await storage.commitOne([.task(value: old)], context: .background)
     try await storage.close(context: .background)
     return id
 }
@@ -102,7 +102,7 @@ private func storeToolV1(_ path: String, setup: HarnessChatSetup, checkpoint: To
         let held = TaskRecord(id: record.id, conversationId: record.conversationId, kind: record.kind, version: 1,
             input: .object(input), state: .completing(outcome: .completed(result: legacy)), owner: record.owner,
             background: record.background, startedAt: record.startedAt)
-        _ = try await storage.commit([.task(value: held)], context: .background)
+        _ = try await storage.commitOne([.task(value: held)], context: .background)
         try await storage.close(context: .background)
         let second = try await toolV2Open(path, setup: setup)
         try second.harness.resume()

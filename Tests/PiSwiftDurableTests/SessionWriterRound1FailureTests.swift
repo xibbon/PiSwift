@@ -263,7 +263,7 @@ struct SessionWriterRound1FailureTests {
         let session = try await Session.open(storage: storage,
             onReport: { error, info in reports.append((String(describing: error), info)) }, context: .background)
         let published = SessionTestLog<CommitPublication>()
-        let listener = try session.subscribeCommits { publication, _ in published.append(publication) }
+        let listener = try session.observeCommits(.init(advance: { publication, _ in published.append(publication) }, end: { _ in }))
         let id = try await createConversation(session)
         let before = published.count
         await storage.failNextPublicationScope(Round1WriterError.scope)
@@ -273,7 +273,7 @@ struct SessionWriterRound1FailureTests {
         #expect(reports.values[0].0.contains("scope"))
         #expect(reports.values[0].1 == .listenerError)
         #expect(session.failure == nil)
-        listener.cancel()
+        listener.detach()
         try await session.close(context: .background)
     }
 

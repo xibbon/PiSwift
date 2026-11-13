@@ -42,7 +42,7 @@ struct SessionWriterRound1AdoptionTests {
         let order = SessionTestLog<String>()
         let held = await h.storage.holdPublication()
         _ = try h.session.observeCommits { _, _ in order.append("own") }
-        _ = try h.session.subscribeCommits { _, _ in order.append("host") }
+        _ = try h.session.observeCommits(.init(advance: { _, _ in order.append("host") }, end: { _ in }))
         let writing = Task { try await h.session.commit({ tx in
             try await tx.createConversation(ownership: .ownerless())
         }, context: .background) }
@@ -58,14 +58,14 @@ struct SessionWriterRound1AdoptionTests {
     func hostRegistrationAtPublication() async throws {
         let h = try await openTestSession()
         let calls = SessionTestLog<String>()
-        let removed = try h.session.subscribeCommits { _, _ in calls.append("removed") }
-        _ = try h.session.subscribeCommits { _, _ in calls.append("kept") }
+        let removed = try h.session.observeCommits(.init(advance: { _, _ in calls.append("removed") }, end: { _ in }))
+        _ = try h.session.observeCommits(.init(advance: { _, _ in calls.append("kept") }, end: { _ in }))
         let first = Mutex(false)
         _ = try h.session.observeCommits { _, _ in
             let change = first.withLock { value in let previous = value; value = true; return !previous }
             if change {
-                removed.cancel()
-                _ = try h.session.subscribeCommits { _, _ in calls.append("added") }
+                removed.detach()
+                _ = try h.session.observeCommits(.init(advance: { _, _ in calls.append("added") }, end: { _ in }))
             }
         }
         _ = try await createConversation(h.session)
@@ -77,7 +77,7 @@ struct SessionWriterRound1AdoptionTests {
         let installed = Mutex(false)
         _ = try bare.observeCommits { _, _ in
             let change = installed.withLock { value in let previous = value; value = true; return !previous }
-            if change { _ = try bare.subscribeCommits { publication, _ in late.append(publication.seq) } }
+            if change { _ = try bare.observeCommits(.init(advance: { publication, _ in late.append(publication.seq) }, end: { _ in })) }
         }
         _ = try await createConversation(bare)
         #expect(late.values.isEmpty)
@@ -92,9 +92,9 @@ struct SessionWriterRound1AdoptionTests {
         let order = SessionTestLog<String>()
         _ = try h.session.observeCommits { _, _ in order.append("own throw"); throw AdoptionRound1Error.own }
         _ = try h.session.observeCommits { _, _ in order.append("own after") }
-        _ = try h.session.subscribeCommits { _, _ in
+        _ = try h.session.observeCommits(.init(advance: { _, _ in
             order.append(h.session.failure == nil ? "host healthy" : "host failed")
-        }
+        }, end: { _ in }))
         _ = try await createConversation(h.session)
         #expect(order.values == ["own throw", "own after", "host healthy"])
         #expect(h.session.failure as? AdoptionRound1Error == .own)
@@ -116,7 +116,7 @@ struct SessionWriterRound1AdoptionTests {
             if destination.split(separator: "/").last?.hasPrefix("doc-") == true { order.append("rename") }
         }
         try await bump(session, token, 1)
-        _ = try session.subscribeCommits { _, _ in order.append("host") }
+        _ = try session.observeCommits(.init(advance: { _, _ in order.append("host") }, end: { _ in }))
         try await bump(session, token, 2)
         order.append("resolved")
         #expect(order.values == ["rename", "host", "resolved"])

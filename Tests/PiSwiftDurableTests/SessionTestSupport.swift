@@ -49,7 +49,7 @@ func openTestSession(now: @escaping @Sendable () -> Int64 = { 1_000 }) async thr
     let storage = ControlledStorage()
     let session = try await Session.open(storage: storage, now: now, documentRetentionMs: 600_000, context: .background)
     let publications = SessionTestLog<CommitPublication>()
-    _ = try session.subscribeCommits { publication, _ in publications.append(publication) }
+    _ = try session.observeCommits(.init(advance: { publication, _ in publications.append(publication) }, end: { _ in }))
     return SessionTestHarness(storage: storage, session: session, publications: publications)
 }
 

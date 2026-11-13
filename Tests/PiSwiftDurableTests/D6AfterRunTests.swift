@@ -225,7 +225,7 @@ struct D6AfterRunTests {
                 abandonOnRestart: saved.abandonOnRestart, startedAt: saved.startedAt, endedAt: saved.endedAt,
                 memos: saved.memos, restarts: 1, trace: saved.trace, links: saved.links,
                 extensionFields: saved.extensionFields)
-            _ = try await storage.commit([.task(value: marked)], context: .background)
+            _ = try await storage.commitOne([.task(value: marked)], context: .background)
         }
         let asked = Mutex(0), reports = HarnessReports(), registry = Registry()
         try registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
@@ -590,7 +590,7 @@ struct D6AfterRunTests {
             abandonOnRestart: saved.abandonOnRestart, startedAt: saved.startedAt, endedAt: saved.endedAt,
             memos: saved.memos, restarts: 1, trace: saved.trace, links: saved.links,
             extensionFields: saved.extensionFields)
-        _ = try await recoveryStorage.commit([.task(value: cutOff)], context: .background)
+        _ = try await recoveryStorage.commitOne([.task(value: cutOff)], context: .background)
         try await recoveryStorage.close(context: .background)
         let reopened = try await openChat(storage: SqliteStorage.open(path: path), setup: setup)
         try await reopened.harness.waitForIdle(context: .background)

@@ -141,7 +141,7 @@ public struct DurableHostView: Sendable {
         ending = live.runFailure.map(DurableRunEnding.init)
         // The old TUI still receives its restart-limit parking notice. A new
         // consumer receives final task outcomes and typed reports instead.
-        notices = legacy.notices.filter { $0.category != .taskParked }
+        notices = legacy.notices
         session = legacy.session
         conversations = legacy.conversations
         models = legacy.models
@@ -151,7 +151,7 @@ public struct DurableHostView: Sendable {
         case .idle: activity = .idle
         case .progressing: activity = .progressing
         case .sleeping: activity = .sleeping
-        case .blocked, .parked: activity = .blocked
+        case .blocked: activity = .blocked
         }
         sleepingTasks = legacy.sleepingTasks
     }

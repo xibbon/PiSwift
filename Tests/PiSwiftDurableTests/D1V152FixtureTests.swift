@@ -29,7 +29,7 @@ struct D1V152FixtureTests {
             do {
                 for batch in try #require(values["batches"]?.arrayValue) {
                     let writes = try #require(batch["writes"]).decode([StorageWrite].self)
-                    #expect(try JSONValue(encoding: await storage.commit(writes, context: .background)) == batch["seq"])
+                    #expect(try JSONValue(encoding: await storage.commitOne(writes, context: .background)) == batch["seq"])
                 }
                 for read in try #require(values["reads"]?.arrayValue) {
                     let actual = try await PiSwiftDurableTests().sqliteReplayRead(

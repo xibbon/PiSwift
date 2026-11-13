@@ -47,7 +47,7 @@ private func d3Record(_ id: TaskID, kind: String = "test.loop", state: TaskState
         abortRequested: abortRequested, abandonOnRestart: abandonOnRestart, restarts: restarts)
 }
 private func d3Seed(_ storage: any DurableStorage, _ record: TaskRecord) async throws {
-    _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID)),
+    _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID)),
                                 .task(value: record)], context: .background)
 }
 private func d3ExpectBlocked(_ harness: Harness, _ id: TaskID, reason: TaskBlockedReason) async throws {

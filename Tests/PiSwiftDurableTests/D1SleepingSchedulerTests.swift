@@ -15,7 +15,7 @@ private func d1Sleeper(_ id: TaskID, until: Double, owner: TaskID? = nil) throws
 }
 
 private func d1Store(_ storage: any DurableStorage, _ records: [TaskRecord]) async throws {
-    _ = try await storage.commit([.conversation(value: ConversationRecord(id: rootConversationID))] + records.map { .task(value: $0) }, context: .background)
+    _ = try await storage.commitOne([.conversation(value: ConversationRecord(id: rootConversationID))] + records.map { .task(value: $0) }, context: .background)
 }
 
 private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int> = .init()) -> HarnessTestTask {
@@ -34,7 +34,7 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
 
 @Suite struct D1SleepingSchedulerTests {
     // v1.4.0 scheduler.ts:1358,1430,1482: a stored due sleep resumes at its checkpoint.
-    @Test(arguments: [0.0, 100.0, 100.25])
+    @Test(.timeLimit(.minutes(1)), arguments: [0.0, 100.0, 100.25])
     func dueRecoveryRetainsRecordFields(until: Double) async throws {
         let storage = MemoryStorage(), clock = TestClock(now: 101), runs = SessionTestLog<Int>()
         let id = try TaskID(20), record = try d1Sleeper(id, until: until)
@@ -45,7 +45,7 @@ private func d1SleepTask(_ runs: SessionTestLog<Int>, aborts: SessionTestLog<Int
         // v1.5.2 D5a harness-inspect.test.ts:97–101: runnable inspection is pending.
         guard case .pending(false)? = inspection.tasks.first?.state else { throw TaskDefinitionError("Due sleep was not pending") }
         try harness.resume()
-        try await harnessEventually { try await harness.getTask(id: id, context: .background)?.state.status == "terminal" }
+        // A terminal receipt is the persistent witness; no deadline poll is needed.
         let settled = try await harness.waitForTask(id: id, context: .background)
         #expect(runs.values == [17])
         // upstream scheduler.ts:2473-2477: terminal states remove restart counts.

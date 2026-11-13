@@ -1,9 +1,8 @@
 // Use unmodified source files from the upstream tag. Never write to pi-mono.
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { cachedMirror } from './mirror-cache.mjs';
 
 export const upstreamRepository = '/Users/miguel/cvs/pi/pi-mono';
 export const upstreamTag = 'v1.4.0';
@@ -15,9 +14,9 @@ function completion(child) {
   });
 }
 
-export async function mirror({ dependencies = [], tag = upstreamTag } = {}) {
-  const directory = await mkdtemp(join(tmpdir(), 'piswift-durable-fixtures-'));
-  try {
+export async function mirror({ dependencies = [], tag = upstreamTag, mutable = false } = {}) {
+  return cachedMirror({ tag, generatorURL: import.meta.url, dependencies, mutable,
+    build: async directory => {
     const paths = ['packages/chord/src', 'packages/durable/src', 'packages/ai/src', 'packages/telemetry/src'];
     if (tag === 'v1.5.2') paths.push('packages/schema/src');
     const archive = spawn('git', ['-C', upstreamRepository, 'archive', tag, ...paths], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -46,16 +45,10 @@ export async function mirror({ dependencies = [], tag = upstreamTag } = {}) {
     await mkdir(join(directory, 'node_modules/@earendil-works'), { recursive: true });
     for (const [name, exports] of Object.entries(packages)) {
       await writeFile(join(directory, `packages/${name}/package.json`), JSON.stringify({ type: 'module', exports }));
-      await symlink(join(directory, `packages/${name}`), join(directory, 'node_modules/@earendil-works', name === 'chord' ? name : `pi-${name}`));
+      await symlink(join('..', '..', 'packages', name),
+        join(directory, 'node_modules/@earendil-works', name === 'chord' ? name : `pi-${name}`));
     }
     await writeFile(join(directory, 'packages/durable/package.json'), JSON.stringify({ type: 'module' }));
-    return {
-      directory,
-      import: path => import(pathToFileURL(join(directory, path)).href),
-      close: () => rm(directory, { recursive: true, force: true }),
-    };
-  } catch (error) {
-    await rm(directory, { recursive: true, force: true });
-    throw error;
-  }
+    },
+  });
 }

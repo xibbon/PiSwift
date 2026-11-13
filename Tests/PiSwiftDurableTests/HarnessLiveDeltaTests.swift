@@ -119,7 +119,7 @@ import PiSwiftDurableTesting
             return .init(output: [])
         }), setup: setup) }
         setup.models.setResponses([.message(try toolCalls([("first", [:], "a"), ("second", [:], "b")])), .message(chatAssistant("done"))])
-        let opened = try await openChat(storage: storage, setup: setup), listener = try opened.harness.subscribeCommits { publication, _ in stored.append(publication) }
+        let opened = try await openChat(storage: storage, setup: setup), listener = try opened.harness.observeCommits(.init(advance: { publication, _ in stored.append(publication) }, end: { _ in }))
         let doc = try #require(await storage.findDocument(.init(kind: "pi.live", scope: .conversation(conversationId: opened.root.id)), at: .current, context: .background))
         let before = await storage.commits.count
         let input = try await generationSubmit(opened)
@@ -153,13 +153,13 @@ import PiSwiftDurableTesting
             if case .base = content { bases += 1; #expect(noRunning) } else { deltas += 1; #expect(!noRunning) }
         }
         #expect(bases >= 5 && deltas > 0)
-        listener.cancel(); try await opened.harness.close(context: .background)
+        listener.detach(); try await opened.harness.close(context: .background)
     }
 
     @Test func unofferedCallsStartFlaggedPendingSlotsAndSettle() async throws {
         let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("bad", execute: { _, _, _ in var usage = Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0); usage.cost.total = .nan; return .init(output: [], usage: usage) }), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("ghost", [:], "g"), ("bad", [:], "b")])), .message(chatAssistant("done"))])
-        let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.observeCommits(.init(advance: { publication, _ in log.append(publication) }, end: { _ in }))
         let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)
         let handover = try #require(log.commits.first { $0.contains { $0.json[0] == "s" && $0.json[1] == ["tools"] } })
         let slots = try #require(handover.first { $0.json[1] == ["tools"] }?.json[2]?.arrayValue)
@@ -167,18 +167,18 @@ import PiSwiftDurableTesting
         #expect(slots[0]["callId"] == "g" && slots[0]["status"] == "pending" && slots[0]["entry"] == nil && slots[0]["taskId"] != nil && slots[0]["unoffered"] == true)
         #expect(slots[1]["status"] == "pending" && slots[1]["taskId"] != nil)
         #expect(log.commits.contains([.set(["tools", 1, "status"], "done")]))
-        listener.cancel(); try await opened.harness.close(context: .background)
+        listener.detach(); try await opened.harness.close(context: .background)
     }
 
     @Test func answerToolsGenerationWaitAndLiveRoundShareOneCommit() async throws {
         let setup = HarnessChatSetup(); try installHarnessTool(harnessTestTool("noop"), setup: setup)
         setup.models.setResponses([.message(try toolCalls([("noop", [:], "a"), ("noop", [:], "b")])), .message(chatAssistant("done"))])
-        let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.subscribeCommits { publication, _ in log.append(publication) }
+        let opened = try await openChat(setup: setup), log = HarnessLiveDeltaLog(), listener = try opened.harness.observeCommits(.init(advance: { publication, _ in log.append(publication) }, end: { _ in }))
         let input = try await generationSubmit(opened); _ = try await input.wait(context: .background)
         let publication = try #require(log.values.first { $0.2["tools"]?.arrayValue?.count == 2 }?.0)
         let kinds = publication.changes.compactMap { change -> String? in switch change { case .entry(let value): value.kind; case .task(let value): value.kind; default: nil } }
         #expect(kinds.sorted() == ["pi.assistant", "pi.generation", "pi.tool", "pi.tool"])
-        listener.cancel(); try await opened.harness.close(context: .background)
+        listener.detach(); try await opened.harness.close(context: .background)
     }
 
     @Test func abortedToolSlotUsesFourLiteralFieldOps() async throws {

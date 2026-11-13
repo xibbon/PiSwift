@@ -39,7 +39,7 @@ struct HarnessViewMeasurementsD4Tests {
         for raw in 2...count + 1 {
             writes.append(.entry(value: .init(id: try EntryID(Int64(raw)), conversationId: rootConversationID, kind: "note")))
         }
-        _ = try await storage.commit(writes, context: .background)
+        _ = try await storage.commitOne(writes, context: .background)
         writes.removeAll(keepingCapacity: false)
         let harness = try await Harness.open(storage: storage,
             options: .init(models: FakeDurableModels(), registry: createRegistry()), context: .background)

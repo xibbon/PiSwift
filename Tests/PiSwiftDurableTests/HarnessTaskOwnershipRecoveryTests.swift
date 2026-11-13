@@ -87,7 +87,7 @@ private func waitForReopenedOwnerEdges(_ condition: @escaping @Sendable () async
                 .task(value: TaskRecord(id: backgroundInner, conversationId: backgroundConversation, kind: "test.edge-recovery", version: 1, input: .number(2), state: pending))
             ]
         }
-        _ = try await original.commit(writes, context: .background)
+        _ = try await original.commitOne(writes, context: .background)
         try await original.close(context: .background)
         let clock = TestClock()
         let definition = harnessOneStep("test.edge-recovery") { task, runtime, context in

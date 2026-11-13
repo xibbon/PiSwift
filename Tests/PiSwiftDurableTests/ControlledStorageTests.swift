@@ -9,7 +9,7 @@ extension PiSwiftDurableTests {
         let storage = ControlledStorage()
         let gate = await storage.holdCommits()
         let writes: [StorageWrite] = [.conversation(value: ConversationRecord(id: rootConversationID))]
-        let held = Task { try await storage.commit(writes, context: .background) }
+        let held = Task { try await storage.commitOne(writes, context: .background) }
         await gate.waitUntilEntered()
         #expect(await storage.admittedCommits == [writes])
         #expect(await storage.commits == [writes])
@@ -18,7 +18,7 @@ extension PiSwiftDurableTests {
         await gate.release()
         #expect(try await held.value == Seq(1))
         #expect(try await storage.conversation(rootConversationID, context: .background)?.id == rootConversationID)
-        #expect(try await storage.commit([], context: .background) == Seq(2))
+        #expect(try await storage.commitOne([], context: .background) == Seq(2))
         #expect(await storage.admittedCommits == [writes, []])
         #expect(await storage.commits == [writes, []])
     }
@@ -30,7 +30,7 @@ extension PiSwiftDurableTests {
         let held = Task { try await storage.findDocument(address, at: .current, context: .background) }
         await gate.waitUntilEntered()
         let documentID = try DocumentID(2)
-        _ = try await storage.commit([
+        _ = try await storage.commitOne([
             .documentCreate(record: DocumentCreate(id: documentID, kind: "held", scope: .session()), content: DocumentBaseContent(version: 1, value: ["count": 1])),
         ], context: .background)
         await gate.release()
@@ -57,7 +57,7 @@ extension PiSwiftDurableTests {
         let storage = ControlledStorage()
         let writes: [StorageWrite] = [.conversation(value: ConversationRecord(id: rootConversationID))]
         let gate = await storage.holdCommits()
-        let held = Task { try await storage.commit(writes, context: .background) }
+        let held = Task { try await storage.commitOne(writes, context: .background) }
         await gate.waitUntilEntered()
         // Upstream reads the injected error after the commit gate opens.
         await storage.failNextCommit(InjectedCommitFailure.expected)
@@ -71,19 +71,19 @@ extension PiSwiftDurableTests {
         #expect(try await storage.conversation(rootConversationID, context: .background) == nil)
         #expect(await storage.admittedCommits == [writes])
         #expect(await storage.commits == [writes])
-        #expect(try await storage.commit(writes, context: .background) == Seq(1))
+        #expect(try await storage.commitOne(writes, context: .background) == Seq(1))
         #expect(await storage.commits == [writes, writes])
     }
 
     @Test func controlledStorageCrashAndReplacedGate() async throws {
         let storage = ControlledStorage()
         let crashedGate = await storage.holdCommits()
-        let held = Task { try await storage.commit([], context: .background) }
+        let held = Task { try await storage.commitOne([], context: .background) }
         await crashedGate.waitUntilEntered()
         await storage.crash()
-        #expect(try await storage.commit([], context: .background) == Seq(1))
+        #expect(try await storage.commitOne([], context: .background) == Seq(1))
         let nextGate = await storage.holdCommits()
-        let nextHeld = Task { try await storage.commit([], context: .background) }
+        let nextHeld = Task { try await storage.commitOne([], context: .background) }
         await nextGate.waitUntilEntered()
         // Releasing the old gate must not clear a replacement gate.
         await crashedGate.release()

@@ -24,7 +24,7 @@ struct SessionDeferredCommitsD7Tests {
             documentTimer: .init(now: { clock.now() }, sleep: { try await clock.sleep(until: $0) }),
             persistWithinMs: { within }, context: .background)
         let publications = SessionTestLog<CommitPublication>()
-        _ = try session.subscribeCommits { publication, _ in publications.append(publication) }
+        _ = try session.observeCommits(.init(advance: { publication, _ in publications.append(publication) }, end: { _ in }))
         let id = try await createConversation(session)
         let token = try d7Token()
         try await session.commit({ tx in _ = try await tx.doc(token, conversationId: id) }, context: .background)
