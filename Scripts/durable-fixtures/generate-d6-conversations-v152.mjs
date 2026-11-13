@@ -1,10 +1,11 @@
 // Deterministic v1.5.2 conversations with afterTool, afterRun, and atomic submit.
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { isDeepStrictEqual } from 'node:util';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
@@ -35,6 +36,26 @@ Object.defineProperty(performance, 'now', { value: () => 0, configurable: true }
 Math.random = () => 0.5;
 crypto.getRandomValues = value => value.fill(0x42);
 const json = value => value === undefined ? null : JSON.parse(JSON.stringify(value));
+function normalizeCrossLanguage(value) {
+  if (Array.isArray(value)) return value.map(normalizeCrossLanguage);
+  if (value && typeof value === 'object') {
+    const result = Object.fromEntries(Object.entries(value).map(([key, member]) => [key, normalizeCrossLanguage(member)]));
+    if (result.role === 'assistant' && result.api !== undefined) result.api = '<faux-api>';
+    if (result.role === 'toolResult' && result.details === null) delete result.details;
+    return result;
+  }
+  return value;
+}
+function difference(actual, expected, path = '$') {
+  if (isDeepStrictEqual(actual, expected)) return undefined;
+  if (actual && expected && typeof actual === 'object' && typeof expected === 'object') {
+    for (const key of new Set([...Object.keys(actual), ...Object.keys(expected)])) {
+      const mismatch = difference(actual[key], expected[key], `${path}.${key}`);
+      if (mismatch) return mismatch;
+    }
+  }
+  return `${path}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`;
+}
 
 async function snapshot(store, rootId) {
   const tasks = json((await store.scanTasks({ order: 'ascending' }, 100, undefined, context)).items);
@@ -110,6 +131,31 @@ try {
     const jsonl = await run('jsonl', seed);
     if (JSON.stringify(sqlite) !== JSON.stringify(jsonl)) throw new Error(`Backend differs at seed ${seed}`);
     scripts.push(sqlite);
+  }
+  if (check) {
+    for (const backend of ['sqlite', 'jsonl']) {
+      const from = join(temporary, `30-${backend}${backend === 'sqlite' ? '.sqlite' : ''}`);
+      const to = join(temporary, `tagged-atomic-${backend}`);
+      if (backend === 'sqlite') await copyFile(from, to);
+      else await cp(from, to, { recursive: true });
+    }
+    const swift = spawnSync('swift', ['test', '--skip-build', '--filter', 'D6ConversationFixtureTests'], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)),
+      env: { ...process.env, PISWIFT_D12_ATOMIC_EXPORT: temporary, PISWIFT_D12_TAGGED_ATOMIC_DIR: temporary },
+      stdio: 'inherit', timeout: 180_000,
+    });
+    if (swift.error) throw swift.error;
+    if (swift.status !== 0) throw new Error(`Swift atomic cross-open exited ${swift.status}`);
+    for (const backend of ['sqlite', 'jsonl']) {
+      const path = join(temporary, `swift-atomic-${backend}`);
+      const store = backend === 'sqlite' ? await openNodeSqliteStorage(path) : await openNodeJsonlStorage(path, context);
+      const page = await store.scanConversations({}, 2, undefined, context);
+      if (page.items.length !== 1) throw new Error(`Swift atomic ${backend}: expected one conversation`);
+      const actual = await snapshot(store, page.items[0].id);
+      await store.close(context);
+      const mismatch = difference(normalizeCrossLanguage(actual), normalizeCrossLanguage(scripts.find(item => item.seed === 30).records));
+      if (mismatch) throw new Error(`Swift atomic ${backend}: ${mismatch}`);
+    }
   }
   const serialized = JSON.stringify({ tag: upstreamTag, clock, scripts }) + '\n';
   if (check) {

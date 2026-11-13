@@ -96,6 +96,47 @@ try {
     return normalize(json({ conversation: await store.conversation(rootId, context), tasks: tasks.items,
       submissions: submissions.items, entries: entries.items, documents: documents.items, values }));
   }
+  async function writeTaggedPre(item, path) {
+    const store = await storage(item.backend, path);
+    try {
+      const pre = item.pre;
+      // The JSONL journal records the original batch sequence and document
+      // history. Replay it through the tagged adapter for both backends.
+      // Old task sidecars are compacted after terminal writes, so their
+      // current record is enough: task history is not read on restart.
+      const journal = join(output, `${item.scenario}-jsonl`, 'pre');
+      const lines = (await readFile(join(journal, 'main.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+      const content = new Map();
+      for (const document of pre.documents.filter(document => document.kind === 'pi.agent')) {
+        const sidecar = (await readFile(join(journal, `doc-${document.id}.jsonl`), 'utf8')).trim().split('\n').map(JSON.parse);
+        for (const record of sidecar) content.set(`${record.seq}:${record.ordinal}`, record.payload.content);
+      }
+      const tasks = new Map(pre.tasks.map(task => [task.id, task]));
+      const batches = lines.map(line => line.writes.map(write => {
+        if (write.type === 'task.sidecar') {
+          const value = tasks.get(write.id);
+          if (!value) throw new Error(`Missing saved task ${write.id}`);
+          return { type: 'task', value };
+        }
+        if (write.type === 'document.create' || write.type === 'document.change') {
+          const id = write.record?.id ?? write.id;
+          const index = pre.documents.findIndex(document => document.id === id);
+          if (index < 0) throw new Error(`Missing document ${id}`);
+          const saved = pre.values[index];
+          const value = pre.documents[index].kind === 'pi.agent'
+            ? content.get(`${line.seq}:${write.ordinal}`)
+            : { kind: 'base', version: saved.version, value: saved.value };
+          if (!value) throw new Error(`Missing agent history ${line.seq}:${write.ordinal}`);
+          const { ordinal, ...withoutOrdinal } = write;
+          return { ...withoutOrdinal, content: value };
+        }
+        return write;
+      }));
+      const result = await store.commit(batches, () => {}, context);
+      if (result.stored !== batches.length || result.refused) throw new Error(`Tagged pre-file write refused: ${result.refused}`);
+      equal(await snapshot(store, item.rootId), pre, `${item.scenario} tagged pre records`);
+    } finally { await store.close(context); }
+  }
   async function verify(directory, name, item, suffix) {
     const file = item.backend === 'sqlite' ? 'pre.sqlite' : 'pre';
     const path = join(temporary, `${name}-${suffix}${item.backend === 'sqlite' ? '.sqlite' : ''}`);
@@ -149,6 +190,22 @@ try {
     const saved = JSON.parse(await readFile(join(output, 'manifest.json'), 'utf8'));
     equal(manifest, saved, 'Fresh Swift records vs saved fixture records');
     for (const [name, item] of Object.entries(saved.cases)) await verify(output, name, item, 'saved');
+    const taggedPre = join(temporary, 'tagged-pre');
+    await mkdir(taggedPre);
+    for (const scenario of ['continue', 'turn-limit', 'handoff']) {
+      for (const backend of ['sqlite', 'jsonl']) {
+        const name = `${scenario}-${backend}`, directory = join(taggedPre, name);
+        await mkdir(directory);
+        await writeTaggedPre(manifest.cases[name], join(directory, backend === 'sqlite' ? 'pre.sqlite' : 'pre'));
+      }
+    }
+    const resumed = spawnSync('swift', ['test', '--skip-build', '--filter',
+      'D5bReverseFixtureTests.swiftContinuesTagWrittenPreEvents'], {
+      cwd: root, stdio: 'inherit', timeout: 120_000,
+      env: { ...process.env, PISWIFT_D12_TAGGED_PRE_EVENTS: taggedPre },
+    });
+    if (resumed.error) throw resumed.error;
+    if (resumed.status !== 0) throw new Error(`Swift tagged pre-event continuation exited ${resumed.status}`);
   } else if (verifyIndex < 0) {
     for (const [name, item] of Object.entries(manifest.cases)) {
       const destination = join(output, name), file = item.backend === 'sqlite' ? 'pre.sqlite' : 'pre';
@@ -160,7 +217,7 @@ try {
     }
     await writeFile(join(output, 'manifest.json'), JSON.stringify(manifest) + '\n');
   }
-  console.log(`D5b reverse fixtures ${check || verifyIndex >= 0 ? 'match' : 'written'}: six Swift scenarios, SQLite and JSONL, resumed by unmodified v1.5.2.`);
+  console.log(`D5b reverse fixtures ${check || verifyIndex >= 0 ? 'match' : 'written'}: six Swift scenarios, SQLite and JSONL, plus three tag-written pre-events resumed by Swift in check mode.`);
 } finally {
   Date.now = oldDateNow; Math.random = oldMathRandom; crypto.getRandomValues = oldGetRandomValues;
   if (oldPerformanceNow) Object.defineProperty(performance, 'now', oldPerformanceNow);

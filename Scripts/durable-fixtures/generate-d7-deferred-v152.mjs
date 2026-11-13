@@ -1,7 +1,7 @@
 // Compare six fake-clock deferred streams, by stored seq and document content,
 // between Swift and the unmodified v1.5.2 Session on SQLite and JSONL.
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,8 +54,25 @@ try {
     checkpointWhen: value => value.base === true });
   const openStorage = (backend, path) => backend === 'sqlite'
     ? openNodeSqliteStorage(path) : openNodeJsonlStorage(path, context);
+  const filePath = (base, scenario, backend) => join(base, `${scenario}-${backend}${backend === 'sqlite' ? '.sqlite' : ''}`);
+  async function saveSnapshot(sourcePath, scenario, backend) {
+    const target = filePath(temporary, scenario, backend);
+    if (backend === 'sqlite') await copyFile(sourcePath, target);
+    else await cp(sourcePath, target, { recursive: true });
+  }
+  async function readValue(backend, path) {
+    const reader = await openStorage(backend, path);
+    const page = await reader.scanConversations({}, 2, undefined, context);
+    if (page.items.length !== 1) throw new Error(`${path}: expected one conversation`);
+    const record = await reader.findDocument({ kind: Doc.definition.kind,
+      scope: { kind: 'conversation', conversationId: page.items[0].id } }, 'current', context);
+    if (!record) throw new Error(`${path}: missing pi.live`);
+    const value = (await reader.document(record.id, 'current', context)).value;
+    await reader.close(context);
+    return json(value);
+  }
   async function run(scenario, backend) {
-    const path = join(temporary, `${scenario}-${backend}${backend === 'sqlite' ? '.sqlite' : ''}`);
+    const path = filePath(temporary, scenario, backend);
     const batches = [], publications = [], timers = [];
     let clock = 1_000;
     const setTimer = (callback, delayMs, { background }) => {
@@ -135,6 +152,7 @@ try {
         session.fail(new Error('fixture crash'));
         await session.closed;
         reopens.push(await storedValue(id));
+        await saveSnapshot(path, 'crash-first', backend);
         session = await reopen();
         await append('text', 'kept', 25);
         await advance(25, session);
@@ -142,6 +160,7 @@ try {
         session.fail(new Error('fixture crash'));
         await session.closed;
         reopens.push(await storedValue(id));
+        await saveSnapshot(path, 'crash-second', backend);
         session = await reopen();
         await append('text', '-resumed', Infinity);
         break;
@@ -165,6 +184,23 @@ try {
     const mismatch = difference(actual, expectedCase);
     if (mismatch) throw new Error(`${name}: ${mismatch}`);
   }
+  for (const backend of ['sqlite', 'jsonl']) {
+    for (const [scenario, snapshot, expected] of [
+      ['close', 'close', manifest.cases[`close-${backend}`].final],
+      ['crash', 'crash-first', manifest.cases[`crash-${backend}`].reopens[0]],
+      ['crash', 'crash-second', manifest.cases[`crash-${backend}`].reopens[1]],
+    ]) {
+      const actual = await readValue(backend, join(swift, `${snapshot}-${backend}`));
+      const mismatch = difference(actual, expected);
+      if (mismatch) throw new Error(`Swift→tag ${scenario}-${backend}/${snapshot}: ${mismatch}`);
+    }
+  }
+  await writeFile(join(temporary, 'manifest.json'), JSON.stringify(manifest) + '\n');
+  const cross = spawnSync('swift', ['test', '--skip-build', '--filter', 'D7CrossLanguageFixtureTests.opensTaggedCloseAndCrashFiles'], {
+    cwd: root, env: { ...process.env, PISWIFT_D12_TAGGED_HELD_DIR: temporary }, stdio: 'inherit', timeout: 60_000,
+  });
+  if (cross.error) throw cross.error;
+  if (cross.status !== 0) throw new Error(`Swift D7 cross-open exited ${cross.status}`);
   if (check) {
     const saved = JSON.parse(await readFile(join(output, 'manifest.json'), 'utf8'));
     const mismatch = difference(manifest, saved);

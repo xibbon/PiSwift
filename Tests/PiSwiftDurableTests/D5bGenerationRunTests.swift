@@ -224,26 +224,37 @@ struct D5bGenerationRunTests {
         // v1.5.2 D5b harness-continue.test.ts:290–304. One transaction holds
         // admission until the queued input is stored behind the continue.
         let setup = HarnessChatSetup(settings: .init(afterFailedRun: .continue))
+        let storage = ControlledStorage()
         setup.models.setResponses([.message(chatAssistant("answered")), .message(chatAssistant("second answered"))])
-        let chat = try await openChat(setup: setup)
+        let chat = try await openChat(storage: storage, setup: setup)
         #expect(try await generationSubmit(chat, "one").wait(context: .background).status == "done")
-        // E-FLAKE: Hold scheduler dispatch while the two submissions commit.
-        // Their queued state is then observable before the empty continue
-        // advances to the next run.
         try await chat.root.waitForIdle(context: .background)
-        chat.harness.tasks.state.withLock { $0.enabled = false }
-        let ids = try await chat.root.commit({ tx in
-            let continued = try await admitSubmission(tx: tx, conversationId: chat.root.id, draft: .continue(),
-                now: 1, queueModes: resolveSettings(setup.settings))
-            let queued = try await admitSubmission(tx: tx, conversationId: chat.root.id,
-                draft: .input(content: .text("two"), whenBusy: .followUp),
-                now: 1, queueModes: resolveSettings(setup.settings))
-            return (continued, queued)
-        }, context: .background)
+        // The storage batch has committed when publishing enters this gate.
+        // The scheduler cannot dispatch the continue until publication resumes.
+        let publication = await storage.holdPublication()
+        let admitted = Mutex<(SubmissionID, SubmissionID)?>(nil)
+        let pending = Task {
+            try await chat.root.commit({ tx in
+                let continued = try await admitSubmission(tx: tx, conversationId: chat.root.id, draft: .continue(),
+                    now: 1, queueModes: resolveSettings(setup.settings))
+                let queued = try await admitSubmission(tx: tx, conversationId: chat.root.id,
+                    draft: .input(content: .text("two"), whenBusy: .followUp),
+                    now: 1, queueModes: resolveSettings(setup.settings))
+                admitted.withLock { $0 = (continued, queued) }
+                return (continued, queued)
+            }, context: .background)
+        }
+        await publication.waitUntilEntered()
+        guard let queuedID = admitted.withLock({ $0?.1 }) else {
+            await publication.release()
+            Issue.record("Missing admitted follow-up at the publication gate")
+            return
+        }
+        #expect(try await storage.submission(queuedID, context: .background)?.status == "queued")
+        await publication.release()
+        let ids = try await pending.value
         let continued = try #require(try await chat.harness.submission(id: ids.0, context: .background))
         let queued = try #require(try await chat.harness.submission(id: ids.1, context: .background))
-        #expect(try await queued.status(context: .background).status == "queued")
-        try chat.harness.resume()
         #expect(try await continued.wait(context: .background).reason == "nothing_to_answer")
         let settled = try await queued.wait(context: .background)
         #expect(settled.status == "done")

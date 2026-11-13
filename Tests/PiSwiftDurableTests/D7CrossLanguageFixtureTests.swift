@@ -61,6 +61,11 @@ struct D7CrossLanguageFixtureTests {
             try await reader.close(context: .background)
             return .object(value.value)
         }
+        func saveCrashFile(_ name: String) throws {
+            let source = URL(fileURLWithPath: path)
+            let destination = directory.appendingPathComponent("\(name)-\(backend)")
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
         switch scenario {
         case "text":
             try await append("text", "abcd", within: 100)
@@ -91,6 +96,7 @@ struct D7CrossLanguageFixtureTests {
             session.fail(SessionError.message("fixture crash"))
             _ = await session.closed
             reopenStates.append(try await storedValue())
+            try saveCrashFile("crash-first")
             (session, storage) = try await reopen()
             try await append("text", "kept", within: 25)
             clock.advance(by: 25)
@@ -100,6 +106,7 @@ struct D7CrossLanguageFixtureTests {
             session.fail(SessionError.message("fixture crash"))
             _ = await session.closed
             reopenStates.append(try await storedValue())
+            try saveCrashFile("crash-second")
             (session, storage) = try await reopen()
             try await append("text", "-resumed", within: .infinity)
         case "close":
@@ -137,6 +144,31 @@ struct D7CrossLanguageFixtureTests {
         }
         let manifest: JSONValue = ["tag": "v1.5.2", "cases": .object(cases)]
         try (manifest.jsonText() + "\n").write(to: directory.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_HELD_DIR"] != nil),
+          .timeLimit(.minutes(1)))
+    func opensTaggedCloseAndCrashFiles() async throws {
+        let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_HELD_DIR"]))
+        let manifest = try JSONValue(jsonData: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
+        let cases = try #require(manifest["cases"]?.objectValue)
+        for backend in ["sqlite", "jsonl"] {
+            for (scenario, suffix, index) in [("close", "close", 0),
+                                               ("crash", "crash-first", 0),
+                                               ("crash", "crash-second", 1)] {
+                let path = directory.appendingPathComponent("\(suffix)-\(backend)\(backend == "sqlite" ? ".sqlite" : "")").path
+                let reader = try await openStorage(backend, path: path)
+                let page = try await reader.scanConversations(.init(), limit: 2, cursor: nil, context: .background)
+                let conversation = try #require(page.items.first)
+                let address = DocumentAddress(kind: "pi.live", scope: .conversation(conversationId: conversation.id))
+                let record = try #require(try await reader.findDocument(address, at: .current, context: .background))
+                let value = try #require(try await reader.document(record.id, at: .current, context: .background))
+                try await reader.close(context: .background)
+                let expectedCase = try #require(cases["\(scenario)-\(backend)"]?.objectValue)
+                let expected = scenario == "close" ? expectedCase["final"] : expectedCase["reopens"]?[index]
+                #expect(JSONValue.object(value.value) == expected)
+            }
+        }
     }
 }
 #endif

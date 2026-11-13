@@ -3,6 +3,7 @@ import Testing
 @testable import PiReviewExtension
 import PiSwiftCodingAgent
 
+#if !canImport(UIKit)
 @Suite("PiReviewExtension")
 struct ReviewExtensionTests {
     @Test("inline extension registers review commands and lifecycle handlers")
@@ -30,3 +31,4 @@ struct ReviewExtensionTests {
         #expect(api.commands["review"]?.description?.isEmpty == false)
     }
 }
+#endif

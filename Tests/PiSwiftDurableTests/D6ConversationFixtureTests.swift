@@ -161,7 +161,32 @@ struct D6ConversationFixtureTests {
                     return
                 }
                 try await chat.harness.close(context: .background)
+                if seed == 30, let export = ProcessInfo.processInfo.environment["PISWIFT_D12_ATOMIC_EXPORT"] {
+                    let source = backend == "sqlite" ? directory.appendingPathComponent("store.sqlite") : directory
+                    let target = URL(fileURLWithPath: export).appendingPathComponent("swift-atomic-\(backend)")
+                    try FileManager.default.copyItem(at: source, to: target)
+                }
             }
+        }
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_ATOMIC_DIR"] != nil),
+          .timeLimit(.minutes(1)))
+    func opensTaggedAtomicSubmitFile() async throws {
+        let base = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_ATOMIC_DIR"]))
+        let scripts = try #require(JSONValue(jsonData: Data(contentsOf: fixture))["scripts"]?.arrayValue)
+        let expected = try #require(scripts.first { $0["seed"]?.intValue == 30 }?["records"])
+        for backend in ["sqlite", "jsonl"] {
+            let path = base.appendingPathComponent("tagged-atomic-\(backend)")
+            let storage: any DurableStorage = backend == "sqlite"
+                ? try await SqliteStorage.open(path: path.path)
+                : try await JsonlStorage.open(directory: path.path, fileSystem: LocalExecutionEnv(cwd: path.path))
+            let page = try await storage.scanConversations(.init(), limit: 2, cursor: nil, context: .background)
+            let root = try #require(page.items.first?.id)
+            if let mismatch = difference(normalized(try await snapshot(storage, root: root)), normalized(expected)) {
+                Issue.record("tagged atomic \(backend): \(mismatch)")
+            }
+            try await storage.close(context: .background)
         }
     }
 }

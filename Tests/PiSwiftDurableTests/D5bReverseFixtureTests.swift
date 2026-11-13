@@ -11,6 +11,8 @@ import PiSwiftDurableTesting
 struct D5bReverseFixtureTests {
     private let clock: Int64 = 1_700_000_000_000
     private let scenarios = ["continue", "turn-limit", "model-error-retry", "host-death-request", "interrupted-poll", "handoff"]
+    private let endings = ["model_error", "no_model", "aborted", "reset", "faulted", "orphaned",
+                           "interrupted", "restart_limit", "nothing_to_answer", "turn_limit", "answer", "terminate"]
     private var fixtures: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Scripts/durable-fixtures/d5b-reverse-v152")
@@ -20,6 +22,102 @@ struct D5bReverseFixtureTests {
             return try await JsonlStorage.open(directory: path.path, fileSystem: LocalExecutionEnv(cwd: path.path))
         }
         return try await SqliteStorage.open(path: path.path)
+    }
+    /// Replay the tagged ending records through Swift storage into a fresh file.
+    /// The tag checks the stored preimage and resumes this Swift-written file.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_ENDING_EXPORT"] != nil),
+          .timeLimit(.minutes(3)))
+    func exportsSwiftWrittenEndingFiles() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let seedDirectory = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_ENDING_SEEDS"]))
+        let exportDirectory = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_ENDING_EXPORT"]))
+        let fixture = fixtures.deletingLastPathComponent().appendingPathComponent("d5b-endings-v152/manifest.json")
+        let cases = try #require(JSONValue(jsonData: Data(contentsOf: fixture))["cases"]?.objectValue)
+        for ending in endings { for backend in ["sqlite", "jsonl"] {
+            let name = "\(ending)-\(backend)"
+            var item = try #require(cases[name]?.objectValue)
+            if let sourceName = item["recordsFrom"]?.stringValue {
+                let source = try #require(cases[sourceName]?.objectValue)
+                for (key, value) in source where item[key] == nil { item[key] = value }
+            }
+            let pre = try #require(item["pre"]), root = try #require(item["rootId"]).decode(ConversationID.self)
+            let sourcePath = seedDirectory.appendingPathComponent(name).appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+            let source = try await open(sourcePath, backend: backend)
+            let conversation = try #require(await source.conversation(root, context: .background))
+            let destinationDirectory = exportDirectory.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+            let destinationPath = destinationDirectory.appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+            let destination = try await open(destinationPath, backend: backend)
+            var first: [StorageWrite] = [.conversation(value: conversation)]
+            let documents = try #require(pre["documents"]?.arrayValue)
+            let values = try #require(pre["values"]?.arrayValue)
+            #expect(documents.count == values.count)
+            for (raw, stored) in zip(documents, values) {
+                let record = try raw.decode(DocumentRecord.self)
+                let value = try #require(stored["value"]?.objectValue)
+                let base: JSONObject = ending == "reset" && record.kind == "pi.inbox" ? ["items": []] : value
+                let create = DocumentCreate(id: record.id, kind: record.kind, scope: record.scope,
+                    key: record.key, history: record.history, fork: record.fork, extensionFields: record.extensionFields)
+                first.append(.documentCreate(record: create, content: .init(
+                    version: try #require(stored["version"]?.intValue), value: base)))
+            }
+            _ = try await destination.commitOne(first, context: .background)
+            var second: [StorageWrite] = []
+            for raw in try #require(pre["entries"]?.arrayValue) {
+                second.append(.entry(value: try raw.decode(EntryRecord.self)))
+            }
+            for raw in try #require(pre["submissions"]?.arrayValue) {
+                second.append(.submission(value: try raw.decode(SubmissionRecord.self)))
+            }
+            if ending == "reset", let index = documents.firstIndex(where: { $0["kind"] == "pi.inbox" }) {
+                let id = try #require(documents[index]["id"]).decode(DocumentID.self)
+                let items = try #require(values[index]["value"]?["items"])
+                second.append(.documentChange(id: id, content: .delta(version: 1,
+                    ops: [.set([.key("items")], items)])))
+            }
+            _ = try await destination.commitOne(second, context: .background)
+            let tasks = try #require(pre["tasks"]?.arrayValue).map { StorageWrite.task(value: try $0.decode(TaskRecord.self)) }
+            _ = try await destination.commitOne(tasks, context: .background)
+            try await source.close(context: .background)
+            try await destination.close(context: .background)
+        } }
+    }
+    /// The tag writes three pre-event files; Swift resumes each saved event.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_PRE_EVENTS"] != nil),
+          .timeLimit(.minutes(1)))
+    func swiftContinuesTagWrittenPreEvents() async throws {
+        let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_PRE_EVENTS"]))
+        let manifest = try JSONValue(jsonData: Data(contentsOf: fixtures.appendingPathComponent("manifest.json")))
+        let cases = try #require(manifest["cases"]?.objectValue)
+        let resumeClock = Int64(try #require(manifest["resumeClock"]?.intValue))
+        for scenario in ["continue", "turn-limit", "handoff"] { for backend in ["sqlite", "jsonl"] {
+            let name = "\(scenario)-\(backend)", item = try #require(cases[name])
+            let path = directory.appendingPathComponent(name).appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+            let reader = try await open(path, backend: backend)
+            let root = try #require(item["rootId"]).decode(ConversationID.self)
+            #expect(try await snapshot(reader, root: root) == item["pre"])
+            try await reader.close(context: .background)
+            let setup = try setup(scenario, at: resumeClock)
+            if scenario == "handoff" {
+                setup.models.setResponses([.message(try call(at: resumeClock)), .message(message("answer", at: resumeClock))])
+            } else { setup.models.setResponses([.message(message("answer", at: resumeClock))]) }
+            let chat = try await openChat(storage: open(path, backend: backend), setup: setup)
+            let result: SubmissionRecord
+            if scenario == "handoff" {
+                try chat.harness.resume()
+                let id = try #require(item["submissionId"]).decode(SubmissionID.self)
+                let submission = try #require(await chat.harness.submission(id: id, context: .background))
+                result = try await submission.wait(context: .background).record
+            } else {
+                result = try await chat.root.submit(.continue(), context: .background).wait(context: .background).record
+            }
+            try await chat.root.waitForIdle(context: .background)
+            let actualResult = normalize(try JSONValue(encoding: result)), expectedResult = try #require(item["result"])
+            #expect(actualResult == expectedResult, "\(name): \(difference(actualResult, expectedResult) ?? "none")")
+            let actualPost = try await snapshot(chat.harness.session.storage, root: chat.root.id), expectedPost = try #require(item["post"])
+            #expect(actualPost == expectedPost, "\(name): \(difference(actualPost, expectedPost) ?? "none")")
+            try await chat.harness.close(context: .background)
+        } }
     }
     private func normalize(_ value: JSONValue) -> JSONValue {
         switch value {
@@ -31,6 +129,22 @@ struct D5bReverseFixtureTests {
             return .object(fields)
         default: return value
         }
+    }
+    private func difference(_ actual: JSONValue, _ expected: JSONValue, path: String = "$") -> String? {
+        if actual == expected { return nil }
+        if let left = actual.objectValue, let right = expected.objectValue {
+            for key in Set(left.keys).union(right.keys).sorted() {
+                guard let a = left[key], let b = right[key] else { return "\(path).\(key): missing" }
+                if let detail = difference(a, b, path: "\(path).\(key)") { return detail }
+            }
+        }
+        if let left = actual.arrayValue, let right = expected.arrayValue {
+            if left.count != right.count { return "\(path): count \(left.count) != \(right.count)" }
+            for index in left.indices {
+                if let detail = difference(left[index], right[index], path: "\(path)[\(index)]") { return detail }
+            }
+        }
+        return "\(path): \(actual) != \(expected)"
     }
     private func snapshot(_ storage: any DurableStorage, root: ConversationID) async throws -> JSONValue {
         let tasks = try await storage.scanTasks(.init(order: .ascending), limit: 100, cursor: nil, context: .background)

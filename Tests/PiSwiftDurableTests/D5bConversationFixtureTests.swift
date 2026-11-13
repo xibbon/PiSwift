@@ -84,11 +84,11 @@ struct D5bConversationFixtureTests {
     func thirtySeededConversationsMatchTaggedRecords() async throws {
         let data = try Data(contentsOf: fixture)
         let scripts = try #require(JSONValue(jsonData: data)["scripts"]?.arrayValue)
-        #expect(scripts.count == 30)
-        #expect(Set(scripts.compactMap { $0["seed"]?.intValue }) == Set(0..<30))
+        #expect(scripts.count == 32)
+        #expect(Set(scripts.compactMap { $0["seed"]?.intValue }) == Set(0..<32))
         #expect(Set(scripts.compactMap { $0["kind"]?.stringValue }) ==
                 Set(["simple", "continue", "tool", "turnLimit", "handoff", "followUp", "abort", "compaction",
-                     "coerce", "invalid", "structured", "readImage", "search"]))
+                     "coerce", "invalid", "structured", "readImage", "search", "policyDisabled", "policyOverride"]))
         for script in scripts {
             let seed = try #require(script["seed"]?.intValue)
             let kind = try #require(script["kind"]?.stringValue)
@@ -147,6 +147,13 @@ struct D5bConversationFixtureTests {
                 if kind == "turnLimit" {
                     try await chat.root.configure(change: .init(maxTurns: .set(1)), context: .background)
                 }
+                if kind == "policyDisabled" {
+                    try await chat.root.configure(change: .init(compaction: .set(.init(enabled: false))), context: .background)
+                }
+                if kind == "policyOverride" {
+                    try await chat.root.configure(change: .init(compaction: .set(.init(reserveTokens: 500,
+                        modelOverrides: ["faux/faux-1": .init(reserveTokens: 125)]))), context: .background)
+                }
                 func answer() -> AssistantMessage {
                     var message = chatAssistant("answer-\(seed)")
                     message.timestamp = 1_700_000_000_000
@@ -169,7 +176,9 @@ struct D5bConversationFixtureTests {
                     var summary = answer()
                     summary.content = [.text(.init(text: "summary-\(seed)"))]
                     setup.models.setResponses([.message(answer()), .message(answer()), .message(summary), .message(answer())])
-                } else if kind == "simple" { setup.models.setResponses([.message(answer())]) }
+                } else if ["simple", "policyDisabled", "policyOverride"].contains(kind) {
+                    setup.models.setResponses([.message(answer())])
+                }
                 else if kind == "continue" {
                     var failure = chatAssistant("", reason: .error, error: "invalid-\(seed)")
                     failure.content = []; failure.timestamp = 1_700_000_000_000; failure.durationMs = 0; failure.thinkingLevel = .off

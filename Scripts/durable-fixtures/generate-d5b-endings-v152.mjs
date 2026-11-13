@@ -17,6 +17,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
 const check = process.argv.includes('--check');
 const output = fileURLToPath(new URL('./d5b-endings-v152/', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-endings-'));
+const swiftSeeds = join(temporary, 'swift-seeds');
 const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
@@ -194,6 +195,9 @@ try {
       const checkPre = await snapshot(checkStore, rootId);
       await checkStore.close(context);
       if (!isDeepStrictEqual(checkPre, pre)) throw new Error(`${name} pre differs`);
+      const swiftSeed = join(swiftSeeds, name);
+      await mkdir(swiftSeed, { recursive: true });
+      await copy(kind, checkPath, join(swiftSeed, kind === 'sqlite' ? 'pre.sqlite' : 'pre'));
       const checkPost = await resume(kind, checkPath, ids, rootId, ending);
       if (!isDeepStrictEqual(checkPost, post)) throw new Error(`${name} resumed post differs`);
     } else {
@@ -206,11 +210,32 @@ try {
   const serialized = JSON.stringify(manifest) + '\n';
   if (check) {
     if (await readFile(join(output, 'manifest.json'), 'utf8') !== serialized) throw new Error('Manifest differs');
+    const swiftExport = join(temporary, 'swift-export');
+    await mkdir(swiftExport);
+    const child = spawnSync('swift', ['test', '--skip-build', '--filter',
+      'D5bReverseFixtureTests.exportsSwiftWrittenEndingFiles'], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'inherit', timeout: 180_000,
+      env: { ...process.env, PISWIFT_D12_ENDING_SEEDS: swiftSeeds, PISWIFT_D12_ENDING_EXPORT: swiftExport },
+    });
+    if (child.error) throw child.error;
+    if (child.status !== 0) throw new Error(`Swift ending export exited ${child.status}`);
+    for (const ending of endings) for (const kind of ['sqlite', 'jsonl']) {
+      const name = `${ending}-${kind}`;
+      const original = manifest.cases[`${ending}-sqlite`];
+      const copied = join(temporary, `swift-check-${name}${kind === 'sqlite' ? '.sqlite' : ''}`);
+      await copy(kind, join(swiftExport, name, kind === 'sqlite' ? 'pre.sqlite' : 'pre'), copied);
+      const store = await storage(kind, copied);
+      const before = await snapshot(store, original.rootId);
+      await store.close(context);
+      if (!isDeepStrictEqual(before, original.pre)) throw new Error(`${name} Swift-written pre records differ: ${JSON.stringify(before)}`);
+      const after = await resume(kind, copied, original.ids, original.rootId, ending);
+      if (!isDeepStrictEqual(after, original.post)) throw new Error(`${name} Swift-written file resumes differently under ${upstreamTag}`);
+    }
   } else {
     await mkdir(output, { recursive: true });
     await writeFile(join(output, 'manifest.json'), serialized);
   }
-  console.log(`D5b tagged endings ${check ? 'match' : 'written'}: 12 endings, SQLite and JSONL.`);
+  console.log(`D5b tagged endings ${check ? 'match (including Swift-written reverse files)' : 'written'}: 12 endings, SQLite and JSONL.`);
   }
 } finally {
   Date.now = oldDateNow;

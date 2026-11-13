@@ -23,6 +23,7 @@ const output = outputIndex < 0
 if (!output) throw new Error('--output-dir needs a path');
 const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-restart-endings-v152-'));
+const swiftSeeds = join(temporary, 'swift-seeds');
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -173,6 +174,9 @@ try {
         const actual = await snapshot(stored, ids, rootId);
         await stored.close(context);
         if (!isDeepStrictEqual(actual, before)) throw new Error(`${name} checked-in pre file differs`);
+        const seed = join(swiftSeeds, name);
+        await mkdir(seed, { recursive: true });
+        await copyPath(kind, checked, join(seed, kind === 'sqlite' ? 'pre.sqlite' : 'pre'));
         const checkedPost = await resume(kind, checked, scenario, ids, rootId);
         if (!isDeepStrictEqual(checkedPost.after, resumed.after)) throw new Error(`${name} checked-in pre file resumes differently`);
         const originalPost = join(destination, `post${kind === 'sqlite' ? '.sqlite' : ''}`);
@@ -193,6 +197,26 @@ try {
   const path = join(output, 'manifest.json');
   if (check) {
     if (await readFile(path, 'utf8') !== text) throw new Error('Restart ending manifest differs');
+    const swiftExport = join(temporary, 'swift-export');
+    await mkdir(swiftExport);
+    const child = spawnSync('swift', ['test', '--skip-build', '--filter',
+      'D5aRestartFixtureTests.exportsSwiftWrittenRestartPreFiles'], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'inherit', timeout: 120_000,
+      env: { ...process.env, PISWIFT_D12_D5A_SEEDS: swiftSeeds, PISWIFT_D12_D5A_EXPORT: swiftExport },
+    });
+    if (child.error) throw child.error;
+    if (child.status !== 0) throw new Error(`Swift D5a restart export exited ${child.status}`);
+    for (const [name, item] of Object.entries(manifest.cases)) {
+      const scenario = scenarios.find(value => value.name === item.scenario);
+      const copied = join(temporary, `swift-export-${name}${item.backend === 'sqlite' ? '.sqlite' : ''}`);
+      await copyPath(item.backend, join(swiftExport, name, item.backend === 'sqlite' ? 'pre.sqlite' : 'pre'), copied);
+      const store = await openStorage(item.backend, copied);
+      const before = await snapshot(store, item.ids, item.rootId);
+      await store.close(context);
+      if (!isDeepStrictEqual(before, item.pre)) throw new Error(`${name} Swift-written pre records differ`);
+      const after = await resume(item.backend, copied, scenario, item.ids, item.rootId);
+      if (!isDeepStrictEqual(after.after, item.post.after)) throw new Error(`${name} Swift-written pre resumes differently under tag`);
+    }
   } else {
     await mkdir(output, { recursive: true });
     await writeFile(path, text);

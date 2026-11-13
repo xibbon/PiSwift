@@ -14,6 +14,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
 const check = process.argv.includes('--check');
 const output = fileURLToPath(new URL('./d5b-restart-round1-v152/', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-restart-round1-'));
+const swiftSeeds = join(temporary, 'swift-seeds');
 const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
@@ -189,6 +190,9 @@ try {
         const saved = await storage(backend, savedPath);
         equal(await snapshot(saved, item.rootId), item[stage], `${name} saved ${stage}`);
         await saved.close(context);
+        const seed = join(swiftSeeds, name);
+        await mkdir(seed, { recursive: true });
+        await cp(savedPath, join(seed, backend === 'sqlite' ? 'pre.sqlite' : 'pre'), { recursive: true });
       }
       const checkPath = join(temporary, `${name}-check${suffix}`);
       if (backend === 'sqlite') await writeFile(checkPath, gunzipSync(await readFile(join(destination, 'pre.sqlite.gz'))));
@@ -206,8 +210,29 @@ try {
     console.log(`${name}: tag restart records ${check ? 'match' : 'written'}`);
   }
   const serialized = JSON.stringify(manifest, null, 2) + '\n';
-  if (check) equal(gunzipSync(await readFile(join(output, 'manifest.json.gz'))).toString('utf8'), serialized, 'Manifest');
-  else { await writeFile(join(output, 'manifest.json.gz'), gzipSync(serialized)); await rm(join(output, 'manifest.json'), { force: true }); }
+  if (check) {
+    equal(gunzipSync(await readFile(join(output, 'manifest.json.gz'))).toString('utf8'), serialized, 'Manifest');
+    const swiftExport = join(temporary, 'swift-export');
+    await mkdir(swiftExport);
+    const child = spawnSync('swift', ['test', '--skip-build', '--filter',
+      'D5bRestartMatrixTests.exportsSwiftWrittenRestartPreFiles'], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'inherit', timeout: 180_000,
+      env: { ...process.env, PISWIFT_D12_RESTART_SEEDS: swiftSeeds, PISWIFT_D12_RESTART_EXPORT: swiftExport },
+    });
+    if (child.error) throw child.error;
+    if (child.status !== 0) throw new Error(`Swift restart export exited ${child.status}`);
+    for (const [name, item] of Object.entries(manifest.cases)) {
+      const suffix = item.backend === 'sqlite' ? '.sqlite' : '';
+      const path = join(temporary, `swift-${name}${suffix}`);
+      await cp(join(swiftExport, name, item.backend === 'sqlite' ? 'pre.sqlite' : 'pre'), path, { recursive: true });
+      const store = await storage(item.backend, path);
+      equal(await snapshot(store, item.rootId), item.pre, `${name} Swift-written pre records`);
+      await store.close(context);
+      const actual = await resume(item.backend, path, item);
+      equal(actual, { afterOpen: item.afterOpen, ...(item.sleeping ? { sleeping: item.sleeping } : {}),
+        post: item.post, calls: item.calls }, `${name} tagged reverse continuation`);
+    }
+  } else { await writeFile(join(output, 'manifest.json.gz'), gzipSync(serialized)); await rm(join(output, 'manifest.json'), { force: true }); }
 } finally {
   Date.now = oldDateNow;
   await source.close();

@@ -176,6 +176,63 @@ struct D5bRestartMatrixTests {
         }
         try await harness.close(context: .background)
     }
+
+    /// Write the same tagged pre-event records through Swift storage so the
+    /// tagged Harness can resume every restart boundary in the reverse direction.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_RESTART_EXPORT"] != nil),
+          .timeLimit(.minutes(3)))
+    func exportsSwiftWrittenRestartPreFiles() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let seeds = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_RESTART_SEEDS"]))
+        let output = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_RESTART_EXPORT"]))
+        for name in Self.names {
+            let item = try item(name), backend = try #require(item["backend"]?.stringValue)
+            let pre = try #require(item["pre"]), root = try #require(item["rootId"]).decode(ConversationID.self)
+            let sourcePath = seeds.appendingPathComponent(name).appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+            let source = try await open(sourcePath, backend: backend)
+            let conversation = try #require(await source.conversation(root, context: .background))
+            let directory = output.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let path = directory.appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+            let destination = try await open(path, backend: backend)
+            var first: [StorageWrite] = [.conversation(value: conversation)]
+            var liveDelta: (DocumentID, JSONObject)?
+            let documents = try #require(pre["documents"]?.arrayValue)
+            let values = try #require(pre["values"]?.arrayValue)
+            #expect(documents.count == values.count)
+            for (raw, expected) in zip(documents, values) {
+                let record = try raw.decode(DocumentRecord.self)
+                let stored = try #require(await source.document(record.id, at: .current, context: .background))
+                let current = stored.value
+                let deltaCount = expected["deltasSinceBase"]?.intValue ?? 0
+                let base: JSONObject
+                if record.kind == "pi.live" && deltaCount == 1 {
+                    base = [:]
+                    liveDelta = (record.id, current)
+                } else { base = current }
+                let create = DocumentCreate(id: record.id, kind: record.kind, scope: record.scope,
+                    key: record.key, history: record.history, fork: record.fork, extensionFields: record.extensionFields)
+                first.append(.documentCreate(record: create, content: .init(version: stored.version, value: base)))
+            }
+            _ = try await destination.commitOne(first, context: .background)
+            var second: [StorageWrite] = []
+            for raw in try #require(pre["entries"]?.arrayValue) {
+                second.append(.entry(value: try raw.decode(EntryRecord.self)))
+            }
+            for raw in try #require(pre["submissions"]?.arrayValue) {
+                second.append(.submission(value: try raw.decode(SubmissionRecord.self)))
+            }
+            if let (id, current) = liveDelta {
+                second.append(.documentChange(id: id, content: .delta(version: 3,
+                    ops: current.map { .set([.key($0.key)], $0.value) })))
+            }
+            _ = try await destination.commitOne(second, context: .background)
+            let tasks = try #require(pre["tasks"]?.arrayValue).map { StorageWrite.task(value: try $0.decode(TaskRecord.self)) }
+            _ = try await destination.commitOne(tasks, context: .background)
+            try await source.close(context: .background)
+            try await destination.close(context: .background)
+        }
+    }
 }
 
 private final class D5bRestartMatrixModels: DurableModels {

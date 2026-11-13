@@ -51,7 +51,7 @@ const kinds = ['simple', 'simple', 'simple', 'continue', 'continue', 'continue',
   'tool', 'tool', 'tool', 'turnLimit', 'turnLimit', 'turnLimit', 'handoff', 'handoff',
   'followUp', 'followUp', 'abort', 'abort', 'compaction', 'compaction',
   'coerce', 'coerce', 'coerce', 'coerce', 'invalid', 'invalid',
-  'structured', 'structured', 'readImage', 'search'];
+  'structured', 'structured', 'readImage', 'search', 'policyDisabled', 'policyOverride'];
 const scripts = kinds.map((kind, seed) => ({ seed, kind }));
 function gate() {
   let release;
@@ -97,9 +97,13 @@ async function run(kind, script) {
   const root = await harness.root(context, { agent: { model: { provider: 'faux', modelId: 'faux-1' },
     ...(script.kind === 'turnLimit' ? { maxTurns: 1 } : {}),
     ...(script.kind === 'readImage' ? { cwd: temporary } : {}) } });
+  if (script.kind === 'policyDisabled') await root.configure({ compaction: { enabled: false } }, context);
+  if (script.kind === 'policyOverride') await root.configure({ compaction: {
+    reserveTokens: 500, modelOverrides: { 'faux/faux-1': { reserveTokens: 125 } },
+  } }, context);
   const answer = () => fauxAssistantMessage([fauxText(`answer-${script.seed}`)]);
   let first, second, queued;
-  if (script.kind === 'simple') {
+  if (['simple', 'policyDisabled', 'policyOverride'].includes(script.kind)) {
     faux.setResponses([answer()]);
     first = json(await (await root.submit({ type: 'input', content: `question-${script.seed}` }, context)).wait(context));
   } else if (script.kind === 'continue') {
@@ -194,7 +198,7 @@ try {
     await mkdir(fileURLToPath(new URL('./', import.meta.url)), { recursive: true });
     await writeFile(output, serialized);
   }
-  console.log(`D5b conversations ${check ? 'match' : 'written'}: 30 scripts, SQLite and JSONL.`);
+  console.log(`D5b conversations ${check ? 'match' : 'written'}: ${scripts.length} scripts, SQLite and JSONL.`);
 } finally {
   Date.now = oldDateNow;
   if (oldPerformanceNow) Object.defineProperty(performance, 'now', oldPerformanceNow);

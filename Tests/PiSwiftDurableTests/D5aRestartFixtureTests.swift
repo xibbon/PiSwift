@@ -137,5 +137,40 @@ struct D5aRestartFixtureTests {
         let output = try String(contentsOf: log, encoding: .utf8)
         #expect(child.terminationStatus == 0, "Node status \(child.terminationStatus): \(output)")
     }
+
+    /// Export all D5a pre-event shapes through Swift storage for tagged resume.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D12_D5A_EXPORT"] != nil),
+          .timeLimit(.minutes(2)))
+    func exportsSwiftWrittenRestartPreFiles() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let seeds = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_D5A_SEEDS"]))
+        let output = URL(fileURLWithPath: try #require(environment["PISWIFT_D12_D5A_EXPORT"]))
+        for scenario in ["extension-run", "extension-abort", "compaction", "nested-extension"] {
+            for backend in ["sqlite", "jsonl"] {
+                let name = "\(scenario)-\(backend)", item = try item(name)
+                let root = try #require(item["rootId"]).decode(ConversationID.self)
+                let sourcePath = seeds.appendingPathComponent(name).appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+                let source = try await open(sourcePath, backend: backend)
+                let conversation = try #require(await source.conversation(root, context: .background))
+                let directory = output.appendingPathComponent(name)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let path = directory.appendingPathComponent(backend == "sqlite" ? "pre.sqlite" : "pre")
+                let destination = try await open(path, backend: backend)
+                var first: [StorageWrite] = [.conversation(value: conversation)]
+                for raw in try #require(item["pre"]?["documents"]?.arrayValue) {
+                    let record = try raw.decode(DocumentRecord.self)
+                    let stored = try #require(await source.document(record.id, at: .current, context: .background))
+                    let create = DocumentCreate(id: record.id, kind: record.kind, scope: record.scope,
+                        key: record.key, history: record.history, fork: record.fork, extensionFields: record.extensionFields)
+                    first.append(.documentCreate(record: create, content: .init(version: stored.version, value: stored.value)))
+                }
+                _ = try await destination.commitOne(first, context: .background)
+                let tasks = try #require(item["pre"]?["tasks"]?.arrayValue).map { StorageWrite.task(value: try $0.decode(TaskRecord.self)) }
+                _ = try await destination.commitOne(tasks, context: .background)
+                try await source.close(context: .background)
+                try await destination.close(context: .background)
+            }
+        }
+    }
 }
 #endif
