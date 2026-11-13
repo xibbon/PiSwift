@@ -1,3 +1,4 @@
+// v1.5.2 D9: FileChange and stop follow durable/src/env/index.ts:127–140.
 import Foundation
 import Synchronization
 import PiSwiftAI
@@ -226,7 +227,7 @@ private struct JSCModelSpillEnv: ExecutionEnv {
     func listDir(_ path: String, context: ChordContext) async -> Result<[FileInfo], FileError> { await base.listDir(path, context: context) }
     func listFiles(_ path: String, options: ListFilesOptions?, context: ChordContext) async -> Result<FileListing, FileError> { await base.listFiles(path, options: options, context: context) }
     func openDirReader(_ path: String, context: ChordContext) async -> Result<any DirReader, FileError> { await base.openDirReader(path, context: context) }
-    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (WatchChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { await base.watch(targets, onChange: onChange, context: context) }
+    func watch(_ targets: [WatchTarget], onChange: @escaping @Sendable (FileChange) -> Void, context: ChordContext) async -> Result<any FileWatcher, FileError> { await base.watch(targets, onChange: onChange, context: context) }
     func canonicalPath(_ path: String, context: ChordContext) async -> Result<String, FileError> { await base.canonicalPath(path, context: context) }
     func exists(_ path: String, context: ChordContext) async -> Result<Bool, FileError> { await base.exists(path, context: context) }
     func createDir(_ path: String, options: CreateDirOptions?, context: ChordContext) async -> Result<Void, FileError> { await base.createDir(path, options: options, context: context) }
