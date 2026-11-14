@@ -70,7 +70,14 @@ func emitProviderStreamEvent(
 /// Default request executor. It preserves the existing environment-proxy behavior.
 public struct DefaultProviderHTTPClient: ProviderHTTPClient {
     public let env: [String: String]?
-    public init(env: [String: String]? = nil) { self.env = env }
+    /// When false, a redirect response is returned as is and is not followed,
+    /// so request credentials never reach another origin.
+    public let followRedirects: Bool
+
+    public init(env: [String: String]? = nil, followRedirects: Bool = true) {
+        self.env = env
+        self.followRedirects = followRedirects
+    }
 
     public func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
         try await send(request, timeoutPolicy: .request)
@@ -85,7 +92,8 @@ public struct DefaultProviderHTTPClient: ProviderHTTPClient {
             // the shared session's resource limit remains unchanged.
             request.timeoutInterval = .greatestFiniteMagnitude
         }
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(
+            for: request, delegate: followRedirects ? nil : NoRedirectTaskDelegate())
         guard let http = response as? HTTPURLResponse else {
             throw StreamError.invalidHTTPResponse
         }
@@ -118,6 +126,14 @@ public struct DefaultProviderHTTPClient: ProviderHTTPClient {
             headers: responseHeaders(http),
             body: body
         )
+    }
+}
+
+/// A per-task delegate that refuses every redirect.
+private final class NoRedirectTaskDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        nil
     }
 }
 

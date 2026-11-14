@@ -14,7 +14,6 @@ import Glibc
 let artifactEntryType = "codex-image-artifact"
 let reservationEntryType = "codex-image-artifact-reservation"
 private let maxManifestBytes = 8192
-private let artifactMimeTypes = ["image/png", "image/jpeg", "image/webp"]
 
 struct ImageArtifact: Sendable, Equatable {
     var path: String
@@ -48,7 +47,7 @@ private func hasControlCharacter(_ value: String) -> Bool {
 func artifactRecord(_ value: Any?) -> ArtifactRecord? {
     guard let record = value as? [String: Any], let artifact = record["artifact"] as? [String: Any],
           let path = artifact["path"] as? String, path.utf8.count <= 4096, path.hasPrefix("/"), !hasControlCharacter(path),
-          let mimeType = artifact["mimeType"] as? String, artifactMimeTypes.contains(mimeType),
+          let mimeType = artifact["mimeType"] as? String, OutputFormat.mimeTypes.contains(mimeType),
           let byteCount = integer(artifact["byteCount"]), byteCount > 0, byteCount <= codexMaxImageBytes,
           let toolCallId = record["toolCallId"] as? String, toolCallId.utf8.count <= 256 else { return nil }
     return ArtifactRecord(artifact: ImageArtifact(path: path, mimeType: mimeType, byteCount: byteCount), toolCallId: toolCallId)
@@ -118,6 +117,20 @@ func branchArtifacts(_ entries: [SessionEntry]) -> [ArtifactRecord] {
     return order.compactMap { records[$0] }
 }
 
+/// Cut a tool call ID to at most 256 UTF-8 bytes on a character boundary, to
+/// match the byte limit that record validation applies.
+func boundedToolCallId(_ id: String) -> String {
+    var result = ""
+    var bytes = 0
+    for character in id {
+        let size = character.utf8.count
+        if bytes + size > 256 { break }
+        result.append(character)
+        bytes += size
+    }
+    return result
+}
+
 // MARK: - Reservation
 
 /// Private storage reserved before quota is spent.
@@ -138,16 +151,20 @@ final class ArtifactReservation: Sendable {
     }
 
     static func reserve(fileExtension: String, root: String = NSTemporaryDirectory()) throws -> ArtifactReservation {
-        guard ["png", "jpg", "webp"].contains(fileExtension) else { throw CodexImageError("Unsupported artifact format.") }
+        guard OutputFormat.fileExtensions.contains(fileExtension) else { throw CodexImageError("Unsupported artifact format.") }
         let absoluteRoot = URL(fileURLWithPath: root).standardizedFileURL.path
         guard absoluteRoot.utf8.count <= 4000, !hasControlCharacter(absoluteRoot) else {
             throw CodexImageError("Image artifact storage path is unsupported. No generation request was made.")
         }
         var template = Array(join(absoluteRoot, "pi-codex-image-XXXXXX").utf8CString)
-        guard let created = template.withUnsafeMutableBufferPointer({ mkdtemp($0.baseAddress!) }) else {
+        // Read the result inside the closure; the pointer is not valid after it returns.
+        let created = template.withUnsafeMutableBufferPointer { buffer -> String? in
+            guard let base = buffer.baseAddress, mkdtemp(base) != nil else { return nil }
+            return String(cString: base)
+        }
+        guard let dir = created else {
             throw CodexImageError("Image artifact storage is unavailable. No generation request was made.")
         }
-        let dir = String(cString: created)
         let path = join(dir, "original.\(fileExtension)")
         let fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW, 0o600)
         guard fd >= 0 else {

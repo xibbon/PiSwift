@@ -22,6 +22,9 @@ enum OutputFormat: String, Sendable, CaseIterable {
     var fileExtension: String { self == .jpeg ? "jpg" : rawValue }
     var mimeType: String { "image/\(rawValue)" }
 
+    static let mimeTypes = allCases.map(\.mimeType)
+    static let fileExtensions = allCases.map(\.fileExtension)
+
     init?(mimeType: String) {
         guard let format = OutputFormat.allCases.first(where: { $0.mimeType == mimeType }) else { return nil }
         self = format
@@ -72,15 +75,6 @@ private func isBase64Scalar(_ scalar: Unicode.Scalar) -> Bool {
     case "A"..."Z", "a"..."z", "0"..."9", "+", "/", "=": return true
     default: return false
     }
-}
-
-// MARK: - Paths
-
-func resolveUnderCwd(_ cwd: String, _ path: String, home: String = NSHomeDirectory()) -> String {
-    if path == "~" { return home }
-    if path.hasPrefix("~/") { return URL(fileURLWithPath: home).appendingPathComponent(String(path.dropFirst(2))).standardizedFileURL.path }
-    if path.hasPrefix("/") { return path }
-    return URL(fileURLWithPath: cwd).appendingPathComponent(path).standardizedFileURL.path
 }
 
 // MARK: - Reading references
@@ -176,7 +170,9 @@ func resolveInputImages(paths: [String], count: Int?, cwd: String, recent: [Rece
         var total = 0
         for path in paths {
             let normalized = path.hasPrefix("@") ? String(path.dropFirst()) : path
-            let absolute = resolveUnderCwd(cwd, normalized)
+            // The read tool's rules: `~` is the host home directory, and
+            // macOS screenshot, NFD, and curly-quote name variants are tried.
+            let absolute = URL(fileURLWithPath: resolveReadPath(normalized, cwd: cwd)).standardizedFileURL.path
             let bytes: Data
             do {
                 bytes = try readInputImage(absolute)

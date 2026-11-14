@@ -261,10 +261,21 @@ private func reportedImage(_ item: [String: Any], secrets: [String]) -> Reported
     if let background = item["background"] as? String, ["transparent", "opaque", "auto"].contains(background) {
         reported.background = background
     }
-    if let format = item["output_format"] as? String, ["png", "jpeg", "webp"].contains(format) {
+    if let format = item["output_format"] as? String, OutputFormat(rawValue: format) != nil {
         reported.outputFormat = format
     }
     return reported
+}
+
+/// A finite, non-negative JSON number. Booleans are not numbers. A whole
+/// number that `Int` can hold exactly stays an integer; any other value stays a
+/// double, so a very large counter cannot trap.
+func usageCounter(_ value: Any?) -> Any? {
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+    let double = number.doubleValue
+    guard double.isFinite, double >= 0 else { return nil }
+    if double.rounded(.towardZero) == double, double < 0x1p53 { return Int(double) }
+    return double
 }
 
 /// Keep numeric, non-negative counters only. Never persist arbitrary response objects.
@@ -273,15 +284,13 @@ private func usageCounters(_ value: Any?) -> AnyCodable? {
     func counters(_ record: [String: Any], _ keys: [String]) -> [String: Any] {
         var result: [String: Any] = [:]
         for key in keys {
-            guard let number = record[key] as? NSNumber, !(record[key] is Bool) else { continue }
-            let double = number.doubleValue
-            if double.isFinite, double >= 0 { result[key] = number.intValue == Int(double) ? number.intValue : double }
+            if let value = usageCounter(record[key]) { result[key] = value }
         }
         return result
     }
     var result = counters(usage, ["input_tokens", "output_tokens", "total_tokens"])
-    for (key, fields) in [("input_tokens_details", ["cached_tokens"]), ("output_tokens_details", ["reasoning_tokens"])] {
-        let details = counters(object(usage[key]), fields)
+    for key in ["input_tokens_details", "output_tokens_details"] {
+        let details = counters(object(usage[key]), ["image_tokens", "text_tokens", "cached_tokens", "reasoning_tokens"])
         if !details.isEmpty { result[key] = details }
     }
     return result.isEmpty ? nil : AnyCodable(result)
@@ -331,104 +340,54 @@ func parseCodexSse(
     }
 
     let events = iterateSseEvents(body: limitedBody(response.body, limit: codexMaxResponseBytes, stop: stop), signal: stop)
-    do {
-        for try await frame in events {
-            let data = frame.data.trimmingCharacters(in: .whitespacesAndNewlines)
-            if data.isEmpty || data == "[DONE]" { continue }
-            guard let bytes = data.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: bytes), let event = json as? [String: Any] else {
-                throw CodexImageError("Codex returned an invalid stream event. No automatic retry was made.")
-            }
-            switch event["type"] as? String {
-            case "error", "response.failed":
-                let error = object(object(event["response"])["error"] ?? event["error"] ?? event)
-                let classified = classifyCodexError(error)
-                throw CodexRequestError(classified.message, FailureDiagnostics(
-                    category: classified.category, code: sanitizedIdentifier(error["code"], secrets: secrets),
-                    requestId: parsed.requestId, imagegenRequestId: parsed.imagegenRequestId, responseId: parsed.responseId))
-            case "response.incomplete":
-                throw CodexImageError("Codex response was incomplete. No automatic retry was made.")
-            case "response.created":
-                parsed.responseId = sanitizedIdentifier(object(event["response"])["id"], secrets: secrets)
-            case "response.output_text.delta":
-                if let delta = event["delta"] as? String, textChars < codexMaxTextChars {
-                    let part = String(delta.prefix(codexMaxTextChars - textChars))
-                    textParts.append(part)
-                    textChars += part.count
-                }
-            case "response.output_item.done":
-                try image(event["item"])
-            case "response.completed":
-                let final = object(event["response"])
-                parsed.responseId = sanitizedIdentifier(final["id"], secrets: secrets) ?? parsed.responseId
-                parsed.usage = usageCounters(final["usage"])
-                if parsed.image == nil, let output = final["output"] as? [Any] {
-                    for item in output { try image(item) }
-                }
-                completed = true
-            case let type? where type.hasPrefix("response.image_generation_call.")
-                && ["in_progress", "generating", "completed"].contains(String(type.split(separator: ".").last ?? "")):
-                if type != lastStage {
-                    lastStage = type
-                    onProgress?(String(type.split(separator: ".").last ?? ""))
-                }
-            default:
-                break
-            }
-            if completed { break }
+    for try await frame in events {
+        let data = frame.data.trimmingCharacters(in: .whitespacesAndNewlines)
+        if data.isEmpty || data == "[DONE]" { continue }
+        guard let bytes = data.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: bytes), let event = json as? [String: Any] else {
+            throw CodexImageError("Codex returned an invalid stream event. No automatic retry was made.")
         }
-    } catch is CancellationError {
-        throw CancellationError()
+        switch event["type"] as? String {
+        case "error", "response.failed":
+            let error = object(object(event["response"])["error"] ?? event["error"] ?? event)
+            let classified = classifyCodexError(error)
+            throw CodexRequestError(classified.message, FailureDiagnostics(
+                category: classified.category, code: sanitizedIdentifier(error["code"], secrets: secrets),
+                requestId: parsed.requestId, imagegenRequestId: parsed.imagegenRequestId, responseId: parsed.responseId))
+        case "response.incomplete":
+            throw CodexImageError("Codex response was incomplete. No automatic retry was made.")
+        case "response.created":
+            parsed.responseId = sanitizedIdentifier(object(event["response"])["id"], secrets: secrets)
+        case "response.output_text.delta":
+            if let delta = event["delta"] as? String, textChars < codexMaxTextChars {
+                let part = String(delta.prefix(codexMaxTextChars - textChars))
+                textParts.append(part)
+                textChars += part.count
+            }
+        case "response.output_item.done":
+            try image(event["item"])
+        case "response.completed":
+            let final = object(event["response"])
+            parsed.responseId = sanitizedIdentifier(final["id"], secrets: secrets) ?? parsed.responseId
+            parsed.usage = usageCounters(final["usage"])
+            if parsed.image == nil, let output = final["output"] as? [Any] {
+                for item in output { try image(item) }
+            }
+            completed = true
+        case let type? where type.hasPrefix("response.image_generation_call.")
+            && ["in_progress", "generating", "completed"].contains(String(type.split(separator: ".").last ?? "")):
+            if type != lastStage {
+                lastStage = type
+                onProgress?(String(type.split(separator: ".").last ?? ""))
+            }
+        default:
+            break
+        }
+        if completed { break }
     }
     guard completed else {
         throw CodexImageError("Codex stream ended before completion. The backend may still finish; no automatic retry was made.")
     }
     parsed.text = sanitizeText(textParts.joined(), secrets: secrets)
     return parsed
-}
-
-// MARK: - HTTP client
-
-/// Sends requests without following redirects, so credentials never reach another origin.
-struct NoRedirectHTTPClient: ProviderHTTPClient {
-    func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
-        let session = URLSession(configuration: .ephemeral)
-        defer { session.finishTasksAndInvalidate() }
-        let (bytes, response) = try await session.bytes(for: request, delegate: NoRedirectDelegate())
-        guard let http = response as? HTTPURLResponse else {
-            throw CodexImageError("Codex returned an invalid HTTP response.")
-        }
-        var headers: [String: String] = [:]
-        for (key, value) in http.allHeaderFields {
-            if let key = key as? String { headers[key.lowercased()] = "\(value)" }
-        }
-        let body = AsyncThrowingStream<Data, Error> { continuation in
-            let task = Task {
-                do {
-                    var chunk = Data()
-                    chunk.reserveCapacity(16_384)
-                    for try await byte in bytes {
-                        chunk.append(byte)
-                        if chunk.count == 16_384 || byte == 10 {
-                            continuation.yield(chunk)
-                            chunk.removeAll(keepingCapacity: true)
-                        }
-                    }
-                    if !chunk.isEmpty { continuation.yield(chunk) }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-        return ProviderHTTPResponse(statusCode: http.statusCode, headers: headers, body: body)
-    }
-}
-
-private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest) async -> URLRequest? {
-        nil
-    }
 }

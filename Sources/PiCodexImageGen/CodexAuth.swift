@@ -77,13 +77,18 @@ func base64URLDecode(_ value: String) -> Data? {
     return Data(base64Encoded: base64)
 }
 
-/// The same `/codex` suffix rule as the `openai-codex` chat provider, plus `/responses`.
+/// The same rule as the `openai-codex` chat provider (`codexResponsesUrl`): a
+/// base that ends in `/responses` is used as is; otherwise add `/codex` when it
+/// is missing, then `/responses`.
 func codexResponsesURL(baseUrl: String?) -> URL? {
     var base = (baseUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     if base.isEmpty { base = codexDefaultBaseUrl }
-    while base.hasSuffix("/") { base.removeLast() }
-    if !base.contains("/codex") { base += "/codex" }
-    guard let url = URL(string: base + "/responses"), url.scheme == "https" || url.scheme == "http" else { return nil }
+    if !base.hasSuffix("/responses") {
+        while base.hasSuffix("/") { base.removeLast() }
+        if !base.contains("/codex") { base += "/codex" }
+        base += "/responses"
+    }
+    guard let url = URL(string: base), url.scheme == "https" || url.scheme == "http" else { return nil }
     return url
 }
 
@@ -99,7 +104,8 @@ func resolveCodexImageAuth(model: Model?, registry: ModelRegistry, signal: Cance
         throw CodexImageError("Missing ChatGPT credentials. Run /login \(codexImageChatGPTProvider). No generation request was made.")
     }
     let accountId = try extractChatGPTAccountId(token)
-    guard let url = codexResponsesURL(baseUrl: auth.baseUrl ?? resolved.model.baseUrl) else {
+    // `resolveModelRequest` already applied any auth base URL override to the model.
+    guard let url = codexResponsesURL(baseUrl: resolved.model.baseUrl) else {
         throw CodexImageError("The ChatGPT base URL is not valid. No generation request was made.")
     }
     let routingModel = model.id

@@ -4,7 +4,7 @@ import Testing
 import PiSwiftAI
 import PiSwiftCodingAgent
 
-@Suite("PiCodexImageGen units")
+@Suite("PiCodexImageGen units", .timeLimit(.minutes(1)))
 struct CodexImageGenUnitTests {
     // MARK: Auth
 
@@ -304,7 +304,7 @@ struct CodexImageGenUnitTests {
         let admission = ImageAdmission(maxActive: 1, maxQueued: 1, maxAccounts: 1)
         let first = try await admission.admit(account: "a", token: CancellationToken())
         let waiting = Task { try await admission.admit(account: "a", token: CancellationToken()) }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(await waitUntil { await admission.queuedCount == 1 })
         await #expect(throws: CodexImageError.self) { _ = try await admission.admit(account: "a", token: CancellationToken()) }
         await #expect(throws: CodexImageError.self) { _ = try await admission.admit(account: "b", token: CancellationToken()) }
         await first.release()
@@ -319,7 +319,7 @@ struct CodexImageGenUnitTests {
         let first = try await admission.admit(account: "a", token: CancellationToken())
         let token = CancellationToken()
         let waiting = Task { try await admission.admit(account: "a", token: token) }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(await waitUntil { await admission.queuedCount == 1 })
         token.cancel()
         await #expect(throws: CodexImageError.self) { _ = try await waiting.value }
         await first.release()

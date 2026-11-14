@@ -21,19 +21,32 @@ public enum CodexImageGen {
     public static let listToolName = "codex_list_image_artifacts"
     public static var toolNames: [String] { [inlineToolName, artifactToolName, listToolName] }
 
-    /// In-process extension descriptor for `inlineExtensions`.
+    /// In-process extension descriptor for `inlineExtensions`. Global saves go
+    /// under `getAgentDir()`.
     public static var inlineExtension: InlineExtension {
-        InlineExtension(name: "codex-image-gen", factory: { register($0) })
+        inlineExtension(agentDir: nil)
     }
 
-    public static func register(_ pi: HookAPI) {
-        registerCodexImageGen(pi, environment: CodexImageGenEnvironment())
+    /// In-process extension descriptor for `inlineExtensions`. Pass the
+    /// session's agent directory (the `agentDir` given to the session) so that
+    /// global saves stay inside it, for example inside an app sandbox.
+    /// `nil` uses `getAgentDir()`.
+    public static func inlineExtension(agentDir: String?) -> InlineExtension {
+        InlineExtension(name: "codex-image-gen", factory: { register($0, agentDir: agentDir) })
+    }
+
+    /// Register the extension. The tools appear only after a `session_start`
+    /// or `model_select` event with an `openai-codex` model.
+    public static func register(_ pi: HookAPI, agentDir: String? = nil) {
+        var environment = CodexImageGenEnvironment()
+        if let agentDir { environment.agentDir = { agentDir } }
+        registerCodexImageGen(pi, environment: environment)
     }
 }
 
 /// Test seams for the network and the admission queue.
 struct CodexImageGenEnvironment: Sendable {
-    var httpClient: any ProviderHTTPClient = NoRedirectHTTPClient()
+    var httpClient: any ProviderHTTPClient = DefaultProviderHTTPClient(followRedirects: false)
     var admission: ImageAdmission = .shared
     var agentDir: @Sendable () -> String = { getAgentDir() }
     var artifactRoot: @Sendable () -> String = { NSTemporaryDirectory() }
@@ -44,38 +57,54 @@ struct CodexImageGenEnvironment: Sendable {
 
 private final class ExtensionState: Sendable {
     let lifetime = LockedState(CancellationToken())
-    let registered = LockedState(false)
+}
+
+/// Registers the tools only for a ChatGPT session and removes them after a
+/// switch to another provider. Codemode tools stay callable while registered,
+/// so registration, not the active-tool list, is the gate. The actor runs one
+/// change at a time, and `registered` changes only after the tools changed.
+actor ToolRegistrationGate {
+    private let pi: HookAPI
+    private let tools: [CustomTool]
+    private(set) var registered = false
+
+    init(pi: HookAPI, tools: [CustomTool]) {
+        self.pi = pi
+        self.tools = tools
+    }
+
+    func sync(_ model: Model?) {
+        let enable = isChatGPTModel(model)
+        guard registered != enable else { return }
+        if enable {
+            var added: [String] = []
+            for tool in tools {
+                if case .failure = pi.registerTool(tool) {
+                    // Do not keep a partial set. The next session_start or
+                    // model_select event tries again.
+                    for name in added { pi.unregisterTool(name) }
+                    return
+                }
+                added.append(tool.name)
+            }
+        } else {
+            for tool in tools { pi.unregisterTool(tool.name) }
+        }
+        registered = enable
+    }
 }
 
 func registerCodexImageGen(_ pi: HookAPI, environment: CodexImageGenEnvironment) {
     let state = ExtensionState()
-    let tools = makeCodexImageTools(pi: pi, state: state, environment: environment)
-
-    // Register the tools only for a ChatGPT session; remove them after a switch
-    // to another provider. Codemode tools stay callable while registered, so
-    // registration, not the active-tool list, is the gate.
-    @Sendable func sync(_ model: Model?) {
-        let enable = isChatGPTModel(model)
-        let change = state.registered.withLock { registered -> Bool in
-            guard registered != enable else { return false }
-            registered = enable
-            return true
-        }
-        guard change else { return }
-        if enable {
-            for tool in tools { pi.registerTool(tool) }
-        } else {
-            for tool in tools { pi.unregisterTool(tool.name) }
-        }
-    }
+    let gate = ToolRegistrationGate(pi: pi, tools: makeCodexImageTools(pi: pi, state: state, environment: environment))
 
     pi.on("session_start") { (_: SessionStartEvent, ctx: HookContext) -> Any? in
         state.lifetime.withLock { $0 = CancellationToken() }
-        sync(ctx.model)
+        await gate.sync(ctx.model)
         return nil
     }
     pi.on("model_select") { (event: ModelSelectEvent, _: HookContext) -> Any? in
-        sync(event.model)
+        await gate.sync(event.model)
         return nil
     }
     pi.on("session_shutdown") { (_: SessionShutdownEvent, _: HookContext) -> Any? in
@@ -126,12 +155,10 @@ private func toolParameters() -> [String: AnyCodable] {
 private func artifactSchema() -> [String: Any] {
     ["type": "object", "properties": [
         "path": ["type": "string"],
-        "mimeType": stringEnum(artifactMimeTypeList),
+        "mimeType": stringEnum(OutputFormat.mimeTypes),
         "byteCount": ["type": "integer", "minimum": 1, "maximum": codexMaxImageBytes],
     ] as [String: Any], "required": ["path", "mimeType", "byteCount"]]
 }
-
-private let artifactMimeTypeList = ["image/png", "image/jpeg", "image/webp"]
 
 private func artifactOutputSchema() -> [String: AnyCodable] {
     let optionalString: [String: Any] = ["type": "string"]
@@ -340,7 +367,7 @@ private func textResult(_ text: String, details: [String: Any]) -> AgentToolResu
 /// started the call. A late result never attaches to another branch or session.
 private func recordOriginal(_ artifact: ImageArtifact, toolCallId: String, reservation: ArtifactReservation,
                             ctx: CustomToolContext, sessionId: String, originEntryId: String?, pi: HookAPI) -> String? {
-    let record = ArtifactRecord(artifact: artifact, toolCallId: String(toolCallId.prefix(256)))
+    let record = ArtifactRecord(artifact: artifact, toolCallId: boundedToolCallId(toolCallId))
     var manifestPublished = false
     do {
         try reservation.publish(record)
@@ -412,7 +439,7 @@ private func executeImage(
             // Attach the recovery anchor before quota or network work.
             pi.appendEntry(reservationEntryType, ArtifactReservationRecord(
                 path: reservation!.path, mimeType: params.outputFormat.mimeType,
-                toolCallId: String(toolCallId.prefix(256))).dictionary)
+                toolCallId: boundedToolCallId(toolCallId)).dictionary)
             originEntryId = ctx.sessionManager.getLeafId()
         }
 

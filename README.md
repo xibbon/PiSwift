@@ -112,7 +112,7 @@ let adapter = McpAdapter.makeExtension(McpAdapterOptions(
     ])
 ))
 
-let result = await createAgentSession(CreateAgentSessionOptions(
+let result = try await createAgentSession(CreateAgentSessionOptions(
     inlineExtensions: [adapter.inlineExtension()]
 ))
 
@@ -157,14 +157,21 @@ subscription backend (Codex Responses with the native `image_generation` tool).
 ```swift
 import PiCodexImageGen
 
-let result = await createAgentSession(CreateAgentSessionOptions(
-    inlineExtensions: [CodexImageGen.inlineExtension]
+let agentDir = getAgentDir()
+let result = try await createAgentSession(CreateAgentSessionOptions(
+    agentDir: agentDir,
+    inlineExtensions: [CodexImageGen.inlineExtension(agentDir: agentDir)]
 ))
 ```
 
-The extension registers its tools only while the session model uses the
-`openai-codex` provider. It removes them when the session switches to another
-provider. It uses the session's own OAuth token, ChatGPT account id and model;
+Pass the same `agentDir` to the extension and to the session, so that global
+saves stay inside that directory (for example, inside an app sandbox).
+`CodexImageGen.inlineExtension` without an argument uses `getAgentDir()`.
+
+The extension registers its tools only after a `session_start` or
+`model_select` event with an `openai-codex` model. The tools are not present
+before that event. The extension removes them when the session switches to
+another provider. It uses the session's own OAuth token, ChatGPT account id and model;
 there is no separate image login. The tools are `codex_generate_image`
 (model-only, returns an inline image), `codex_generate_image_artifact`
 (codemode, returns a private original path) and `codex_list_image_artifacts`.

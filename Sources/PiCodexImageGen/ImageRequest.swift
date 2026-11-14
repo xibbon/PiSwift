@@ -44,7 +44,6 @@ final class AbortScope: Sendable {
     }
 
     var abortReason: Reason? { reason.withLock { $0 } }
-    var isAborted: Bool { token.isCancelled }
 
     func throwIfAborted() throws {
         if token.isCancelled { throw CancellationError() }
@@ -167,7 +166,9 @@ func requestCodexImage(
     request.timeoutInterval = codexRequestTimeout
     for (key, value) in buildCodexHeaders(auth: auth) { request.setValue(value, forHTTPHeaderField: key) }
 
-    for attempt in 1...(codexMaxRetries + 1) {
+    var attempt = 0
+    while true {
+        attempt += 1
         try scope.throwIfAborted()
         let response: ProviderHTTPResponse
         do {
@@ -178,7 +179,9 @@ func requestCodexImage(
             throw CodexImageError("Codex connection failed. No automatic retry was made; check connectivity before trying again.")
         }
         guard (200..<300).contains(response.statusCode) else {
-            let failure = await codexHTTPFailure(response, secrets: secrets)
+            // Read the error body inside the scope, so abort and the deadline
+            // also stop a stalled error response.
+            let failure = try await scope.run { await codexHTTPFailure(response, secrets: secrets) }
             if attempt <= codexMaxRetries && failure.retry {
                 let retryAfter = lowercasedHeaders(response.headers)["retry-after"]
                 try await scope.sleep(milliseconds: retryDelayMs(attempt: attempt, retryAfter: retryAfter, random: random))
@@ -191,5 +194,4 @@ func requestCodexImage(
             try await parseCodexSse(response, secrets: secrets, signal: signal, onProgress: onProgress)
         }
     }
-    throw CodexImageError("Codex image generation request failed after all retries.")
 }

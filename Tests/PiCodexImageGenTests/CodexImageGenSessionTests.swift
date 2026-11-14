@@ -6,9 +6,9 @@ import PiSwiftCodingAgent
 
 /// The live path: tools register on `session_start` and `model_select` inside a
 /// real `AgentSession`, and leave the session after a switch to another provider.
-@Suite("PiCodexImageGen session")
+@Suite("PiCodexImageGen session", .timeLimit(.minutes(1)))
 struct CodexImageGenSessionTests {
-    @Test(.timeLimit(.minutes(1))) func toolsFollowTheSessionModel() async throws {
+    @Test func toolsFollowTheSessionModel() async throws {
         let auth = AuthStorage(":memory:")
         auth.set(codexImageChatGPTProvider, credential: .oauth(OAuthCredential(
             access: makeJWT(), refresh: "r", expires: Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000)))

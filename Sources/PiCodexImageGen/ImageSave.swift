@@ -51,7 +51,7 @@ func resolveSaveConfig(save: String?, saveDir: String?, cwd: String, sessionId: 
         guard let dir = saveDir, !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CodexImageError("save=custom requires saveDir.")
         }
-        return SaveConfig(mode: mode, outputDir: join(resolveUnderCwd(cwd, dir), session))
+        return SaveConfig(mode: mode, outputDir: join(URL(fileURLWithPath: resolveToCwd(dir, cwd: cwd)).standardizedFileURL.path, session))
     }
 }
 

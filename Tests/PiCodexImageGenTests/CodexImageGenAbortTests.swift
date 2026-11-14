@@ -5,10 +5,14 @@ import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
 
-/// A response body that sends one event, then stays open until cancelled.
+/// A response body that sends two events, then stays open until cancelled.
+/// The second event makes a progress report, so a test knows the parser runs.
 private func hangingBody(terminated: LockedState<Bool>) -> AsyncThrowingStream<Data, Error> {
     AsyncThrowingStream { continuation in
-        continuation.yield(sse([["type": "response.created", "response": ["id": "resp_1"]]]))
+        continuation.yield(sse([
+            ["type": "response.created", "response": ["id": "resp_1"]],
+            ["type": "response.image_generation_call.in_progress"],
+        ]))
         continuation.onTermination = { _ in terminated.withLock { $0 = true } }
     }
 }
@@ -20,30 +24,24 @@ private final class HangingClient: ProviderHTTPClient, Sendable {
     }
 }
 
-private func waitUntil(_ condition: @Sendable () -> Bool) async {
-    for _ in 0..<200 where !condition() {
-        try? await Task.sleep(nanoseconds: 10_000_000)
-    }
-}
-
-@Suite("PiCodexImageGen abort")
+@Suite("PiCodexImageGen abort", .timeLimit(.minutes(1)))
 struct CodexImageGenAbortTests {
-    @Test(.timeLimit(.minutes(1))) func abortStopsTheStreamReader() async throws {
+    @Test func abortStopsTheStreamReader() async throws {
         let terminated = LockedState(false)
         let signal = CancellationToken()
+        let started = LockedState(false)
         let parse = Task {
             try await parseCodexSse(ProviderHTTPResponse(statusCode: 200, body: hangingBody(terminated: terminated)),
-                                    secrets: [], signal: signal)
+                                    secrets: [], signal: signal) { _ in started.withLock { $0 = true } }
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(await waitUntil { started.withLock { $0 } })
         signal.cancel()
         parse.cancel()
         await #expect(throws: (any Error).self) { _ = try await parse.value }
-        await waitUntil { terminated.withLock { $0 } }
-        #expect(terminated.withLock { $0 })
+        #expect(await waitUntil { terminated.withLock { $0 } })
     }
 
-    @Test(.timeLimit(.minutes(1))) func abortAfterDispatchWarnsAboutQuota() async throws {
+    @Test func abortAfterDispatchWarnsAboutQuota() async throws {
         let client = HangingClient()
         let harness = Harness(replies: [])
         let api = HookAPI(events: createEventBus(), hookPath: "<test:abort>")
@@ -55,11 +53,15 @@ struct CodexImageGenAbortTests {
         }
         let tool = try require_tool(api, CodexImageGen.inlineToolName)
         let signal = CancellationToken()
+        let stages = LockedState<[String]>([])
+        let onUpdate: AgentToolUpdateCallback = { result in
+            if case .text(let text)? = result.content.first { stages.withLock { $0.append(text.text) } }
+        }
         let run = Task {
-            try await tool.execute("call_1", ["prompt": AnyCodable("x"), "save": AnyCodable("none")], nil,
+            try await tool.execute("call_1", ["prompt": AnyCodable("x"), "save": AnyCodable("none")], onUpdate,
                                    harness.toolContext(chatGPTModel), signal)
         }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(await waitUntil { stages.withLock { $0.contains("Codex image stage: in_progress.") } })
         signal.cancel()
         do {
             _ = try await run.value
@@ -68,7 +70,6 @@ struct CodexImageGenAbortTests {
             #expect(error.localizedDescription
                     == "Image generation was aborted after dispatch. Image quota may have been consumed. No automatic retry was made.")
         }
-        await waitUntil { client.terminated.withLock { $0 } }
-        #expect(client.terminated.withLock { $0 })
+        #expect(await waitUntil { client.terminated.withLock { $0 } })
     }
 }

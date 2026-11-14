@@ -5,7 +5,7 @@ import PiSwiftAI
 import PiSwiftAgent
 import PiSwiftCodingAgent
 
-@Suite("PiCodexImageGen tools")
+@Suite("PiCodexImageGen tools", .timeLimit(.minutes(1)))
 struct CodexImageGenToolTests {
     // MARK: Gating
 

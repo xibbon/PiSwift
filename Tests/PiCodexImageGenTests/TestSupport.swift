@@ -72,10 +72,38 @@ func completedStream(_ bytes: Data = pngBytes, extra: [String: Any] = [:]) -> Da
     ])
 }
 
+/// One temporary root per test process. It is removed when the process exits.
+/// Roots left by processes that no longer run (for example, after a crash) are
+/// removed when the next run starts.
+private let testTempRoot: String = {
+    let base = (NSTemporaryDirectory() as NSString).appendingPathComponent("piswift-codex-image-tests")
+    let fileManager = FileManager.default
+    for name in (try? fileManager.contentsOfDirectory(atPath: base)) ?? [] {
+        if let pid = Int32(name), kill(pid, 0) != 0, errno == ESRCH {
+            try? fileManager.removeItem(atPath: (base as NSString).appendingPathComponent(name))
+        }
+    }
+    let root = (base as NSString).appendingPathComponent(String(getpid()))
+    try! fileManager.createDirectory(atPath: root, withIntermediateDirectories: true)
+    atexit { try? FileManager.default.removeItem(atPath: testTempRoot) }
+    return URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+}()
+
 func makeTempDir() -> String {
-    let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("piswift-codex-image-\(UUID().uuidString)")
+    let path = (testTempRoot as NSString).appendingPathComponent(UUID().uuidString)
     try! FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
-    return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    return path
+}
+
+/// Poll `condition` until it is true or `timeout` passes. Returns the last result.
+@discardableResult
+func waitUntil(timeout: Duration = .seconds(10), _ condition: @Sendable () async -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return await condition()
 }
 
 let chatGPTModel = getModels(provider: .openaiCodex).first!

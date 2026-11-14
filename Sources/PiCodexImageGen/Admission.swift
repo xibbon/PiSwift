@@ -91,6 +91,9 @@ actor ImageAdmission {
 
     /// Test seam: the number of account scopes held.
     var accountCount: Int { accounts.count }
+
+    /// Test seam: the number of waiting operations over all accounts.
+    var queuedCount: Int { accounts.values.reduce(0) { $0 + $1.queue.count } }
 }
 
 final class AdmissionTicket: Sendable {
