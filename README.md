@@ -148,6 +148,33 @@ redacted server and method metadata, direction, message type, and byte count.
 They never contain MCP payloads, headers, URLs, or authorization values. The
 host owns trace retention and storage.
 
+## Codex image generation extension
+
+`PiCodexImageGen` is an opt-in inline extension, ported from pi-extras
+`pi-codex-image-gen`. It generates and edits images through the ChatGPT
+subscription backend (Codex Responses with the native `image_generation` tool).
+
+```swift
+import PiCodexImageGen
+
+let result = await createAgentSession(CreateAgentSessionOptions(
+    inlineExtensions: [CodexImageGen.inlineExtension]
+))
+```
+
+The extension registers its tools only while the session model uses the
+`openai-codex` provider. It removes them when the session switches to another
+provider. It uses the session's own OAuth token, ChatGPT account id and model;
+there is no separate image login. The tools are `codex_generate_image`
+(model-only, returns an inline image), `codex_generate_image_artifact`
+(codemode, returns a private original path) and `codex_list_image_artifacts`.
+The `/image-artifacts` command lists the originals on the current branch.
+Images are saved to `<agentDir>/generated-images/<session>/` unless the call
+sets `save` (`none`, `project`, `global`, `custom` with `saveDir`).
+
+The port does not include the opt-in `images` transport, decoded-pixel
+inspection, the configuration file, or the `imagegen` skill.
+
 ## Subagents (in-process)
 
 PiSwift supports delegating work to specialized subagents without spawning a subprocess. Subagents are defined by user-editable Markdown files and run in-process with isolated context.
