@@ -60,6 +60,10 @@ let package = Package(
             name: "PiReviewExtension",
             targets: ["PiReviewExtension"]
         ),
+        .library(
+            name: "PiCodexImageGen",
+            targets: ["PiCodexImageGen"]
+        ),
         .executable(
             name: "pi-ai",
             targets: ["PiSwiftAICLI"]
@@ -190,6 +194,15 @@ let package = Package(
             swiftSettings: strictConcurrencySettings
         ),
         .target(
+            name: "PiCodexImageGen",
+            dependencies: [
+                "PiSwiftAI",
+                "PiSwiftAgent",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
             name: "PiSwiftSyntaxHighlight",
             swiftSettings: strictConcurrencySettings
         ),
@@ -290,6 +303,14 @@ let package = Package(
             name: "PiReviewExtensionTests",
             dependencies: [
                 "PiReviewExtension",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiCodexImageGenTests",
+            dependencies: [
+                "PiCodexImageGen",
                 "PiSwiftCodingAgent",
             ],
             swiftSettings: strictConcurrencySettings
