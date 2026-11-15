@@ -198,7 +198,9 @@ let package = Package(
             dependencies: [
                 "PiSwiftAI",
                 "PiSwiftAgent",
+                "PiSwiftChord",
                 "PiSwiftCodingAgent",
+                "PiSwiftDurable",
             ],
             swiftSettings: strictConcurrencySettings
         ),
@@ -312,6 +314,9 @@ let package = Package(
             dependencies: [
                 "PiCodexImageGen",
                 "PiSwiftCodingAgent",
+                "PiSwiftChord",
+                "PiSwiftDurable",
+                "PiSwiftDurableTesting",
             ],
             swiftSettings: strictConcurrencySettings
         ),

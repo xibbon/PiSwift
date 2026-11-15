@@ -75,6 +75,35 @@ Any `openai-codex` model in the catalog activates the tools. The same model
 names under the `openai` provider (API key) do **not** activate them. The
 session model routes the request; the backend selects the image model.
 
+## Durable harness (PiSwiftDurable)
+
+A durable harness does not use `HookAPI` extensions. Install the durable
+extension in the registry instead:
+
+```swift
+let imageExtension = try CodexImageGen.durableExtension(
+    agentDir: agentDir, modelRegistry: modelRegistry, defaultCwd: cwd)
+try registry.install(imageExtension)
+```
+
+The durable extension has only `codex_generate_image`. It does not have the
+artifact tool, the list tool or `/image-artifacts`. The tool reads the
+conversation entries for `numLastImagesToInclude`.
+
+The model must see the tool only for an `openai-codex` model. Set the
+extension selection together with each model change:
+
+```swift
+try await conversation.configure(change: AgentChange(
+    model: .set(model),
+    extensions: CodexImageGen.durableExtensionChange(for: model, in: imageExtension)
+), context: .background)
+```
+
+Do this also when you open a conversation. `durableExtensionChange` replaces
+the full extension selection. Use it only if the host selects no other
+extensions.
+
 ## What the agent gets
 
 | Name | Kind | Result |

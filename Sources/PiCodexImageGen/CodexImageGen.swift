@@ -133,7 +133,7 @@ private func stringEnum(_ values: [String], description: String? = nil) -> [Stri
     return schema
 }
 
-private func toolParameters() -> [String: AnyCodable] {
+func toolParameters() -> [String: AnyCodable] {
     [
         "type": AnyCodable("object"),
         "properties": AnyCodable([
@@ -160,7 +160,7 @@ private func artifactSchema() -> [String: Any] {
     ] as [String: Any], "required": ["path", "mimeType", "byteCount"]]
 }
 
-private func artifactOutputSchema() -> [String: AnyCodable] {
+func artifactOutputSchema() -> [String: AnyCodable] {
     let optionalString: [String: Any] = ["type": "string"]
     return [
         "type": AnyCodable("object"),
@@ -189,7 +189,7 @@ private func artifactOutputSchema() -> [String: AnyCodable] {
     ]
 }
 
-private func listOutputSchema() -> [String: AnyCodable] {
+func listOutputSchema() -> [String: AnyCodable] {
     [
         "type": AnyCodable("object"),
         "properties": AnyCodable([
@@ -216,9 +216,9 @@ let codexImageGuidelines = [
     "For several assets, issue one call per asset.",
 ]
 
-private let toolDescription = "Generate or edit an image through the ChatGPT subscription (Codex backend), with native background control. Available only in a ChatGPT (openai-codex) session; it uses that session's login and model. The backend selects the image model. Accepts up to five local or recent conversation images (20 MiB each, 50 MiB total). Deadline: 5 minutes; output image limit: 32 MiB; backend text is limited to 4,000 characters."
+let toolDescription = "Generate or edit an image through the ChatGPT subscription (Codex backend), with native background control. Available only in a ChatGPT (openai-codex) session; it uses that session's login and model. The backend selects the image model. Accepts up to five local or recent conversation images (20 MiB each, 50 MiB total). Deadline: 5 minutes; output image limit: 32 MiB; backend text is limited to 4,000 characters."
 
-private let imagesNamespace = ToolNamespace(
+let imagesNamespace = ToolNamespace(
     name: "codex_images",
     description: "Quota-consuming image generation and private original artifacts.",
     instructions: "Generate only on an explicit image request. codex_generate_image is model-only and returns an inline image. Scripts use codex_generate_image_artifact and receive metadata with artifact.path, never base64; read that path and use image(block) only for requested display. After later script failure use codex_list_image_artifacts({}) to recover current-branch metadata without quota use, then read only a selected returned path. Inspect availability; present is not proof of original contents. Continue with revision/nextOffset. Completed originals survive script failures/reload; save=none still creates temporary originals. Two active/eight queued operations per account share a five-minute total deadline. Calls consume quota and may write files, so do not automatically retry failures. Await each artifact before using it for an edit. Reported image metadata is not measured pixel properties or verified charges; backend usage counters are informational."
@@ -232,8 +232,8 @@ private func makeCodexImageTools(pi: HookAPI, state: ExtensionState, environment
         description: "\(toolDescription) Direct model calls only; returns an inline image. For codemode workflows use codex_generate_image_artifact.",
         parameters: toolParameters(),
         execute: { id, params, onUpdate, ctx, signal in
-            try await executeImage(artifactMode: false, toolCallId: id, params: params, onUpdate: onUpdate, ctx: ctx,
-                                   signal: signal, pi: pi, state: state, environment: environment)
+            try await executeImage(artifactMode: false, toolCallId: id, params: params, onUpdate: onUpdate,
+                                   host: sessionHost(ctx: ctx, pi: pi, state: state), signal: signal, environment: environment)
         },
         promptGuidelines: codexImageGuidelines,
         promptSnippet: "Generate or edit bitmap images via the ChatGPT subscription image_generation tool.",
@@ -245,8 +245,8 @@ private func makeCodexImageTools(pi: HookAPI, state: ExtensionState, environment
         description: "\(toolDescription) Returns structured metadata and a private temporary original path, never image bytes. save=none disables persistent copies, not temporary storage. Completed artifacts survive script errors and reload until user/OS cleanup. Read artifact.path and call image(block) only for explicit display. Recover current-branch paths with /image-artifacts.",
         parameters: toolParameters(),
         execute: { id, params, onUpdate, ctx, signal in
-            try await executeImage(artifactMode: true, toolCallId: id, params: params, onUpdate: onUpdate, ctx: ctx,
-                                   signal: signal, pi: pi, state: state, environment: environment)
+            try await executeImage(artifactMode: true, toolCallId: id, params: params, onUpdate: onUpdate,
+                                   host: sessionHost(ctx: ctx, pi: pi, state: state), signal: signal, environment: environment)
         },
         promptGuidelines: codexImageGuidelines + [
             "For display read result.artifact.path and call image(block) only if read returns an image block; otherwise report its text note. Do not print image bytes.",
@@ -329,7 +329,7 @@ private func optionalString(_ value: AnyCodable?) -> String? {
 
 // MARK: - Generation
 
-private func conversationSources(_ entries: [SessionEntry]) -> [ConversationImageSource] {
+func conversationSources(_ entries: [SessionEntry]) -> [ConversationImageSource] {
     let completed = Set(entries.compactMap { entry -> String? in
         guard case .custom(let custom) = entry, custom.customType == artifactEntryType else { return nil }
         return artifactRecord(custom.data?.value)?.artifact.path
@@ -363,10 +363,53 @@ private func textResult(_ text: String, details: [String: Any]) -> AgentToolResu
     AgentToolResult(content: [.text(TextContent(text: text))], details: AnyCodable(details))
 }
 
+/// What one image call needs from the session that runs it. The HookAPI
+/// session and the durable harness each supply one.
+struct ImageCallHost: Sendable {
+    var model: Model?
+    var modelRegistry: ModelRegistry
+    var cwd: String
+    var sessionId: String
+    /// Cancels the call when the session shuts down.
+    var lifetime: CancellationToken?
+    /// The images and artifacts of the conversation, oldest first.
+    var recentSources: @Sendable () async throws -> [ConversationImageSource]
+    /// Records the reservation before dispatch. Returns the anchor that
+    /// `attach` checks, or nil when the host keeps no reservation record.
+    var reserve: @Sendable (ArtifactReservationRecord) -> String?
+    /// Attaches a completed record to the branch of the anchor. False when the
+    /// host cannot attach it (the session or branch changed).
+    var attach: @Sendable (ArtifactRecord, String?) -> Bool
+}
+
+/// The host of a HookAPI session: entries go on the session branch.
+private func sessionHost(ctx: CustomToolContext, pi: HookAPI, state: ExtensionState) -> ImageCallHost {
+    let sessionId = ctx.sessionManager.getSessionId()
+    return ImageCallHost(
+        model: ctx.model,
+        modelRegistry: ctx.modelRegistry,
+        cwd: ctx.sessionManager.getCwd(),
+        sessionId: sessionId,
+        lifetime: state.lifetime.withLock { $0 },
+        recentSources: { conversationSources(ctx.sessionManager.getBranch()) },
+        reserve: { record in
+            pi.appendEntry(reservationEntryType, record.dictionary)
+            return ctx.sessionManager.getLeafId()
+        },
+        attach: { record, originEntryId in
+            // A late result never attaches to another branch or session.
+            guard ctx.sessionManager.getSessionId() == sessionId, let originEntryId,
+                  ctx.sessionManager.getBranch().contains(where: { $0.id == originEntryId }) else { return false }
+            pi.appendEntry(artifactEntryType, record.dictionary)
+            return true
+        }
+    )
+}
+
 /// Publish the recovery manifest, then attach the record to the branch that
-/// started the call. A late result never attaches to another branch or session.
+/// started the call.
 private func recordOriginal(_ artifact: ImageArtifact, toolCallId: String, reservation: ArtifactReservation,
-                            ctx: CustomToolContext, sessionId: String, originEntryId: String?, pi: HookAPI) -> String? {
+                            host: ImageCallHost, originEntryId: String?) -> String? {
     let record = ArtifactRecord(artifact: artifact, toolCallId: boundedToolCallId(toolCallId))
     var manifestPublished = false
     do {
@@ -375,21 +418,16 @@ private func recordOriginal(_ artifact: ImageArtifact, toolCallId: String, reser
     } catch {
         // A completed original must survive a metadata-storage failure.
     }
-    if ctx.sessionManager.getSessionId() == sessionId, let originEntryId,
-       ctx.sessionManager.getBranch().contains(where: { $0.id == originEntryId }) {
-        pi.appendEntry(artifactEntryType, record.dictionary)
-        return nil
-    }
+    if host.attach(record, originEntryId) { return nil }
     if manifestPublished { return nil }
     return "Artifact recovery metadata could not be persisted. Recover the image from \(artifact.path). No generation retry was made."
 }
 
-private func executeImage(
+func executeImage(
     artifactMode: Bool, toolCallId: String, params rawParams: [String: AnyCodable], onUpdate: AgentToolUpdateCallback?,
-    ctx: CustomToolContext, signal: CancellationToken?, pi: HookAPI, state: ExtensionState,
-    environment: CodexImageGenEnvironment
+    host: ImageCallHost, signal: CancellationToken?, environment: CodexImageGenEnvironment
 ) async throws -> AgentToolResult {
-    let scope = AbortScope(parents: [signal, state.lifetime.withLock { $0 }], timeout: generationTimeout)
+    let scope = AbortScope(parents: [signal, host.lifetime], timeout: generationTimeout)
     var reservation: ArtifactReservation?
     var ticket: AdmissionTicket?
     var dispatched = false
@@ -404,20 +442,21 @@ private func executeImage(
 
     do {
         let params = try ImageToolParams(rawParams)
-        guard isChatGPTModel(ctx.model) else {
+        guard isChatGPTModel(host.model) else {
             throw CodexImageError("Image generation needs a ChatGPT (\(codexImageChatGPTProvider)) session. No generation request was made.")
         }
-        let cwd = ctx.sessionManager.getCwd()
-        let sessionId = ctx.sessionManager.getSessionId()
+        let cwd = host.cwd
+        let sessionId = host.sessionId
         let saveConfig = try resolveSaveConfig(save: params.save, saveDir: params.saveDir, cwd: cwd,
                                                sessionId: sessionId, agentDir: environment.agentDir())
-        let recent = params.numLastImagesToInclude.map {
-            selectRecentImages(conversationSources(ctx.sessionManager.getBranch()), count: $0)
-        } ?? []
+        var recent: [RecentImage] = []
+        if let count = params.numLastImagesToInclude {
+            recent = selectRecentImages(try await host.recentSources(), count: count)
+        }
         try scope.throwIfAborted()
 
-        let model = ctx.model
-        let registry = ctx.modelRegistry
+        let model = host.model
+        let registry = host.modelRegistry
         let token = scope.token
         let auth = try await scope.run { try await resolveCodexImageAuth(model: model, registry: registry, signal: token) }
         ticket = try await environment.admission.admit(account: auth.accountId, token: scope.token)
@@ -437,10 +476,9 @@ private func executeImage(
             }
             try scope.throwIfAborted()
             // Attach the recovery anchor before quota or network work.
-            pi.appendEntry(reservationEntryType, ArtifactReservationRecord(
+            originEntryId = host.reserve(ArtifactReservationRecord(
                 path: reservation!.path, mimeType: params.outputFormat.mimeType,
-                toolCallId: boundedToolCallId(toolCallId)).dictionary)
-            originEntryId = ctx.sessionManager.getLeafId()
+                toolCallId: boundedToolCallId(toolCallId)))
         }
 
         let provider = codexImageChatGPTProvider
@@ -481,8 +519,8 @@ private func executeImage(
             artifact = try? reservation.commit(imageBytes, mimeType: actualFormat.mimeType)
             // Persist before callbacks, persistent saves, or parent script output.
             if let artifact {
-                recoveryWarning = recordOriginal(artifact, toolCallId: toolCallId, reservation: reservation, ctx: ctx,
-                                                 sessionId: sessionId, originEntryId: originEntryId, pi: pi)
+                recoveryWarning = recordOriginal(artifact, toolCallId: toolCallId, reservation: reservation, host: host,
+                                                 originEntryId: originEntryId)
             }
         }
         if saveConfig.mode != .none, let outputDir = saveConfig.outputDir {
@@ -500,8 +538,8 @@ private func executeImage(
             }
             let fallback = ImageArtifact(path: savedPath, mimeType: actualFormat.mimeType, byteCount: imageBytes.count)
             artifact = fallback
-            recoveryWarning = recordOriginal(fallback, toolCallId: toolCallId, reservation: reservation, ctx: ctx,
-                                             sessionId: sessionId, originEntryId: originEntryId, pi: pi)
+            recoveryWarning = recordOriginal(fallback, toolCallId: toolCallId, reservation: reservation, host: host,
+                                             originEntryId: originEntryId)
             saveWarning = "Temporary artifact storage failed; recover the original from the persistent saved path. No generation retry was made."
         }
         let combinedSaveWarning = [saveWarning, recoveryWarning].compactMap { $0 }.joined(separator: " ")
@@ -592,11 +630,15 @@ private func executeImage(
 // MARK: - Listing
 
 func listArtifacts(params: [String: AnyCodable], entries: [SessionEntry], signal: CancellationToken?) throws -> AgentToolResult {
+    try listArtifacts(params: params, records: branchArtifacts(entries), signal: signal)
+}
+
+/// One page of artifact records, newest last, with a revision digest.
+func listArtifacts(params: [String: AnyCodable], records: [ArtifactRecord], signal: CancellationToken?) throws -> AgentToolResult {
     let offset = params["offset"].flatMap { integer($0.value) } ?? 0
     let limit = params["limit"].flatMap { integer($0.value) } ?? 8
     let revision = optionalString(params["revision"])
     guard offset >= 0, (1...20).contains(limit) else { throw CodexImageError("Invalid artifact list range.") }
-    let records = branchArtifacts(entries)
     if signal?.isCancelled == true { throw CancellationError() }
     let digestInput = try JSONSerialization.data(withJSONObject: records.map(\.dictionary), options: [.sortedKeys])
     let current = SHA256.hash(data: digestInput).map { String(format: "%02x", $0) }.joined()
