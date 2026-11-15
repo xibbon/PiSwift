@@ -64,6 +64,10 @@ let package = Package(
             name: "PiCodexImageGen",
             targets: ["PiCodexImageGen"]
         ),
+        .library(
+            name: "PiCodexImageGenDurable",
+            targets: ["PiCodexImageGenDurable"]
+        ),
         .executable(
             name: "pi-ai",
             targets: ["PiSwiftAICLI"]
@@ -198,6 +202,16 @@ let package = Package(
             dependencies: [
                 "PiSwiftAI",
                 "PiSwiftAgent",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiCodexImageGenDurable",
+            dependencies: [
+                "PiCodexImageGen",
+                "PiSwiftAI",
+                "PiSwiftAgent",
                 "PiSwiftChord",
                 "PiSwiftCodingAgent",
                 "PiSwiftDurable",
@@ -313,6 +327,7 @@ let package = Package(
             name: "PiCodexImageGenTests",
             dependencies: [
                 "PiCodexImageGen",
+                "PiCodexImageGenDurable",
                 "PiSwiftCodingAgent",
                 "PiSwiftChord",
                 "PiSwiftDurable",

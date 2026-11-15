@@ -18,10 +18,10 @@ public func isChatGPTModel(_ model: Model?) -> Bool {
     model?.provider == codexImageChatGPTProvider
 }
 
-struct CodexImageError: Error, LocalizedError, Sendable {
+package struct CodexImageError: Error, LocalizedError, Sendable {
     let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+    package init(_ message: String) { self.message = message }
+    package var errorDescription: String? { message }
 }
 
 /// Credentials and routing for one image request.

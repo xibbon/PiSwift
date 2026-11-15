@@ -127,12 +127,12 @@ struct CodexImageGenReviewTests {
         #expect(result.error == nil)
     }
 
-    @Test func referencePathsUseTheReadToolRules() throws {
+    @Test func referencePathsUseTheReadToolRules() async throws {
         let dir = makeTempDir()
         // macOS screenshot names use a narrow no-break space before AM/PM.
         let actual = dir + "/Screenshot 2026-01-01 at 3.14.15\u{202F}PM.png"
         FileManager.default.createFile(atPath: actual, contents: pngBytes)
-        let images = try resolveInputImages(paths: ["Screenshot 2026-01-01 at 3.14.15 PM.png"], count: nil,
+        let images = try await resolveInputImages(paths: ["Screenshot 2026-01-01 at 3.14.15 PM.png"], count: nil,
                                             cwd: dir, recent: [])
         #expect(images.count == 1)
     }

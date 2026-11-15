@@ -13,7 +13,7 @@ import Glibc
 // `decodeImageData`, and `detectOutputFormat` from `src/image-output.ts`).
 
 let codexMaxEditImages = 5
-let codexMaxInputImageBytes = 20 * 1024 * 1024
+package let codexMaxInputImageBytes = 20 * 1024 * 1024
 let codexMaxTotalInputBytes = 50 * 1024 * 1024
 
 enum OutputFormat: String, Sendable, CaseIterable {
@@ -119,7 +119,7 @@ enum RecentImage: Sendable, Equatable {
 }
 
 /// One branch item that can hold images, in branch order.
-enum ConversationImageSource: Sendable {
+package enum ConversationImageSource: Sendable {
     case blocks([ContentBlock])
     case artifact(path: String, mimeType: String)
 }
@@ -144,6 +144,16 @@ func selectRecentImages(_ sources: [ConversationImageSource], count: Int) -> [Re
 
 func conversationBlocks(_ message: AgentMessage) -> [ContentBlock] {
     switch message {
+    case .user(let user): return conversationBlocks(Message.user(user))
+    case .toolResult(let result): return conversationBlocks(Message.toolResult(result))
+    case .assistant(let assistant): return conversationBlocks(Message.assistant(assistant))
+    default: return []
+    }
+}
+
+/// The content blocks that can hold images in one model message.
+package func conversationBlocks(_ message: Message) -> [ContentBlock] {
+    switch message {
     case .user(let user):
         if case .blocks(let blocks) = user.content { return blocks }
         return []
@@ -151,31 +161,76 @@ func conversationBlocks(_ message: AgentMessage) -> [ContentBlock] {
         return result.content
     case .assistant(let assistant):
         return assistant.content
-    default:
+    case .system:
         return []
     }
 }
 
-/// Resolve the requested reference images. Selectors stay cheap until the
-/// caller holds an admission slot; this function loads the bytes.
-func resolveInputImages(paths: [String], count: Int?, cwd: String, recent: [RecentImage]) throws -> [InputImage] {
+/// Checks the image selectors before any wait or history read.
+func validateImageSelectors(paths: [String], count: Int?) throws {
     if !paths.isEmpty && count != nil {
         throw CodexImageError("Provide only one of referencedImagePaths or numLastImagesToInclude.")
     }
     if paths.count > codexMaxEditImages {
         throw CodexImageError("referencedImagePaths accepts at most \(codexMaxEditImages) paths.")
     }
+    if let count, !(1...codexMaxEditImages).contains(count) {
+        throw CodexImageError("numLastImagesToInclude must be between 1 and \(codexMaxEditImages).")
+    }
+}
+
+/// The files that the model names: referenced images and project or custom
+/// saves. A HookAPI session uses the host filesystem. A durable harness uses
+/// the execution environment of the conversation.
+package struct ImageFileAccess: Sendable {
+    /// Makes a tool path absolute. `forReading` also tries the read tool's
+    /// name variants.
+    package var resolve: @Sendable (_ path: String, _ forReading: Bool) async throws -> String
+    /// Reads a regular file of at most 20 MiB.
+    package var read: @Sendable (_ path: String) async throws -> Data
+    /// Creates the directory, then writes a new file. Never overwrites a file.
+    package var writeNew: @Sendable (_ bytes: Data, _ path: String, _ directory: String) async throws -> Void
+
+    package init(resolve: @escaping @Sendable (String, Bool) async throws -> String,
+                 read: @escaping @Sendable (String) async throws -> Data,
+                 writeNew: @escaping @Sendable (Data, String, String) async throws -> Void) {
+        self.resolve = resolve
+        self.read = read
+        self.writeNew = writeNew
+    }
+
+    /// The host filesystem, with relative paths under `cwd`.
+    package static func host(cwd: String) -> ImageFileAccess {
+        ImageFileAccess(
+            resolve: { path, forReading in
+                // The read tool's rules: `~` is the host home directory, and
+                // macOS screenshot, NFD, and curly-quote name variants are tried.
+                let resolved = forReading ? resolveReadPath(path, cwd: cwd) : resolveToCwd(path, cwd: cwd)
+                return URL(fileURLWithPath: resolved).standardizedFileURL.path
+            },
+            read: { try readInputImage($0) },
+            writeNew: { bytes, path, directory in try await writeNewImage(bytes, path: path, directory: directory) }
+        )
+    }
+}
+
+/// Resolve the requested reference images. Selectors stay cheap until the
+/// caller holds an admission slot; this function loads the bytes.
+func resolveInputImages(paths: [String], count: Int?, cwd: String, recent: [RecentImage]) async throws -> [InputImage] {
+    try await resolveInputImages(paths: paths, count: count, files: .host(cwd: cwd), recent: recent)
+}
+
+func resolveInputImages(paths: [String], count: Int?, files: ImageFileAccess, recent: [RecentImage]) async throws -> [InputImage] {
+    try validateImageSelectors(paths: paths, count: count)
     if !paths.isEmpty {
         var images: [InputImage] = []
         var total = 0
         for path in paths {
             let normalized = path.hasPrefix("@") ? String(path.dropFirst()) : path
-            // The read tool's rules: `~` is the host home directory, and
-            // macOS screenshot, NFD, and curly-quote name variants are tried.
-            let absolute = URL(fileURLWithPath: resolveReadPath(normalized, cwd: cwd)).standardizedFileURL.path
+            let absolute = try await files.resolve(normalized, true)
             let bytes: Data
             do {
-                bytes = try readInputImage(absolute)
+                bytes = try await files.read(absolute)
             } catch {
                 throw CodexImageError("Unable to read referenced image at \(absolute): \(error.localizedDescription)")
             }
@@ -186,9 +241,6 @@ func resolveInputImages(paths: [String], count: Int?, cwd: String, recent: [Rece
         return images
     }
     guard let count else { return [] }
-    guard (1...codexMaxEditImages).contains(count) else {
-        throw CodexImageError("numLastImagesToInclude must be between 1 and \(codexMaxEditImages).")
-    }
     guard recent.count == count else {
         throw CodexImageError("Requested the last \(count) conversation images, but only \(recent.count) were available.")
     }

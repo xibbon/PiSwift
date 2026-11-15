@@ -45,12 +45,24 @@ public enum CodexImageGen {
 }
 
 /// Test seams for the network and the admission queue.
-struct CodexImageGenEnvironment: Sendable {
+package struct CodexImageGenEnvironment: Sendable {
     var httpClient: any ProviderHTTPClient = DefaultProviderHTTPClient(followRedirects: false)
     var admission: ImageAdmission = .shared
-    var agentDir: @Sendable () -> String = { getAgentDir() }
+    package var agentDir: @Sendable () -> String = { getAgentDir() }
     var artifactRoot: @Sendable () -> String = { NSTemporaryDirectory() }
     var random: @Sendable () -> Double = { Double.random(in: 0..<1) }
+
+    package init() {}
+
+    init(httpClient: any ProviderHTTPClient, admission: ImageAdmission, agentDir: @escaping @Sendable () -> String,
+         artifactRoot: @escaping @Sendable () -> String = { NSTemporaryDirectory() },
+         random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }) {
+        self.httpClient = httpClient
+        self.admission = admission
+        self.agentDir = agentDir
+        self.artifactRoot = artifactRoot
+        self.random = random
+    }
 }
 
 // MARK: - Registration
@@ -133,7 +145,7 @@ private func stringEnum(_ values: [String], description: String? = nil) -> [Stri
     return schema
 }
 
-func toolParameters() -> [String: AnyCodable] {
+package func toolParameters() -> [String: AnyCodable] {
     [
         "type": AnyCodable("object"),
         "properties": AnyCodable([
@@ -160,7 +172,7 @@ private func artifactSchema() -> [String: Any] {
     ] as [String: Any], "required": ["path", "mimeType", "byteCount"]]
 }
 
-func artifactOutputSchema() -> [String: AnyCodable] {
+private func artifactOutputSchema() -> [String: AnyCodable] {
     let optionalString: [String: Any] = ["type": "string"]
     return [
         "type": AnyCodable("object"),
@@ -189,7 +201,7 @@ func artifactOutputSchema() -> [String: AnyCodable] {
     ]
 }
 
-func listOutputSchema() -> [String: AnyCodable] {
+private func listOutputSchema() -> [String: AnyCodable] {
     [
         "type": AnyCodable("object"),
         "properties": AnyCodable([
@@ -205,7 +217,7 @@ func listOutputSchema() -> [String: AnyCodable] {
     ]
 }
 
-let codexImageGuidelines = [
+package let codexImageGuidelines = [
     "Generate or edit images only on a clear user request; each call consumes ChatGPT subscription image quota.",
     "The backend selects the image model; the current ChatGPT session model only routes the request. Do not claim a specific served image model.",
     "Output metadata is backend-reported. Inspect the image for dimensions and transparency; prompt requests are not guarantees.",
@@ -216,9 +228,9 @@ let codexImageGuidelines = [
     "For several assets, issue one call per asset.",
 ]
 
-let toolDescription = "Generate or edit an image through the ChatGPT subscription (Codex backend), with native background control. Available only in a ChatGPT (openai-codex) session; it uses that session's login and model. The backend selects the image model. Accepts up to five local or recent conversation images (20 MiB each, 50 MiB total). Deadline: 5 minutes; output image limit: 32 MiB; backend text is limited to 4,000 characters."
+package let toolDescription = "Generate or edit an image through the ChatGPT subscription (Codex backend), with native background control. Available only in a ChatGPT (openai-codex) session; it uses that session's login and model. The backend selects the image model. Accepts up to five local or recent conversation images (20 MiB each, 50 MiB total). Deadline: 5 minutes; output image limit: 32 MiB; backend text is limited to 4,000 characters."
 
-let imagesNamespace = ToolNamespace(
+private let imagesNamespace = ToolNamespace(
     name: "codex_images",
     description: "Quota-consuming image generation and private original artifacts.",
     instructions: "Generate only on an explicit image request. codex_generate_image is model-only and returns an inline image. Scripts use codex_generate_image_artifact and receive metadata with artifact.path, never base64; read that path and use image(block) only for requested display. After later script failure use codex_list_image_artifacts({}) to recover current-branch metadata without quota use, then read only a selected returned path. Inspect availability; present is not proof of original contents. Continue with revision/nextOffset. Completed originals survive script failures/reload; save=none still creates temporary originals. Two active/eight queued operations per account share a five-minute total deadline. Calls consume quota and may write files, so do not automatically retry failures. Await each artifact before using it for an edit. Reported image metadata is not measured pixel properties or verified charges; backend usage counters are informational."
@@ -319,6 +331,7 @@ struct ImageToolParams: Sendable {
             guard let count = integer(raw) else { throw CodexImageError("numLastImagesToInclude must be an integer.") }
             numLastImagesToInclude = count
         }
+        try validateImageSelectors(paths: referencedImagePaths, count: numLastImagesToInclude)
     }
 }
 
@@ -329,7 +342,7 @@ private func optionalString(_ value: AnyCodable?) -> String? {
 
 // MARK: - Generation
 
-func conversationSources(_ entries: [SessionEntry]) -> [ConversationImageSource] {
+private func conversationSources(_ entries: [SessionEntry]) -> [ConversationImageSource] {
     let completed = Set(entries.compactMap { entry -> String? in
         guard case .custom(let custom) = entry, custom.customType == artifactEntryType else { return nil }
         return artifactRecord(custom.data?.value)?.artifact.path
@@ -365,14 +378,20 @@ private func textResult(_ text: String, details: [String: Any]) -> AgentToolResu
 
 /// What one image call needs from the session that runs it. The HookAPI
 /// session and the durable harness each supply one.
-struct ImageCallHost: Sendable {
+package struct ImageCallHost: Sendable {
     var model: Model?
     var modelRegistry: ModelRegistry
     var cwd: String
+    /// A unique, stable ID for the conversation: the prompt cache key and
+    /// the name of the save folder.
     var sessionId: String
     /// Cancels the call when the session shuts down.
     var lifetime: CancellationToken?
-    /// The images and artifacts of the conversation, oldest first.
+    /// Referenced images, and project and custom saves. Global saves and
+    /// artifacts always use the host filesystem.
+    var files: ImageFileAccess
+    /// The images and artifacts that the model sees, oldest first. Read only
+    /// while the call holds an admission slot.
     var recentSources: @Sendable () async throws -> [ConversationImageSource]
     /// Records the reservation before dispatch. Returns the anchor that
     /// `attach` checks, or nil when the host keeps no reservation record.
@@ -380,17 +399,34 @@ struct ImageCallHost: Sendable {
     /// Attaches a completed record to the branch of the anchor. False when the
     /// host cannot attach it (the session or branch changed).
     var attach: @Sendable (ArtifactRecord, String?) -> Bool
+
+    package init(model: Model?, modelRegistry: ModelRegistry, cwd: String, sessionId: String, lifetime: CancellationToken?,
+                 files: ImageFileAccess, recentSources: @escaping @Sendable () async throws -> [ConversationImageSource],
+                 reserve: @escaping @Sendable (ArtifactReservationRecord) -> String?,
+                 attach: @escaping @Sendable (ArtifactRecord, String?) -> Bool) {
+        self.model = model
+        self.modelRegistry = modelRegistry
+        self.cwd = cwd
+        self.sessionId = sessionId
+        self.lifetime = lifetime
+        self.files = files
+        self.recentSources = recentSources
+        self.reserve = reserve
+        self.attach = attach
+    }
 }
 
 /// The host of a HookAPI session: entries go on the session branch.
 private func sessionHost(ctx: CustomToolContext, pi: HookAPI, state: ExtensionState) -> ImageCallHost {
     let sessionId = ctx.sessionManager.getSessionId()
+    let cwd = ctx.sessionManager.getCwd()
     return ImageCallHost(
         model: ctx.model,
         modelRegistry: ctx.modelRegistry,
-        cwd: ctx.sessionManager.getCwd(),
+        cwd: cwd,
         sessionId: sessionId,
         lifetime: state.lifetime.withLock { $0 },
+        files: .host(cwd: cwd),
         recentSources: { conversationSources(ctx.sessionManager.getBranch()) },
         reserve: { record in
             pi.appendEntry(reservationEntryType, record.dictionary)
@@ -423,7 +459,7 @@ private func recordOriginal(_ artifact: ImageArtifact, toolCallId: String, reser
     return "Artifact recovery metadata could not be persisted. Recover the image from \(artifact.path). No generation retry was made."
 }
 
-func executeImage(
+package func executeImage(
     artifactMode: Bool, toolCallId: String, params rawParams: [String: AnyCodable], onUpdate: AgentToolUpdateCallback?,
     host: ImageCallHost, signal: CancellationToken?, environment: CodexImageGenEnvironment
 ) async throws -> AgentToolResult {
@@ -447,12 +483,12 @@ func executeImage(
         }
         let cwd = host.cwd
         let sessionId = host.sessionId
-        let saveConfig = try resolveSaveConfig(save: params.save, saveDir: params.saveDir, cwd: cwd,
-                                               sessionId: sessionId, agentDir: environment.agentDir())
-        var recent: [RecentImage] = []
-        if let count = params.numLastImagesToInclude {
-            recent = selectRecentImages(try await host.recentSources(), count: count)
+        var saveDir = params.saveDir
+        if params.save == SaveMode.custom.rawValue, let dir = saveDir, !dir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            saveDir = try await host.files.resolve(dir, false)
         }
+        let saveConfig = try resolveSaveConfig(save: params.save, saveDir: saveDir, cwd: cwd,
+                                               sessionId: sessionId, agentDir: environment.agentDir())
         try scope.throwIfAborted()
 
         let model = host.model
@@ -462,9 +498,14 @@ func executeImage(
         ticket = try await environment.admission.admit(account: auth.accountId, token: scope.token)
         try scope.throwIfAborted()
         // Queued calls retain approved selectors, not decoded references.
-        // Load bytes only while holding an admission slot.
-        let inputImages = try resolveInputImages(paths: params.referencedImagePaths, count: params.numLastImagesToInclude,
-                                                 cwd: cwd, recent: recent)
+        // Read history and load bytes only while holding an admission slot.
+        var recent: [RecentImage] = []
+        if let count = params.numLastImagesToInclude {
+            recent = selectRecentImages(try await host.recentSources(), count: count)
+            try scope.throwIfAborted()
+        }
+        let inputImages = try await resolveInputImages(paths: params.referencedImagePaths,
+                                                       count: params.numLastImagesToInclude, files: host.files, recent: recent)
         try scope.throwIfAborted()
 
         if artifactMode {
@@ -524,9 +565,12 @@ func executeImage(
             }
         }
         if saveConfig.mode != .none, let outputDir = saveConfig.outputDir {
-            attemptedPath = imagePath(format: actualFormat, outputDir: outputDir, imageCallId: image.id)
+            let path = imagePath(format: actualFormat, outputDir: outputDir, imageCallId: image.id)
+            attemptedPath = path
+            let files = saveConfig.mode == .global ? ImageFileAccess.host(cwd: cwd) : host.files
             do {
-                savedPath = try await saveImage(imageBytes, format: actualFormat, outputDir: outputDir, imageCallId: image.id)
+                try await files.writeNew(imageBytes, path, outputDir)
+                savedPath = path
             } catch {
                 let reason = sanitizeText(error.localizedDescription).prefix(500)
                 saveWarning = "Image generation succeeded, but the image could not be saved to disk: \(reason)"
@@ -630,15 +674,11 @@ func executeImage(
 // MARK: - Listing
 
 func listArtifacts(params: [String: AnyCodable], entries: [SessionEntry], signal: CancellationToken?) throws -> AgentToolResult {
-    try listArtifacts(params: params, records: branchArtifacts(entries), signal: signal)
-}
-
-/// One page of artifact records, newest last, with a revision digest.
-func listArtifacts(params: [String: AnyCodable], records: [ArtifactRecord], signal: CancellationToken?) throws -> AgentToolResult {
     let offset = params["offset"].flatMap { integer($0.value) } ?? 0
     let limit = params["limit"].flatMap { integer($0.value) } ?? 8
     let revision = optionalString(params["revision"])
     guard offset >= 0, (1...20).contains(limit) else { throw CodexImageError("Invalid artifact list range.") }
+    let records = branchArtifacts(entries)
     if signal?.isCancelled == true { throw CancellationError() }
     let digestInput = try JSONSerialization.data(withJSONObject: records.map(\.dictionary), options: [.sortedKeys])
     let current = SHA256.hash(data: digestInput).map { String(format: "%02x", $0) }.joined()

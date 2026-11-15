@@ -23,14 +23,14 @@ struct ImageArtifact: Sendable, Equatable {
     var dictionary: [String: Any] { ["path": path, "mimeType": mimeType, "byteCount": byteCount] }
 }
 
-struct ArtifactRecord: Sendable, Equatable {
+package struct ArtifactRecord: Sendable, Equatable {
     var artifact: ImageArtifact
     var toolCallId: String
 
     var dictionary: [String: Any] { ["artifact": artifact.dictionary, "toolCallId": toolCallId] }
 }
 
-struct ArtifactReservationRecord: Sendable, Equatable {
+package struct ArtifactReservationRecord: Sendable, Equatable {
     var path: String
     var mimeType: String
     var toolCallId: String

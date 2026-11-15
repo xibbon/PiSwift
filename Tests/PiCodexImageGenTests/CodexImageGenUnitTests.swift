@@ -182,22 +182,22 @@ struct CodexImageGenUnitTests {
         #expect(throws: CodexImageError.self) { try detectOutputFormat(Data("GIF89a".utf8)) }
     }
 
-    @Test func referencedImagesAreBoundedRegularFiles() throws {
+    @Test func referencedImagesAreBoundedRegularFiles() async throws {
         let dir = makeTempDir()
         try pngBytes.write(to: URL(fileURLWithPath: dir + "/a.png"))
-        let images = try resolveInputImages(paths: ["a.png", "@a.png"], count: nil, cwd: dir, recent: [])
+        let images = try await resolveInputImages(paths: ["a.png", "@a.png"], count: nil, cwd: dir, recent: [])
         #expect(images.count == 2)
         #expect(images[0] == InputImage(data: pngBytes.base64EncodedString(), mimeType: "image/png"))
-        #expect(throws: CodexImageError.self) { try resolveInputImages(paths: [dir], count: nil, cwd: dir, recent: []) }
-        #expect(throws: CodexImageError.self) { try resolveInputImages(paths: ["a.png"], count: 1, cwd: dir, recent: []) }
-        #expect(throws: CodexImageError.self) {
-            try resolveInputImages(paths: Array(repeating: "a.png", count: 6), count: nil, cwd: dir, recent: [])
+        await #expect(throws: CodexImageError.self) { try await resolveInputImages(paths: [dir], count: nil, cwd: dir, recent: []) }
+        await #expect(throws: CodexImageError.self) { try await resolveInputImages(paths: ["a.png"], count: 1, cwd: dir, recent: []) }
+        await #expect(throws: CodexImageError.self) {
+            try await resolveInputImages(paths: Array(repeating: "a.png", count: 6), count: nil, cwd: dir, recent: [])
         }
         try Data("text".utf8).write(to: URL(fileURLWithPath: dir + "/b.txt"))
-        #expect(throws: CodexImageError.self) { try resolveInputImages(paths: ["b.txt"], count: nil, cwd: dir, recent: []) }
+        await #expect(throws: CodexImageError.self) { try await resolveInputImages(paths: ["b.txt"], count: nil, cwd: dir, recent: []) }
     }
 
-    @Test func recentImagesAreNewestFirstThenReturnedInOrder() throws {
+    @Test func recentImagesAreNewestFirstThenReturnedInOrder() async throws {
         let one = ImageContent(data: "1", mimeType: "image/png")
         let two = ImageContent(data: "2", mimeType: "image/png")
         let sources: [ConversationImageSource] = [
@@ -208,11 +208,11 @@ struct CodexImageGenUnitTests {
         #expect(selectRecentImages(sources, count: 2) == [.artifact(path: "/tmp/a.png", mimeType: "image/png"),
                                                           .inline(InputImage(data: "2", mimeType: "image/png"))])
         #expect(selectRecentImages(sources, count: 5).count == 3)
-        #expect(throws: CodexImageError.self) {
-            try resolveInputImages(paths: [], count: 2, cwd: "/", recent: [.inline(InputImage(data: "x", mimeType: "image/png"))])
+        await #expect(throws: CodexImageError.self) {
+            try await resolveInputImages(paths: [], count: 2, cwd: "/", recent: [.inline(InputImage(data: "x", mimeType: "image/png"))])
         }
         let valid = [RecentImage.inline(InputImage(data: pngBytes.base64EncodedString(), mimeType: "image/png"))]
-        #expect(try resolveInputImages(paths: [], count: 1, cwd: "/", recent: valid).count == 1)
+        #expect(try await resolveInputImages(paths: [], count: 1, cwd: "/", recent: valid).count == 1)
     }
 
     // MARK: Save modes

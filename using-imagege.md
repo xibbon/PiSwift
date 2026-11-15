@@ -77,18 +77,41 @@ session model routes the request; the backend selects the image model.
 
 ## Durable harness (PiSwiftDurable)
 
-A durable harness does not use `HookAPI` extensions. Install the durable
-extension in the registry instead:
+A durable harness does not use `HookAPI` extensions. The durable extension is
+in a separate library, `PiCodexImageGenDurable`, so that an app that uses only
+`HookAPI` does not link PiSwiftDurable. Install the durable extension in the
+registry:
 
 ```swift
+import PiCodexImageGenDurable
+
 let imageExtension = try CodexImageGen.durableExtension(
     agentDir: agentDir, modelRegistry: modelRegistry, defaultCwd: cwd)
 try registry.install(imageExtension)
 ```
 
 The durable extension has only `codex_generate_image`. It does not have the
-artifact tool, the list tool or `/image-artifacts`. The tool reads the
-conversation entries for `numLastImagesToInclude`.
+artifact tool, the list tool or `/image-artifacts`. Only the model can call
+the tool: codemode scripts and other nested tool calls cannot call it.
+
+The tool works as follows:
+
+- It gets the model from the harness models (`DurableModels`), and the
+  ChatGPT login from `modelRegistry`.
+- For `numLastImagesToInclude`, it reads the context that the model sees
+  (`ContextView.messages`). This applies resets, context edits and the order
+  of the tool results. It reads the context only after the call gets an
+  admission slot.
+- When the conversation has an execution environment, `referencedImagePaths`
+  and the `project` and `custom` saves use that environment and its `cwd`, as
+  the durable `read` and `write` tools do. Global saves always go in
+  `<agentDir>/generated-images/`.
+- Each conversation gets a random key, which the tool keeps in a conversation
+  document (`codex-image-gen.conversation-key`). The tool uses this key as the
+  prompt cache key and as the name of the save folder. The conversation ID is
+  not unique, so the tool does not use it.
+- It writes progress text ("Requesting image…", the Codex stages) to the tool
+  output.
 
 The model must see the tool only for an `openai-codex` model. Set the
 extension selection together with each model change:
@@ -96,13 +119,17 @@ extension selection together with each model change:
 ```swift
 try await conversation.configure(change: AgentChange(
     model: .set(model),
-    extensions: CodexImageGen.durableExtensionChange(for: model, in: imageExtension)
+    extensions: CodexImageGen.durableExtensionChange(for: model, in: imageExtension,
+                                                     base: hostExtensions)
 ), context: .background)
 ```
 
-Do this also when you open a conversation. `durableExtensionChange` replaces
-the full extension selection. Use it only if the host selects no other
-extensions.
+Do this also when you open a conversation, and on each other path that
+changes the model (for example, subagents). `base` is the extension selection
+of the host without the image extension (nil for the host defaults). The
+result keeps the other edits in `base`, and adds or removes only the image
+extension. If the host forgets this step, the model can see the tool for
+another provider. The tool then refuses the call before it sends a request.
 
 ## What the agent gets
 

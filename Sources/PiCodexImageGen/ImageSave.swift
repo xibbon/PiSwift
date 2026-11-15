@@ -67,12 +67,17 @@ func imagePath(format: OutputFormat, outputDir: String, imageCallId: String) -> 
 /// file is never overwritten.
 func saveImage(_ bytes: Data, format: OutputFormat, outputDir: String, imageCallId: String) async throws -> String {
     let path = imagePath(format: format, outputDir: outputDir, imageCallId: imageCallId)
+    try await writeNewImage(bytes, path: path, directory: outputDir)
+    return path
+}
+
+/// Create `directory` with mode 0700, then write a new file with mode 0600.
+func writeNewImage(_ bytes: Data, path: String, directory: String) async throws {
     try await FileMutationQueue.shared.withFileLock(path) {
-        try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true,
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         try writeExclusive(bytes, to: path)
     }
-    return path
 }
 
 /// `O_CREAT | O_EXCL | O_NOFOLLOW`, mode 0600, then fsync.
