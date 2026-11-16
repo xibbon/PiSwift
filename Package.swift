@@ -66,8 +66,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/MacPaw/OpenAI.git", revision: "4ed3ea99ff9dfd2a760509ddb31020f4b153ef93"),
-        .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", revision: "4f9e21b94e491138003903ff6c14ab4f04b6ba6c"),
+        .package(url: "https://github.com/MacPaw/OpenAI.git", exact: "0.4.8"),
+        .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", exact: "2.2.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
     ],
     targets: [
