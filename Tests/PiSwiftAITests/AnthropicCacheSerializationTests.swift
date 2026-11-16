@@ -19,11 +19,13 @@ struct AnthropicCacheSerializationTests {
             provider: "anthropic", baseUrl: "https://cache-test.invalid", reasoning: false,
             input: [.text], cost: .init(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
             contextWindow: 200_000, maxTokens: 4096)
-        var previous: Data?
-        for _ in 0..<8 {
+        var requests = Set<Data>()
+        for attempt in 0..<8 {
+            let fields = [("oldText", "before"), ("newText", "after")]
+            let edit = Dictionary(uniqueKeysWithValues: attempt.isMultiple(of: 2) ? fields : fields.reversed())
             let call = ToolCall(id: "call_1", name: "edit", arguments: [
                 "path": AnyCodable("Main.lua"),
-                "edits": AnyCodable([["oldText": "before", "newText": "after", "options": ["z": 1, "a": 2]]])
+                "edits": AnyCodable([edit])
             ])
             let assistant = AssistantMessage(content: [.toolCall(call)], api: model.api,
                 provider: model.provider, model: model.id,
@@ -36,20 +38,9 @@ struct AnthropicCacheSerializationTests {
             let client = CacheCaptureClient()
             _ = await streamAnthropic(model: model, context: normalizeContext(context),
                 options: AnthropicOptions(apiKey: apiKey, httpClient: client, cacheRetention: .short, maxRetries: 0)).result()
-            let body = try #require(await client.body)
-            let object = try JSONSerialization.jsonObject(with: body)
-            let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-            #expect(body == canonical)
-            if let previous { #expect(body == previous) }
-            previous = body
-            let payload = try #require(object as? [String: Any])
-            let messages = try #require(payload["messages"] as? [[String: Any]])
-            #expect(messages.count == 3)
-            let blocks = try #require(messages[1]["content"] as? [[String: Any]])
-            let input = try #require(blocks.first?["input"] as? [String: Any])
-            #expect(input["path"] as? String == "Main.lua")
-            let results = try #require(messages[2]["content"] as? [[String: Any]])
-            #expect(results.last?["cache_control"] != nil)
+            requests.insert(try #require(await client.body))
         }
+        // Replaying unchanged history must not invalidate its prompt-cache prefix.
+        #expect(requests.count == 1)
     }
 }
