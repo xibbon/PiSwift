@@ -2,8 +2,8 @@ import Foundation
 
 /// The pattern rules of ignore 0.4.33 and globset 0.4.20.
 /// Parsing and byte matching use explicit stacks, without recursive backtracking.
-internal struct GitIgnoreRule: Sendable {
-    let negated: Bool
+package struct GitIgnoreRule: Sendable {
+    package let negated: Bool
     private let directoryOnly: Bool
     private let tokens: [Token]
 
@@ -16,7 +16,7 @@ internal struct GitIgnoreRule: Sendable {
         case characterClass(Set<UInt8>), alternates([Token])
     }
 
-    init?(_ line: String) {
+    package init?(_ line: String) {
         guard !line.hasPrefix("#") else { return nil }
         var scalars = Array(line.unicodeScalars)
         // ignore::add_line preserves the entire line only for this exact suffix.
@@ -131,7 +131,7 @@ internal struct GitIgnoreRule: Sendable {
         return result
     }
 
-    func matches(_ path: [UInt8], isDirectory: Bool) -> Bool {
+    package func matches(_ path: [UInt8], isDirectory: Bool) -> Bool {
         if directoryOnly && !isDirectory { return false }
         var states = [Bool](repeating: false, count: tokens.count + 1)
         states[0] = true
@@ -202,8 +202,8 @@ internal struct GitIgnoreRule: Sendable {
     }
 }
 
-internal enum GitIgnore {
-    static func rules(_ text: String) -> [GitIgnoreRule] {
+package enum GitIgnore {
+    package static func rules(_ text: String) -> [GitIgnoreRule] {
         var text = text
         while text.hasPrefix("\u{feff}") { text.removeFirst() }
         let lines = text.utf8.split(separator: 10, omittingEmptySubsequences: false)
@@ -214,7 +214,7 @@ internal enum GitIgnore {
     }
 
     /// Last matching line wins. Nil means that this source has no match.
-    static func match(_ rules: [GitIgnoreRule], path: [UInt8], isDirectory: Bool) -> Bool? {
+    package static func match(_ rules: [GitIgnoreRule], path: [UInt8], isDirectory: Bool) -> Bool? {
         for rule in rules.reversed() where rule.matches(path, isDirectory: isDirectory) { return !rule.negated }
         return nil
     }

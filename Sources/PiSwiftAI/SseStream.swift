@@ -25,34 +25,16 @@ public func iterateSseEvents(
     AsyncThrowingStream { continuation in
         Task {
             do {
-                var buffer = Data()
+                var lines = SseLineBuffer()
                 var state = SseDecoderState()
                 for try await byte in bytes {
                     if signal?.isCancelled == true {
                         throw CancellationError()
                     }
-                    buffer.append(byte)
-                    while let consumed = consumeSseLine(buffer: buffer) {
-                        buffer = consumed.rest
-                        if let event = decodeSseLine(consumed.line, state: &state) {
-                            continuation.yield(event)
-                        }
-                    }
+                    lines.append(byte)
+                    lines.drain(state: &state, final: false) { continuation.yield($0) }
                 }
-                while let consumed = consumeSseLine(buffer: buffer) {
-                    buffer = consumed.rest
-                    if let event = decodeSseLine(consumed.line, state: &state) {
-                        continuation.yield(event)
-                    }
-                }
-                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
-                    if let event = decodeSseLine(line, state: &state) {
-                        continuation.yield(event)
-                    }
-                }
-                if let trailing = flushSseEvent(state: &state) {
-                    continuation.yield(trailing)
-                }
+                lines.finish(state: &state) { continuation.yield($0) }
                 continuation.finish()
             } catch {
                 continuation.finish(throwing: error)
@@ -69,33 +51,16 @@ public func iterateSseEvents(
     AsyncThrowingStream { continuation in
         Task {
             do {
-                var buffer = Data()
+                var lines = SseLineBuffer()
                 var state = SseDecoderState()
                 for try await chunk in body {
                     if signal?.isCancelled == true {
                         throw CancellationError()
                     }
-                    buffer.append(chunk)
-                    while let consumed = consumeSseLine(buffer: buffer) {
-                        buffer = consumed.rest
-                        if let event = decodeSseLine(consumed.line, state: &state) {
-                            continuation.yield(event)
-                        }
-                    }
+                    lines.append(chunk)
+                    lines.drain(state: &state, final: false) { continuation.yield($0) }
                 }
-                while let consumed = consumeSseLine(buffer: buffer) {
-                    buffer = consumed.rest
-                    if let event = decodeSseLine(consumed.line, state: &state) {
-                        continuation.yield(event)
-                    }
-                }
-                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8),
-                   let event = decodeSseLine(line, state: &state) {
-                    continuation.yield(event)
-                }
-                if let trailing = flushSseEvent(state: &state) {
-                    continuation.yield(trailing)
-                }
+                lines.finish(state: &state) { continuation.yield($0) }
                 continuation.finish()
             } catch {
                 continuation.finish(throwing: error)
@@ -104,7 +69,85 @@ public func iterateSseEvents(
     }
 }
 
-private struct SseDecoderState {
+/// Accumulates body bytes and splits them into lines. Each byte is examined
+/// once, so a long line (for example, a base64 image) costs linear time.
+struct SseLineBuffer {
+    private var bytes: [UInt8] = []
+    /// The first byte of the current line.
+    private var start = 0
+    /// The next byte to examine.
+    private var scan = 0
+
+    mutating func append(_ byte: UInt8) {
+        bytes.append(byte)
+    }
+
+    mutating func append(_ data: Data) {
+        bytes.append(contentsOf: data)
+    }
+
+    /// The next complete line, without its terminator. A CR at the end of the
+    /// buffer can be the first half of CRLF, so it waits for more bytes
+    /// unless `final` is true.
+    mutating func nextLine(final: Bool) -> String? {
+        while scan < bytes.count {
+            let byte = bytes[scan]
+            guard byte == 10 || byte == 13 else {
+                scan += 1
+                continue
+            }
+            var next = scan + 1
+            if byte == 13 {
+                if next == bytes.count && !final { return nil }
+                if next < bytes.count && bytes[next] == 10 { next += 1 }
+            }
+            let line = String(bytes: bytes[start..<scan], encoding: .utf8) ?? ""
+            start = next
+            scan = next
+            compact()
+            return line
+        }
+        return nil
+    }
+
+    /// Bytes after the last line terminator.
+    var remainder: String? {
+        start < bytes.count ? String(bytes: bytes[start...], encoding: .utf8) : nil
+    }
+
+    private mutating func compact() {
+        guard start > 0 else { return }
+        if start == bytes.count {
+            bytes.removeAll(keepingCapacity: true)
+        } else if start >= 64 * 1024 && start * 2 >= bytes.count {
+            bytes.removeFirst(start)
+        } else {
+            return
+        }
+        scan -= start
+        start = 0
+    }
+
+    fileprivate mutating func drain(state: inout SseDecoderState, final: Bool, _ yield: (ServerSentEvent) -> Void) {
+        while let line = nextLine(final: final) {
+            if let event = decodeSseLine(line, state: &state) {
+                yield(event)
+            }
+        }
+    }
+
+    fileprivate mutating func finish(state: inout SseDecoderState, _ yield: (ServerSentEvent) -> Void) {
+        drain(state: &state, final: true, yield)
+        if let line = remainder, let event = decodeSseLine(line, state: &state) {
+            yield(event)
+        }
+        if let trailing = flushSseEvent(state: &state) {
+            yield(trailing)
+        }
+    }
+}
+
+fileprivate struct SseDecoderState {
     var event: String?
     var data: [String] = []
     var raw: [String] = []
@@ -152,32 +195,4 @@ private func decodeSseLine(_ line: String, state: inout SseDecoderState) -> Serv
         state.data.append(value)
     }
     return nil
-}
-
-private func consumeSseLine(buffer: Data) -> (line: String, rest: Data)? {
-    let cr: UInt8 = 13
-    let lf: UInt8 = 10
-    var crIndex: Int? = nil
-    var lfIndex: Int? = nil
-    for (idx, byte) in buffer.enumerated() {
-        if byte == cr, crIndex == nil { crIndex = idx }
-        if byte == lf, lfIndex == nil { lfIndex = idx }
-        if crIndex != nil && lfIndex != nil { break }
-    }
-    let breakIndex: Int
-    switch (crIndex, lfIndex) {
-    case (nil, nil): return nil
-    case (let cr?, nil): breakIndex = cr
-    case (nil, let lf?): breakIndex = lf
-    case (let cr?, let lf?): breakIndex = min(cr, lf)
-    }
-    let lineData = buffer.prefix(breakIndex)
-    var nextIndex = breakIndex + 1
-    if breakIndex < buffer.count, buffer[buffer.startIndex + breakIndex] == cr,
-       nextIndex < buffer.count, buffer[buffer.startIndex + nextIndex] == lf {
-        nextIndex += 1
-    }
-    let rest = nextIndex >= buffer.count ? Data() : buffer.suffix(from: buffer.startIndex + nextIndex)
-    let line = String(data: Data(lineData), encoding: .utf8) ?? ""
-    return (line, Data(rest))
 }

@@ -1,6 +1,7 @@
 import Foundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftIgnore
 
 enum GrepToolError: LocalizedError, Sendable {
     case operationAborted
@@ -50,9 +51,11 @@ public struct GrepOperations: Sendable {
 
 public struct GrepToolOptions: Sendable {
     public var operations: GrepOperations?
+    public var environment: [String: String]?
 
-    public init(operations: GrepOperations? = nil) {
+    public init(operations: GrepOperations? = nil, environment: [String: String]? = nil) {
         self.operations = operations
+        self.environment = environment
     }
 }
 
@@ -116,7 +119,7 @@ public func createGrepTool(cwd: String, options: GrepToolOptions?) -> AgentTool 
                 throw GrepToolError.invalidPattern(description: error.localizedDescription)
             }
         }
-        let checkCancellation = {
+        let checkCancellation: @Sendable () throws -> Void = {
             if signal?.isCancelled == true || Task.isCancelled {
                 throw GrepToolError.operationAborted
             }
@@ -138,14 +141,32 @@ public func createGrepTool(cwd: String, options: GrepToolOptions?) -> AgentTool 
             outputLineCount += 1
         }
 
-        let files: AnySequence<URL>
-        if isDirectory {
-            files = grepFiles(root: resolvedSearchPath, glob: glob)
-        } else {
-            // A glob does not filter an explicit file path.
-            files = AnySequence([URL(fileURLWithPath: searchPath)])
-        }
-        for file in files {
+        let filter = GrepGlob(glob)
+        var walker = isDirectory ? try NativeIgnoreWalker(root: resolvedSearchPath, tool: .grep,
+            environment: options?.environment ?? ProcessInfo.processInfo.environment,
+            check: checkCancellation, overrideIgnoredFile: { relative, basename in
+                filter.positive && filter.matches(relative, basename: basename)
+            }) : nil
+        var explicitPending = !isDirectory
+        while true {
+            let file: URL
+            if var current = walker {
+                var selected: URL?
+                while let entry = try current.next() {
+                    if entry.isDirectory || entry.isSymbolicLink ||
+                        !filter.matches(entry.relative, basename: entry.url.lastPathComponent) { continue }
+                    selected = entry.url
+                    break
+                }
+                walker = current
+                guard let selected else { break }
+                file = selected
+            } else {
+                guard explicitPending else { break }
+                explicitPending = false
+                // A glob does not filter an explicit file path.
+                file = URL(fileURLWithPath: searchPath)
+            }
             try checkCancellation()
             if matchLimitReached { break }
             guard let reader = try? GrepLineReader(file: file) else { continue }
@@ -251,35 +272,27 @@ private func grepInteger(_ value: AnyCodable?, default fallback: Int, minimum: I
     return max(minimum, Int(number.rounded(.down)))
 }
 
-private func grepFiles(root: String, glob: String?) -> AnySequence<URL> {
-    let rootURL = URL(fileURLWithPath: root)
-    let prefix = root.hasSuffix("/") ? root : root + "/"
-    var pattern = glob ?? ""
-    let excluded = pattern.hasPrefix("!")
-    if excluded { pattern.removeFirst() }
-    while pattern.hasPrefix("./") { pattern.removeFirst(2) }
-    if pattern.hasPrefix("/") { pattern.removeFirst() }
-    let basenameOnly = !pattern.contains("/")
-    let regex = pattern.isEmpty ? nil : globToRegex(pattern)
-    return AnySequence {
-        let enumerator = FileManager.default.enumerator(
-            at: rootURL, includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsPackageDescendants], errorHandler: nil
-        )
-        return AnyIterator<URL> {
-            while let file = enumerator?.nextObject() as? URL {
-                guard (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
-                if let regex {
-                    let resolved = file.resolvingSymlinksInPath().path
-                    let relative = resolved.hasPrefix(prefix) ? String(resolved.dropFirst(prefix.count)) : file.lastPathComponent
-                    let candidate = basenameOnly ? file.lastPathComponent : relative
-                    let matches = regex.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate)) != nil
-                    if matches == excluded { continue }
-                }
-                return file
-            }
-            return nil
-        }
+private struct GrepGlob {
+    let excluded: Bool
+    let basenameOnly: Bool
+    let regex: NSRegularExpression?
+    var positive: Bool { regex != nil && !excluded }
+
+    init(_ glob: String?) {
+        var pattern = glob ?? ""
+        excluded = pattern.hasPrefix("!")
+        if excluded { pattern.removeFirst() }
+        while pattern.hasPrefix("./") { pattern.removeFirst(2) }
+        if pattern.hasPrefix("/") { pattern.removeFirst() }
+        basenameOnly = !pattern.contains("/")
+        regex = pattern.isEmpty ? nil : globToRegex(pattern)
+    }
+
+    func matches(_ relative: String, basename: String) -> Bool {
+        guard let regex else { return true }
+        let candidate = basenameOnly ? basename : relative
+        let matches = regex.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate)) != nil
+        return matches != excluded
     }
 }
 

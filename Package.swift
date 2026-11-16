@@ -60,6 +60,14 @@ let package = Package(
             name: "PiReviewExtension",
             targets: ["PiReviewExtension"]
         ),
+        .library(
+            name: "PiCodexImageGen",
+            targets: ["PiCodexImageGen"]
+        ),
+        .library(
+            name: "PiCodexImageGenDurable",
+            targets: ["PiCodexImageGenDurable"]
+        ),
         .executable(
             name: "pi-ai",
             targets: ["PiSwiftAICLI"]
@@ -79,8 +87,12 @@ let package = Package(
         ),
         .target(
             name: "PiSwiftDurable",
-            dependencies: ["PiSwiftAI", "PiSwiftChord"],
+            dependencies: ["PiSwiftAI", "PiSwiftChord", "PiSwiftIgnore"],
             exclude: ["README.md"],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiSwiftIgnore",
             swiftSettings: strictConcurrencySettings
         ),
         .target(
@@ -143,6 +155,7 @@ let package = Package(
                 "PiSwiftAgent",
                 "PiSwiftMCP",
                 "PiSwiftCodemodeRuntime",
+                "PiSwiftIgnore",
             ],
             resources: [
                 .process("Resources")
@@ -181,6 +194,27 @@ let package = Package(
                 "PiSwiftAI",
                 "PiSwiftAgent",
                 "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiCodexImageGen",
+            dependencies: [
+                "PiSwiftAI",
+                "PiSwiftAgent",
+                "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .target(
+            name: "PiCodexImageGenDurable",
+            dependencies: [
+                "PiCodexImageGen",
+                "PiSwiftAI",
+                "PiSwiftAgent",
+                "PiSwiftChord",
+                "PiSwiftCodingAgent",
+                "PiSwiftDurable",
             ],
             swiftSettings: strictConcurrencySettings
         ),
@@ -286,6 +320,18 @@ let package = Package(
             dependencies: [
                 "PiReviewExtension",
                 "PiSwiftCodingAgent",
+            ],
+            swiftSettings: strictConcurrencySettings
+        ),
+        .testTarget(
+            name: "PiCodexImageGenTests",
+            dependencies: [
+                "PiCodexImageGen",
+                "PiCodexImageGenDurable",
+                "PiSwiftCodingAgent",
+                "PiSwiftChord",
+                "PiSwiftDurable",
+                "PiSwiftDurableTesting",
             ],
             swiftSettings: strictConcurrencySettings
         ),

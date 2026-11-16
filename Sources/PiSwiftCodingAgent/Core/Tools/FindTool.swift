@@ -1,6 +1,7 @@
 import Foundation
 import PiSwiftAI
 import PiSwiftAgent
+import PiSwiftIgnore
 
 enum FindToolError: LocalizedError, Sendable {
     case operationAborted
@@ -25,6 +26,10 @@ public struct FindToolDetails: Sendable {
 }
 
 public func createFindTool(cwd: String) -> AgentTool {
+    createFindTool(cwd: cwd, environment: ProcessInfo.processInfo.environment)
+}
+
+func createFindTool(cwd: String, environment: [String: String]) -> AgentTool {
     var tool = AgentTool(
         label: "find",
         name: "find",
@@ -50,13 +55,11 @@ public func createFindTool(cwd: String) -> AgentTool {
 
         let searchPath = resolveToCwd(searchDir, cwd: cwd)
         let baseURL = URL(fileURLWithPath: searchPath).resolvingSymlinksInPath()
-        let basePath = baseURL.path
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: searchPath, isDirectory: &isDir), isDir.boolValue else {
             throw FindToolError.pathNotFound(path: searchPath)
         }
 
-        let ignorePatterns = loadGitignorePatterns(root: searchPath)
         #if os(Windows)
         let normalizedPattern = pattern.replacingOccurrences(of: "\\", with: "/")
         #else
@@ -74,43 +77,36 @@ public func createFindTool(cwd: String) -> AgentTool {
             throw FindToolError.operationAborted
         }
 
-        if let enumerator = FileManager.default.enumerator(at: baseURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants], errorHandler: nil) {
-            while let item = enumerator.nextObject() {
-                if signal?.isCancelled == true {
-                    throw FindToolError.operationAborted
-                }
-                guard let url = item as? URL else { continue }
-                let resolvedURL = url.resolvingSymlinksInPath()
-                let basePrefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
-                let relative = resolvedURL.path.replacingOccurrences(of: basePrefix, with: "")
-                let normalized = relative.replacingOccurrences(of: "\\", with: "/")
-
-                if isIgnored(path: normalized, patterns: ignorePatterns) {
-                    continue
-                }
-
-                let isDirValue = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                if isDirValue {
-                    continue
-                }
-
-                let candidate = matchBasename ? url.lastPathComponent : normalized
-                if let patternRegex, patternRegex.firstMatch(in: candidate, options: [], range: NSRange(location: 0, length: candidate.utf16.count)) == nil {
-                    continue
-                }
-
-                // Read one extra result to detect a limit that excludes more files.
-                if resultCount == limit {
-                    resultLimitReached = true
-                    break
-                }
-                resultCount += 1
-                // Keep one line past the byte cap so truncateHead makes the same decision.
-                if outputBytes - 1 <= DEFAULT_MAX_BYTES {
-                    matches.append(normalized)
-                }
-                outputBytes += normalized.utf8.count + 1
+        var walker = try NativeIgnoreWalker(root: baseURL.path, tool: .find, environment: environment,
+                                            processDirectory: FileManager.default.currentDirectoryPath, check: {
+            if signal?.isCancelled == true || Task.isCancelled {
+                throw FindToolError.operationAborted
             }
+        })
+        while let item = try walker.next() {
+            if signal?.isCancelled == true || Task.isCancelled {
+                throw FindToolError.operationAborted
+            }
+            let url = item.url
+            let normalized = item.relative.replacingOccurrences(of: "\\", with: "/")
+            if item.isDirectory { continue }
+
+            let candidate = matchBasename ? url.lastPathComponent : normalized
+            if let patternRegex, patternRegex.firstMatch(in: candidate, options: [], range: NSRange(location: 0, length: candidate.utf16.count)) == nil {
+                continue
+            }
+
+            // Read one extra result to detect a limit that excludes more files.
+            if resultCount == limit {
+                resultLimitReached = true
+                break
+            }
+            resultCount += 1
+            // Keep one line past the byte cap so truncateHead makes the same decision.
+            if outputBytes - 1 <= DEFAULT_MAX_BYTES {
+                matches.append(normalized)
+            }
+            outputBytes += normalized.utf8.count + 1
         }
 
         if matches.isEmpty {
@@ -143,30 +139,9 @@ public func createFindTool(cwd: String) -> AgentTool {
         return AgentToolResult(content: [.text(TextContent(text: output))], details: details)
     }
     tool.executeWithContext = { id, params, signal, onUpdate, context in
-        try await createFindTool(cwd: resolveToolExecutionCwd(context, fallback: cwd)).execute(id, params, signal, onUpdate)
+        try await createFindTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), environment: environment).execute(id, params, signal, onUpdate)
     }
     return tool
-}
-
-private func loadGitignorePatterns(root: String) -> [String] {
-    let gitignorePath = URL(fileURLWithPath: root).appendingPathComponent(".gitignore").path
-    guard let content = try? String(contentsOfFile: gitignorePath, encoding: .utf8) else {
-        return []
-    }
-    return content
-        .split(separator: "\n", omittingEmptySubsequences: false)
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-}
-
-private func isIgnored(path: String, patterns: [String]) -> Bool {
-    for pattern in patterns {
-        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { continue }
-        if matchesGlob(path, trimmed) { return true }
-        if path.hasSuffix(trimmed) { return true }
-    }
-    return false
 }
 
 // Match fd's glob syntax without a platform-specific external tool.
