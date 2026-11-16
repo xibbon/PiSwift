@@ -986,6 +986,8 @@ private func streamAnthropicMessagesTolerant(
 private func anthropicJSONBody(_ parameters: MessageParameter) throws -> Data {
     let encoder = JSONEncoder()
     encoder.keyEncodingStrategy = .convertToSnakeCase
+    // Stable tool-input ordering keeps replayed history eligible for prompt caching.
+    encoder.outputFormatting = [.sortedKeys]
     return try encoder.encode(parameters)
 }
 
@@ -1368,7 +1370,7 @@ func restoreAnthropicToolResultContent(_ body: Data, model: Model, messages: [Me
         wireMessages[messageIndex]["content"] = blocks
     }
     payload["messages"] = wireMessages
-    return try JSONSerialization.data(withJSONObject: payload)
+    return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
 }
 
 private func convertAnthropicTools(_ tools: [AITool], isOAuthToken: Bool) -> [MessageParameter.Tool] {
@@ -1799,7 +1801,7 @@ func injectAnthropicRequestBody(
         payload["thinking"] = ["type": "disabled"]
     }
 
-    return try? JSONSerialization.data(withJSONObject: payload)
+    return try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
 }
 
 private let anthropicStrictUnsupportedKeywords: Set<String> = [
@@ -2127,7 +2129,7 @@ func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, op
     if let fallbacks = model.compat?.allowedFallbackModels, !fallbacks.isEmpty {
         payload["fallbacks"] = fallbacks.map { ["model": $0.model] }
     }
-    return try JSONSerialization.data(withJSONObject: payload)
+    return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
 }
 
 private func anthropicEffortMarker(_ level: String) -> [String: Any] {
