@@ -157,6 +157,7 @@ public func assistantMessageToJSONObject(_ message: AssistantMessage) -> [String
         result["deferred"] = deferred
     }
     if let value = message.durationMs { result["durationMs"] = value }
+    if let value = message.providerContent { result["providerContent"] = value.value }
     return result
 }
 
@@ -209,6 +210,7 @@ public func assistantMessageFromJSONObject(_ dict: [String: Any], ordered: Order
         endTurn: jsonBoolean(dict["endTurn"]),
         durationMs: durationMillisecondsFromJSON(dict["durationMs"])
     )
+    if let value = dict["providerContent"], !(value is NSNull) { message.providerContent = AnyCodable(value) }
     if let value = dict["deferred"] as? [String: Any], let provider = value["provider"] as? String,
        let modelId = value["modelId"] as? String, let api = value["api"] as? String, let id = value["id"] as? String {
         message.deferred = DeferredHandle(provider: provider, modelId: modelId, api: api, id: id,
