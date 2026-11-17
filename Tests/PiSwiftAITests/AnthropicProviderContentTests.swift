@@ -227,3 +227,55 @@ private func same(_ a: Any?, _ b: Any) -> Bool {
     #expect(streamed == [0: "Searching.", 1: "Found it.", 2: " Done."])
     #expect(same(answer.providerContent?.value, expectedBlocks + [["type": "text", "text": " Done."]]))
 }
+
+private func events(_ client: ServerToolHTTP) async -> (events: [AssistantMessageEvent], answer: AssistantMessage) {
+    let stream = streamAnthropic(model: serverToolModel(),
+        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("search")))])), options: options(client))
+    var events: [AssistantMessageEvent] = []
+    for await event in stream { events.append(event) }
+    return (events, await stream.result())
+}
+
+@Test(.timeLimit(.minutes(1))) func anthropicStopsAfterTheMaximumContinuations() async throws {
+    let client = try ServerToolHTTP(events: searchEvents(stopReason: "pause_turn"))
+    let (events, answer) = await events(client)
+    #expect(await client.requests.count == anthropicMaximumContinuations + 1)
+    #expect(events.filter { if case .done = $0 { return true }; return false }.count == 1)
+    #expect(answer.stopReason == .stop)
+    #expect(answer.rawStopReason == "pause_turn")
+    #expect(answer.content.count == 2 * (anthropicMaximumContinuations + 1))
+}
+
+@Test(.timeLimit(.minutes(1))) func anthropicReportsAnErrorInAContinuationWithThePausedContent() async throws {
+    let client = try ServerToolHTTP(events: searchEvents(stopReason: "pause_turn"),
+        reply([(["type": "text", "text": ""], [["type": "text_delta", "text": " Do"]])], id: "msg-2", stopReason: "refusal"))
+    let (events, answer) = await events(client)
+    #expect(await client.requests.count == 2)
+    #expect(events.filter { if case .done = $0 { return true }; return false }.isEmpty)
+    #expect(events.filter { if case .error = $0 { return true }; return false }.count == 1)
+    #expect(answer.stopReason == .error)
+    #expect(answer.content.count == 3)
+}
+
+// A paused part without blocks adds no message to the next request, so that request would repeat.
+@Test(.timeLimit(.minutes(1))) func anthropicDoesNotContinueAPausedTurnWithoutBlocks() async throws {
+    let client = try ServerToolHTTP(events: reply([], stopReason: "pause_turn"))
+    let (_, answer) = await events(client)
+    #expect(await client.requests.count == 1)
+    #expect(answer.stopReason == .stop)
+}
+
+// The partial messages of a continuation keep the paused reply's wire blocks as they are.
+@Test(.timeLimit(.minutes(1))) func anthropicContinuationPartialsKeepThePausedBlocks() async throws {
+    let client = try ServerToolHTTP(events: searchEvents(stopReason: "pause_turn"),
+        reply([(["type": "text", "text": ""], [["type": "text_delta", "text": " Done."]])], id: "msg-2"))
+    let (events, answer) = await events(client)
+    let partials = events.compactMap { event -> AssistantMessage? in
+        if case .textDelta(2, _, let partial) = event { return partial }
+        return nil
+    }
+    #expect(partials.count == 1)
+    #expect(same(partials.first?.providerContent?.value, expectedBlocks))
+    #expect(partials.first?.content.count == 3)
+    #expect(same(answer.providerContent?.value, expectedBlocks + [["type": "text", "text": " Done."]]))
+}
