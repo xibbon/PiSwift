@@ -1696,6 +1696,10 @@ public struct AssistantMessage: Sendable {
     public var providerThinkingLevel: String?
     public var thinkingLevel: ModelThinkingLevel?
     public var endTurn: Bool?
+    /// The provider's own content blocks, kept when the reply holds blocks `content` cannot
+    /// represent, such as Anthropic server tool calls and results. Replayed verbatim to the
+    /// same provider and model.
+    public var providerContent: AnyCodable?
 
     public init(
         content: [ContentBlock],
