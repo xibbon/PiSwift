@@ -49,10 +49,25 @@ struct AnthropicRawContent {
     }
 
     /// The reply's blocks in order, or nil when `AssistantMessage.content` represents all of them.
+    /// Cited text counts as unmodeled: `TextContent` has no field for citations, and a reply can
+    /// cite an earlier search without a new server tool call.
     var unmodeledContent: [[String: Any]]? {
         let content = blocks.sorted { $0.key < $1.key }.map { $0.value.filter { !($0.value is NSNull) } }
-        guard content.contains(where: { !anthropicModeledBlockTypes.contains($0["type"] as? String ?? "") }) else { return nil }
+        guard content.contains(where: { block in
+            !anthropicModeledBlockTypes.contains(block["type"] as? String ?? "")
+                || (block["citations"] as? [Any])?.isEmpty == false
+        }) else { return nil }
         return content
+    }
+}
+
+/// Whether the API accepts `block` in a request. It rejects text without visible characters,
+/// and a `fallback` block is a response-only marker.
+private func anthropicCanReplay(_ block: [String: Any]) -> Bool {
+    switch block["type"] as? String {
+    case "fallback": return false
+    case "text": return (block["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    default: return true
     }
 }
 
@@ -63,8 +78,9 @@ private let anthropicProviderContentMarker = "\u{E000}pi-provider-content:"
 func anthropicProviderContent(_ assistant: AssistantMessage, model: Model) -> [[String: Any]]? {
     guard assistant.provider == model.provider, assistant.api == model.api, assistant.model == model.id,
           assistant.responseId != nil,
-          let blocks = assistant.providerContent?.value as? [[String: Any]], !blocks.isEmpty else { return nil }
-    return blocks
+          let stored = assistant.providerContent?.value as? [[String: Any]] else { return nil }
+    let blocks = stored.filter(anthropicCanReplay)
+    return blocks.isEmpty ? nil : blocks
 }
 
 /// Stands in for the assistant's content until the encoded body is patched, since the SDK's

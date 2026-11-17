@@ -2112,8 +2112,9 @@ func prepareAnthropicRawPayload(_ data: Data, model: Model, context: Context, op
             String(id.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression).prefix(64))
         })
         let levels: [String?] = transformed.compactMap { message -> [String?]? in
+            // A replayed reply always has a wire message, also when `content` is empty.
             guard case .assistant(let assistant) = message,
-                  !convertAssistantContent(assistant, isOAuthToken: isAnthropicOAuthToken(options.apiKey ?? ""),
+                  anthropicProviderContent(assistant, model: model) != nil || !convertAssistantContent(assistant, isOAuthToken: isAnthropicOAuthToken(options.apiKey ?? ""),
                       allowEmptySignature: model.compat?.allowEmptySignature == true).isEmpty else { return nil }
             let level = assistant.providerThinkingLevel
             let valid = assistant.api == .anthropicMessages && assistant.provider == model.provider

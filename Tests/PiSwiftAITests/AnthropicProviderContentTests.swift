@@ -117,3 +117,73 @@ private func same(_ a: Any?, _ b: Any) -> Bool {
     let decoded = assistantMessageFromJSONObject(try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:])
     #expect(same(decoded.providerContent?.value, expectedBlocks))
 }
+
+// A follow-up can cite an earlier search without a new server tool call.
+@Test(.timeLimit(.minutes(1))) func anthropicKeepsAndReplaysCitedTextWithoutServerToolBlocks() async throws {
+    let cited: [[String: Any]] = [["type": "text", "text": "Found it.", "citations": [citation]]]
+    let client = try ServerToolHTTP(events: reply([
+        (["type": "text", "text": "", "citations": [Any]()],
+         [["type": "citations_delta", "citation": citation], ["type": "text_delta", "text": "Found it."]]),
+    ]))
+    let question = Message.user(UserMessage(content: .text("which page?")))
+    let answer = await stream(client, messages: [question])
+    #expect(same(answer.providerContent?.value, cited))
+
+    let restored = assistantMessageFromJSONObject(assistantMessageToJSONObject(answer))
+    _ = await stream(client, messages: [question, .assistant(restored), .user(UserMessage(content: .text("next")))])
+    #expect(same(try wireMessages(await client.body(1))[1]["content"], cited))
+}
+
+@Test(.timeLimit(.minutes(1))) func anthropicLeavesTextWithEmptyCitationsWithoutProviderContent() async throws {
+    let client = try ServerToolHTTP(events: reply([
+        (["type": "text", "text": "", "citations": [Any]()], [["type": "text_delta", "text": "Hi."]]),
+    ]))
+    let answer = await stream(client, messages: [.user(UserMessage(content: .text("hello")))])
+    #expect(answer.providerContent == nil)
+}
+
+// The API rejects text blocks without visible characters, so the replay must not send them.
+@Test(.timeLimit(.minutes(1))) func anthropicReplayDropsBlocksTheAPIRejects() async throws {
+    let client = try ServerToolHTTP(events: reply([
+        (["type": "text", "text": ""], []),
+        (["type": "server_tool_use", "id": "srvtoolu_1", "name": "web_search", "input": ["query": "codea"]], []),
+        (["type": "web_search_tool_result", "tool_use_id": "srvtoolu_1", "content": [searchResult]], []),
+        (["type": "text", "text": ""], [["type": "text_delta", "text": "\n\n"]]),
+        (["type": "text", "text": ""], [["type": "text_delta", "text": "Found it."]]),
+    ]))
+    let question = Message.user(UserMessage(content: .text("search")))
+    let answer = await stream(client, messages: [question])
+    _ = await stream(client, messages: [question, .assistant(answer), .user(UserMessage(content: .text("next")))])
+    let content = try wireMessages(await client.body(1))[1]["content"] as? [[String: Any]] ?? []
+    #expect(content.compactMap { $0["type"] as? String } == ["server_tool_use", "web_search_tool_result", "text"])
+    #expect(content.last?["text"] as? String == "Found it.")
+}
+
+// A reply that holds only server tool blocks has empty `content` but still has a wire message.
+@Test func anthropicManagedEffortMarkersStayAlignedWithReplayedReplies() throws {
+    let model = Model(id: "claude-test", name: "claude-test", api: .anthropicMessages, provider: "anthropic",
+        baseUrl: "https://example.invalid", reasoning: true, input: [.text],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0), contextWindow: 200_000, maxTokens: 4096,
+        compat: OpenAICompat(forceAdaptiveThinking: true, supportsMidConvoEffort: true))
+    func assistant(_ id: String, level: String, content: [ContentBlock]) -> AssistantMessage {
+        AssistantMessage(content: content, api: .anthropicMessages, provider: "anthropic", model: "claude-test",
+            responseId: id, usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+            stopReason: .stop, providerThinkingLevel: level)
+    }
+    var searchOnly = assistant("msg-1", level: "low", content: [])
+    searchOnly.providerContent = AnyCodable(Array(expectedBlocks[1...2]))
+    let user = Message.user(UserMessage(content: .text("next")))
+    let context = Context(messages: [user, .assistant(searchOnly), user,
+        .assistant(assistant("msg-2", level: "max", content: [.text(TextContent(text: "answer"))])), user])
+    let wire: [[String: Any]] = [
+        ["role": "user", "content": "next"], ["role": "assistant", "content": Array(expectedBlocks[1...2])],
+        ["role": "user", "content": "next"], ["role": "assistant", "content": [["type": "text", "text": "answer"]]],
+        ["role": "user", "content": "next"],
+    ]
+    let body = try JSONSerialization.data(withJSONObject: ["messages": wire])
+    let payload = try #require(JSONSerialization.jsonObject(with: prepareAnthropicRawPayload(body, model: model,
+        context: context, options: AnthropicOptions(thinkingEnabled: true, effort: .high))) as? [String: Any])
+    let messages = payload["messages"] as? [[String: Any]] ?? []
+    let efforts = messages.map { ($0["output_config"] as? [String: String])?["effort"] ?? ($0["role"] as? String ?? "") }
+    #expect(efforts == ["user", "low", "assistant", "user", "max", "assistant", "user", "high"])
+}
