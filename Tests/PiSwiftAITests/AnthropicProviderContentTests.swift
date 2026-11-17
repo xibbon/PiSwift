@@ -2,21 +2,25 @@ import Foundation
 import Testing
 @testable import PiSwiftAI
 
+/// Answers each request with the next of `responses`, repeating the last.
 private actor ServerToolHTTP: ProviderHTTPClient {
-    let body: Data
+    let bodies: [Data]
     var requests: [URLRequest] = []
-    init(events: [[String: Any]]) throws {
-        var body = Data()
-        for event in events {
-            body.append(Data("event: \(event["type"] as? String ?? "error")\ndata: ".utf8))
-            body.append(try JSONSerialization.data(withJSONObject: event))
-            body.append(Data("\n\n".utf8))
+    init(events: [[String: Any]]...) throws {
+        bodies = try events.map { events in
+            var body = Data()
+            for event in events {
+                body.append(Data("event: \(event["type"] as? String ?? "error")\ndata: ".utf8))
+                body.append(try JSONSerialization.data(withJSONObject: event))
+                body.append(Data("\n\n".utf8))
+            }
+            return body
         }
-        self.body = body
     }
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
         requests.append(request)
-        return ProviderHTTPResponse(statusCode: 200, headers: ["content-type": "text/event-stream"], body: body)
+        return ProviderHTTPResponse(statusCode: 200, headers: ["content-type": "text/event-stream"],
+            body: bodies[min(requests.count, bodies.count) - 1])
     }
     func body(_ index: Int) -> Data { requests[index].httpBody ?? Data() }
 }
@@ -32,26 +36,29 @@ private var searchResult: [String: Any] { ["type": "web_search_result", "url": "
 private var citation: [String: Any] { ["type": "web_search_result_location", "url": "https://example.com/a",
     "title": "A", "encrypted_index": "idx", "cited_text": "cited"] }
 
-private func reply(_ blocks: [(start: [String: Any], deltas: [[String: Any]])]) -> [[String: Any]] {
+private func reply(_ blocks: [(start: [String: Any], deltas: [[String: Any]])], id: String = "msg-1",
+                   stopReason: String = "end_turn") -> [[String: Any]] {
     var events: [[String: Any]] = [["type": "message_start", "message": ["type": "message", "role": "assistant",
-        "content": [], "id": "msg-1", "model": "claude-test", "usage": ["input_tokens": 1, "output_tokens": 0]]]]
+        "content": [], "id": id, "model": "claude-test", "usage": ["input_tokens": 1, "output_tokens": 0]]]]
     for (index, block) in blocks.enumerated() {
         events.append(["type": "content_block_start", "index": index, "content_block": block.start])
         events += block.deltas.map { ["type": "content_block_delta", "index": index, "delta": $0] }
         events.append(["type": "content_block_stop", "index": index])
     }
-    return events + [["type": "message_delta", "delta": ["stop_reason": "end_turn"], "usage": ["output_tokens": 1]],
+    return events + [["type": "message_delta", "delta": ["stop_reason": stopReason], "usage": ["output_tokens": 1]],
                      ["type": "message_stop"]]
 }
 
-private var searchReply: [[String: Any]] { reply([
+private var searchReply: [[String: Any]] { searchEvents() }
+
+private func searchEvents(stopReason: String = "end_turn") -> [[String: Any]] { reply([
     (["type": "text", "text": ""], [["type": "text_delta", "text": "Searching."]]),
     (["type": "server_tool_use", "id": "srvtoolu_1", "name": "web_search", "input": [:]],
      [["type": "input_json_delta", "partial_json": "{\"query\": "], ["type": "input_json_delta", "partial_json": "\"codea\"}"]]),
     (["type": "web_search_tool_result", "tool_use_id": "srvtoolu_1", "content": [searchResult]], []),
     (["type": "text", "text": "", "citations": NSNull()],
      [["type": "citations_delta", "citation": citation], ["type": "text_delta", "text": "Found it."]]),
-]) }
+], stopReason: stopReason) }
 
 private var expectedBlocks: [[String: Any]] { [
     ["type": "text", "text": "Searching."],
@@ -60,11 +67,15 @@ private var expectedBlocks: [[String: Any]] { [
     ["type": "text", "text": "Found it.", "citations": [citation]],
 ] }
 
-private func stream(_ client: ServerToolHTTP, model: Model = serverToolModel(), messages: [Message]) async -> AssistantMessage {
+private func options(_ client: ServerToolHTTP) -> AnthropicOptions {
     var options = AnthropicOptions()
     options.apiKey = "fixture-key"
     options.httpClient = client
-    return await streamAnthropic(model: model, context: normalizeContext(Context(messages: messages)), options: options).result()
+    return options
+}
+
+private func stream(_ client: ServerToolHTTP, model: Model = serverToolModel(), messages: [Message]) async -> AssistantMessage {
+    await streamAnthropic(model: model, context: normalizeContext(Context(messages: messages)), options: options(client)).result()
 }
 
 private func wireMessages(_ body: Data) throws -> [[String: Any]] {
@@ -186,4 +197,33 @@ private func same(_ a: Any?, _ b: Any) -> Bool {
     let messages = payload["messages"] as? [[String: Any]] ?? []
     let efforts = messages.map { ($0["output_config"] as? [String: String])?["effort"] ?? ($0["role"] as? String ?? "") }
     #expect(efforts == ["user", "low", "assistant", "user", "max", "assistant", "user", "high"])
+}
+
+@Test(.timeLimit(.minutes(1))) func anthropicContinuesAPausedTurnIntoOneReply() async throws {
+    let client = try ServerToolHTTP(events: searchEvents(stopReason: "pause_turn"),
+        reply([(["type": "text", "text": ""], [["type": "text_delta", "text": " Done."]])], id: "msg-2"))
+    let question = Message.user(UserMessage(content: .text("search")))
+    let events = streamAnthropic(model: serverToolModel(), context: normalizeContext(Context(messages: [question])),
+        options: options(client))
+    var streamed: [Int: String] = [:]
+    var finished = 0
+    for await event in events {
+        if case .textDelta(let index, let delta, _) = event { streamed[index, default: ""] += delta }
+        if case .done = event { finished += 1 }
+    }
+    let answer = await events.result()
+
+    #expect(await client.requests.count == 2)
+    let continued = try wireMessages(await client.body(1))
+    #expect(continued.count == 2)
+    #expect(same(continued[1]["content"], expectedBlocks))
+
+    #expect(finished == 1)
+    #expect(answer.stopReason == .stop)
+    #expect(answer.responseId == "msg-2")
+    #expect(answer.diagnostics?.map(\.type) == ["anthropic_pause_turn"])
+    let texts = answer.content.compactMap { block -> String? in if case .text(let text) = block { return text.text }; return nil }
+    #expect(texts == ["Searching.", "Found it.", " Done."])
+    #expect(streamed == [0: "Searching.", 1: "Found it.", 2: " Done."])
+    #expect(same(answer.providerContent?.value, expectedBlocks + [["type": "text", "text": " Done."]]))
 }
