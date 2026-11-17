@@ -139,10 +139,13 @@ func makeAnthropicUsage(
     )
 }
 
-public func streamAnthropic(
+/// One Messages request. `keepsContent` keeps the reply's wire blocks even when `content`
+/// models all of them, so a paused turn's continuation can be replayed with it.
+func streamAnthropicResponse(
     model: Model,
     context: TranscriptContext,
-    options: AnthropicOptions
+    options: AnthropicOptions,
+    keepsContent: Bool = false
 ) -> AssistantMessageEventStream {
     let model = resolveCloudflareModel(model, env: providerEnvironment(options.env))
     let compat = resolveAnthropicCompat(model: model)
@@ -572,7 +575,10 @@ public func streamAnthropic(
                 throw AnthropicStreamError.apiError(output.errorMessage ?? "An unknown error occurred")
             }
 
-            if let content = rawContent.unmodeledContent { output.providerContent = AnyCodable(content) }
+            if let content = rawContent.unmodeledContent
+                ?? (keepsContent || output.rawStopReason == "pause_turn" ? rawContent.content : nil) {
+                output.providerContent = AnyCodable(content)
+            }
 
             if let recordedThread, let recordedFullBody, let replyId = output.responseId,
                output.responseModel == nil {

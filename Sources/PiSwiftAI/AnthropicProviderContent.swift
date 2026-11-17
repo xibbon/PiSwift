@@ -48,9 +48,14 @@ struct AnthropicRawContent {
         blocks[index] = block
     }
 
-    /// The reply's blocks in order, or nil when `AssistantMessage.content` represents all of them.
+    /// The reply's blocks in order.
+    var content: [[String: Any]] {
+        blocks.sorted { $0.key < $1.key }.map { $0.value.filter { !($0.value is NSNull) } }
+    }
+
+    /// The reply's blocks, or nil when `AssistantMessage.content` represents all of them.
     var unmodeledContent: [[String: Any]]? {
-        let content = blocks.sorted { $0.key < $1.key }.map { $0.value.filter { !($0.value is NSNull) } }
+        let content = content
         guard content.contains(where: { !anthropicModeledBlockTypes.contains($0["type"] as? String ?? "") }) else { return nil }
         return content
     }
