@@ -52,10 +52,13 @@ private let retryableProviderErrorPatterns = [
     "connection.?error",
     "connection.?refused",
     "connection.?lost",
+    "connection.?closed",
     "other side closed",
     "fetch failed",
     "request to \\S+ failed, reason:",
     "getaddrinfo",
+    "(?<![a-z0-9_])(?:ECONNRESET|ECONNABORTED|ECONNREFUSED|ETIMEDOUT|EPIPE)(?![a-z0-9_])",
+    "connection reset by peer",
     "ENOTFOUND",
     "EAI_AGAIN",
     "upstream.?connect",
@@ -72,6 +75,7 @@ private let retryableProviderErrorPatterns = [
     // WebSocket transports can report close/error text instead of HTTP/fetch text.
     "websocket.?closed",
     "websocket.?error",
+    "websocket.?connection.?limit.?reached",
 
     // Premature stream endings from SDKs and transports.
     "ended without",
@@ -120,6 +124,13 @@ private let retryableTransportErrorPatterns = [
     "stream ended before a terminal response event",
 ]
 
+private let retryableSocketTextPatterns = [
+    "connection.?closed",
+    "(?<![a-z0-9_])(?:ECONNRESET|ECONNABORTED|ECONNREFUSED|ETIMEDOUT|EPIPE)(?![a-z0-9_])",
+    "connection reset by peer",
+    "websocket.?connection.?limit.?reached",
+]
+
 private let retryableURLErrorCodes: Set<Int> = [
     URLError.timedOut.rawValue,
     URLError.cannotFindHost.rawValue,
@@ -127,6 +138,15 @@ private let retryableURLErrorCodes: Set<Int> = [
     URLError.networkConnectionLost.rawValue,
     URLError.dnsLookupFailed.rawValue,
     URLError.notConnectedToInternet.rawValue,
+]
+
+private let retryablePOSIXErrorCodes: Set<Int32> = [
+    POSIXErrorCode.ECONNRESET.rawValue,
+    POSIXErrorCode.ECONNABORTED.rawValue,
+    POSIXErrorCode.ECONNREFUSED.rawValue,
+    POSIXErrorCode.ETIMEDOUT.rawValue,
+    POSIXErrorCode.EPIPE.rawValue,
+    POSIXErrorCode.ENOTCONN.rawValue,
 ]
 
 /// Bounded retry policy for assistant-producing calls.
@@ -211,6 +231,9 @@ func isRetryableTransportError(_ error: Error) -> Bool {
     }) {
         return true
     }
+    if matchesAnyPattern(text, patterns: retryableSocketTextPatterns) {
+        return true
+    }
     return text.range(of: "http2", options: .caseInsensitive) != nil &&
         text.range(of: "did not get a response", options: .caseInsensitive) != nil
 }
@@ -233,7 +256,7 @@ private func hasRetryableTransportCode(_ error: NSError, depth: Int) -> Bool {
     if error.domain == NSURLErrorDomain, retryableURLErrorCodes.contains(error.code) {
         return true
     }
-    if error.domain == NSPOSIXErrorDomain, error.code == POSIXErrorCode.ENOTCONN.rawValue {
+    if error.domain == NSPOSIXErrorDomain, retryablePOSIXErrorCodes.contains(Int32(error.code)) {
         return true
     }
 

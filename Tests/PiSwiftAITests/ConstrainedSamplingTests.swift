@@ -66,6 +66,41 @@ private func applyResponsesMiddleware(
     #expect(encoded[0]["strict"] as? Bool == true)
 }
 
+// constrained-sampling.test.ts: "keeps strict mode for enum-only schemas"
+@Test func keepsStrictModeForEnumOnlySchemas() throws {
+    var tool = constrainedTool(.jsonSchema(strict: .prefer))
+    tool.parameters["properties"] = AnyCodable(["level": ["enum": ["low", "high"]]] as [String: Any])
+    tool.parameters["required"] = AnyCodable(["level"])
+    #expect(try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true) == true)
+    let tools = try #require(try responsesToolsPayload([tool], supportsStrictMode: true))
+    let encoded = try #require(try encodedJSONObject(tools) as? [[String: Any]])
+    #expect(encoded[0]["strict"] as? Bool == true)
+}
+
+// constrained-sampling.test.ts: "falls back or rejects schemas that cannot be safely converted"
+@Test(arguments: ["array item", "unknown value", "bare const", "empty object"])
+func untypedStrictNodesFallBackOrReject(kind: String) throws {
+    let properties: [String: [String: Any]]
+    switch kind {
+    case "array item": properties = ["commandArguments": ["type": "array", "items": [String: Any]()]]
+    case "unknown value": properties = ["value": ["description": "Any JSON value"]]
+    case "empty object": properties = ["value": [:]]
+    default: properties = ["mode": ["const": "fast"]]
+    }
+    var preferred = constrainedTool(.jsonSchema(strict: .prefer))
+    preferred.parameters["properties"] = AnyCodable(properties)
+    preferred.parameters["required"] = AnyCodable(Array(properties.keys))
+    #expect(try resolveJsonSchemaStrictSampling(tool: preferred, supportsStrictMode: true) == nil)
+    var required = preferred
+    required.constrainedSampling = .jsonSchema(strict: .require)
+    do {
+        _ = try resolveJsonSchemaStrictSampling(tool: required, supportsStrictMode: true)
+        Issue.record("Expected strict schema rejection")
+    } catch {
+        #expect(error.localizedDescription == "Tool \"write\" requires JSON-schema constrained sampling, but schemas without a type are unsupported.")
+    }
+}
+
 @Test func disabledSamplingNeverEnablesStrictOrGrammar() throws {
     let tool = constrainedTool(.disabled)
     #expect(try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true) == nil)
