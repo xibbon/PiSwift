@@ -158,7 +158,6 @@ function headersLiteral(headers) {
 }
 
 function thinkingLevelKey(level) {
-  if (level === "off") return ".off";
   return `.${level}`;
 }
 
@@ -291,11 +290,15 @@ function chatTemplateValuesLiteral(values) {
 function compatLiteral(compat, api) {
   if (!compat) return undefined;
   if (api === "mistral-conversations") {
-    const keys = Object.keys(compat);
-    if (keys.some((key) => key !== "supportsMidConvoSystemMessages")) {
-      throw new Error(`Unmapped Mistral compat field: ${keys.filter((key) => key !== "supportsMidConvoSystemMessages").join(", ")}`);
+    const fields = ["supportsMidConvoSystemMessages", "supportsStrictMode"];
+    const unknown = Object.keys(compat).filter((key) => !fields.includes(key));
+    if (unknown.length !== 0) {
+      throw new Error(`Unmapped Mistral compat field: ${unknown.join(", ")}`);
     }
-    return `MistralConversationsCompat(${compat.supportsMidConvoSystemMessages === undefined ? "" : `supportsMidConvoSystemMessages: ${swiftBool(compat.supportsMidConvoSystemMessages)}`})`;
+    const rendered = fields
+      .filter((key) => compat[key] !== undefined)
+      .map((key) => `${key}: ${swiftBool(compat[key])}`);
+    return `MistralConversationsCompat(${rendered.join(", ")})`;
   }
   const fields = [
     ["supportsStore", compat.supportsStore, "bool"],
@@ -598,6 +601,13 @@ if (require.main === module && process.argv.includes("--self-test")) {
       `OpenAICompat(requiresNonNullAssistantContent: true, requiresToolsWithToolHistory: false, supportsMessageThreads: true, promptCacheKeyMode: .${mode})`);
   }
   assert.throws(() => enumValue("promptCacheKeyMode", "invalid"), /Unknown promptCacheKeyMode/);
+  assert.equal(compatLiteral({ supportsStrictMode: true }, "mistral-conversations"),
+    "MistralConversationsCompat(supportsStrictMode: true)");
+  assert.equal(compatLiteral({ supportsMidConvoSystemMessages: false, supportsStrictMode: false }, "mistral-conversations"),
+    "MistralConversationsCompat(supportsMidConvoSystemMessages: false, supportsStrictMode: false)");
+  assert.throws(() => compatLiteral({ unknown: true }, "mistral-conversations"), /Unmapped Mistral compat field: unknown/);
+  assert.equal(compatLiteral({ supportsDeveloperRole: false }, "openai-completions"),
+    "OpenAICompat(supportsDeveloperRole: false)");
   console.log("Catalog compat self-test passed.");
 } else if (require.main === module) {
   const catalogs = loadCatalogs();

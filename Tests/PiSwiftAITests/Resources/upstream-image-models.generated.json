@@ -310,6 +310,37 @@
       "provider": "openrouter",
       "type": "image"
     },
+    "bytedance-seed/seedream-5-5": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "bytedance-seed/seedream-5-5",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "ByteDance Seed: Seedream 5.5",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "google/gemini-2.5-flash-image": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -807,6 +838,130 @@
         }
       },
       "name": "Microsoft AI: MAI-Image-2.6 Flash",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "microsoft/mai-image-2.7": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 5,
+        "output": 0
+      },
+      "id": "microsoft/mai-image-2.7",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Microsoft AI: MAI-Image-2.7",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "microsoft/mai-image-2.7-flash": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 1.75,
+        "output": 0
+      },
+      "id": "microsoft/mai-image-2.7-flash",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "Microsoft AI: MAI-Image-2.7 Flash",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "minimax/minimax-h3-image": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 2.3,
+        "output": 0
+      },
+      "id": "minimax/minimax-h3-image",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "MiniMax: MiniMax H3 Image",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "minimax/minimax-h3-image-highspeed": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 2.3,
+        "output": 0
+      },
+      "id": "minimax/minimax-h3-image-highspeed",
+      "input": [
+        "text",
+        "image"
+      ],
+      "inputLimits": {
+        "images": {
+          "resize": {
+            "jpegQuality": 80,
+            "maxBytes": 4718592,
+            "maxHeight": 2000,
+            "maxWidth": 2000
+          }
+        }
+      },
+      "name": "MiniMax: MiniMax H3 Image Highspeed",
       "output": [
         "image"
       ],
@@ -1676,6 +1831,46 @@
       "provider": "openrouter",
       "type": "image"
     },
+    "recraft/recraft-v4.1-flash-v2": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4.1-flash-v2",
+      "input": [
+        "text"
+      ],
+      "name": "Recraft: Recraft V4.1 Flash V2",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "recraft/recraft-v4.1-flash-v2:free": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "recraft/recraft-v4.1-flash-v2:free",
+      "input": [
+        "text"
+      ],
+      "name": "Recraft: Recraft V4.1 Flash V2 (free)",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
     "recraft/recraft-v4.1-pro": {
       "api": "openrouter-images",
       "baseUrl": "https://openrouter.ai/api/v1",
@@ -2011,6 +2206,26 @@
         }
       },
       "name": "Tencent: Hy Image 3.5 Preview",
+      "output": [
+        "image"
+      ],
+      "provider": "openrouter",
+      "type": "image"
+    },
+    "tencent/hy-world-2.1-panorama": {
+      "api": "openrouter-images",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "cost": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0
+      },
+      "id": "tencent/hy-world-2.1-panorama",
+      "input": [
+        "text"
+      ],
+      "name": "Tencent: HY-World 2.1 Panorama",
       "output": [
         "image"
       ],

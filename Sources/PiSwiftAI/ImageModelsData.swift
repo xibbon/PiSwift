@@ -118,6 +118,17 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
+    "bytedance-seed/seedream-5-5": ImageModel(
+        id: "bytedance-seed/seedream-5-5",
+        name: "ByteDance Seed: Seedream 5.5",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
     "google/gemini-2.5-flash-image": ImageModel(
         id: "google/gemini-2.5-flash-image",
         name: "Google: Nano Banana (Gemini 2.5 Flash Image)",
@@ -292,6 +303,50 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         input: [.text, .image],
         output: [.image],
         cost: ModelCost(input: 1.75, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "microsoft/mai-image-2.7": ImageModel(
+        id: "microsoft/mai-image-2.7",
+        name: "Microsoft AI: MAI-Image-2.7",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 5, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "microsoft/mai-image-2.7-flash": ImageModel(
+        id: "microsoft/mai-image-2.7-flash",
+        name: "Microsoft AI: MAI-Image-2.7 Flash",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 1.75, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "minimax/minimax-h3-image": ImageModel(
+        id: "minimax/minimax-h3-image",
+        name: "MiniMax: MiniMax H3 Image",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 2.3, output: 0, cacheRead: 0, cacheWrite: 0),
+        inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "minimax/minimax-h3-image-highspeed": ImageModel(
+        id: "minimax/minimax-h3-image-highspeed",
+        name: "MiniMax: MiniMax H3 Image Highspeed",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        output: [.image],
+        cost: ModelCost(input: 2.3, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
     ),
     "openai/gpt-5-image": ImageModel(
@@ -601,6 +656,26 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
+    "recraft/recraft-v4.1-flash-v2": ImageModel(
+        id: "recraft/recraft-v4.1-flash-v2",
+        name: "Recraft: Recraft V4.1 Flash V2",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
+    "recraft/recraft-v4.1-flash-v2:free": ImageModel(
+        id: "recraft/recraft-v4.1-flash-v2:free",
+        name: "Recraft: Recraft V4.1 Flash V2 (free)",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
+    ),
     "recraft/recraft-v4.1-pro": ImageModel(
         id: "recraft/recraft-v4.1-pro",
         name: "Recraft: Recraft V4.1 Pro",
@@ -721,6 +796,16 @@ private let providerModels_image_openrouter: [String: ImageModel] = [
         output: [.image],
         cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         inputLimits: ModelInputLimits(maxRequestBytes: nil, images: ModelImageInputLimits(resize: ModelImageResizeOptions(maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80), maxPerMessage: nil, maxPerRequest: nil))
+    ),
+    "tencent/hy-world-2.1-panorama": ImageModel(
+        id: "tencent/hy-world-2.1-panorama",
+        name: "Tencent: HY-World 2.1 Panorama",
+        api: .openrouterImages,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text],
+        output: [.image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0)
     ),
     "x-ai/grok-imagine-image-2.0": ImageModel(
         id: "x-ai/grok-imagine-image-2.0",

@@ -7,7 +7,7 @@ private let identityACME = ClientAttribution(name: "acme", url: "https://acme.ex
 @Suite("Client identity")
 struct ClientIdentityTests {
     @Test func versionMatchesPortTarget() {
-        #expect(PI_AI_VERSION == "1.5.2")
+        #expect(PI_AI_VERSION == "1.6.0")
     }
 
     @Test func formatsUserAgents() {

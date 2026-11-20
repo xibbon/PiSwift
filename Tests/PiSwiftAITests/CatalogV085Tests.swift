@@ -14,7 +14,7 @@ import Testing
     #expect(getModel(provider: "anthropic", modelId: "claude-opus-4-8")?.compat?.supportsMidConvoEffort == nil)
     #expect(getModel(provider: "anthropic", modelId: "claude-opus-5")?.compat?.allowedFallbackModels == nil)
     let models = getProviders().flatMap { getModels(provider: $0) }
-    #expect(models.filter { $0.compat?.supportsMidConvoEffort == true }.count == 23) // 2026-11-10 hydration
+    #expect(models.filter { $0.compat?.supportsMidConvoEffort == true }.count == 32) // 2026-11-20 hydration
     let fallbacks = models.filter { $0.compat?.allowedFallbackModels?.isEmpty == false }
     #expect(fallbacks.count == 2)
     #expect(fallbacks.first { $0.id == "claude-fable-5" }?.compat?.allowedFallbackModels?.map(\.model) == ["claude-opus-4-8", "claude-opus-5"])

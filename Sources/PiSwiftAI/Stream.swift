@@ -98,6 +98,19 @@ public func getEnvApiKey(provider: String, env: [String: String]? = nil) -> Stri
         }
     }
 
+    if let envVars = apiKeyEnvVars(provider: provider),
+       ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan-individual-cn"].contains(provider) {
+        if let envVar = envVars.first(where: { key in
+            guard let value = env[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            let apiKey = env[envVar]
+            logApiKeyDebug("provider=\(provider) env apiKey=\(apiKeyInfo(apiKey))")
+            return apiKey
+        }
+        return nil
+    }
+
     if let envVar = apiKeyEnvVars(provider: provider)?.first {
         let apiKey = env[envVar]
         logApiKeyDebug("provider=\(provider) env apiKey=\(apiKeyInfo(apiKey))")
@@ -114,6 +127,19 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
 
     if provider == "anthropic" {
         return ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+    }
+
+    switch provider {
+    case "qwen-token-plan":
+        return ["QWEN_TOKEN_PLAN_TEAM_API_KEY", "QWEN_TOKEN_PLAN_API_KEY"]
+    case "qwen-token-plan-cn":
+        return ["QWEN_TOKEN_PLAN_TEAM_CN_API_KEY", "QWEN_TOKEN_PLAN_CN_API_KEY"]
+    case "qwen-token-plan-individual":
+        return ["QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY", "QWEN_TOKEN_PLAN_API_KEY"]
+    case "qwen-token-plan-individual-cn":
+        return ["QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY", "QWEN_TOKEN_PLAN_CN_API_KEY"]
+    default:
+        break
     }
 
     let envMap: [String: String] = [
@@ -134,10 +160,6 @@ private func apiKeyEnvVars(provider: String) -> [String]? {
         "groq": "GROQ_API_KEY",
         "cerebras": "CEREBRAS_API_KEY",
         "baseten": "BASETEN_API_KEY",
-        "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
-        "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
-        "qwen-token-plan-individual-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
-        "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
         "xai": "XAI_API_KEY",
         "meta": "META_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",

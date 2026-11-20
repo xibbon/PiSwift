@@ -4,7 +4,7 @@ import Testing
 
 // Adapted from the v0.84.1...v0.85.0 upstream catalog test changes.
 private let catalog085QwenProviders = ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan-individual-cn"]
-private let catalog085IndividualModels = ["deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "glm-5.3", "qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max"]
+private let catalog085IndividualModels = ["deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017", "glm-5.2", "glm-5.3", "qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max", "qwen4-max-preview"]
 
 @Test(arguments: ["~anthropic/claude-fable-latest", "~anthropic/claude-haiku-latest", "~anthropic/claude-opus-latest", "~anthropic/claude-sonnet-latest"])
 func catalog085OpenRouterLatestAliasesUseAnthropicMessages(_ id: String) throws {
@@ -82,6 +82,16 @@ func catalog085Qwen38SendsXhighEffort(_ provider: String, _ id: String) async th
     #expect(payload["reasoning_effort"] as? String == "high")
     #expect(payload["enable_thinking"] as? Bool == true)
     #expect(payload["thinking"] == nil)
+}
+
+// openai-completions-tool-choice.test.ts: Copilot completions with effort options send reasoning_effort.
+@Test("sends reasoning_effort for GitHub Copilot completions models with effort levels",
+      arguments: ["gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-neon", "kimi-k3"])
+func copilotCompletionsEffort(_ id: String) async throws {
+    let model = try #require(getModel(provider: "github-copilot", modelId: id))
+    #expect(model.compat?.supportsReasoningEffort == true)
+    let payload = try await catalog085Request(model, effort: .high)
+    #expect(payload["reasoning_effort"] as? String == "high")
 }
 
 @Test(arguments: ["deepseek", "opencode-go"])

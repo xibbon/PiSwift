@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const upstreamTag = 'v1.5.2';
+const upstreamTag = 'v1.6.0';
 const upstreamSource = 'packages/coding-agent/src/core/model-resolver.ts';
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const fixturePath = resolve(repository, 'Tests/PiSwiftCodingAgentTests/fixtures/upstream-default-models.json');

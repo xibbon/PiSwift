@@ -119,6 +119,26 @@ func untypedStrictNodesFallBackOrReject(kind: String) throws {
     #expect(encoded[0]["strict"] as? Bool == false)
 }
 
+// openai-responses-compat.test.ts:161-170: Copilot, MAI and Grok tools carry explicit strict values.
+@Test("sets strict mode explicitly for Responses tools", arguments: [
+    ("cloudflare-ai-gateway", "gpt-5.6-sol"),
+    ("github-copilot", "gpt-5.3-codex"),
+    ("github-copilot", "mai-code-2"),
+    ("github-copilot", "grok-4.7"),
+])
+func copilotResponsesExplicitStrict(_ provider: String, _ id: String) throws {
+    let model = try #require(getModel(provider: provider, modelId: id))
+    #expect(model.compat?.supportsStrictMode == true)
+    let ordinary = constrainedTool(nil)
+    let constrained = constrainedTool(.jsonSchema(strict: .prefer))
+    let query = try buildResponsesQuery(model: model,
+        context: Context(messages: [], tools: [ordinary, constrained]),
+        options: OpenAIResponsesOptions(cacheRetention: .short))
+    let payload = try #require(encodedJSONObject(query) as? [String: Any])
+    let tools = try #require(payload["tools"] as? [[String: Any]])
+    #expect(tools.map { $0["strict"] as? Bool } == [false, true])
+}
+
 @Test func grammarSamplingUsesCustomToolOnlyWhenSupported() throws {
     let tool = constrainedTool(.grammar(variants: [.openAILark: "start: /[a-z]+/"]))
 

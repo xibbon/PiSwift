@@ -41,9 +41,9 @@ private func c1AzureResolverRegistry(_ authenticated: [String]) -> ModelRegistry
 }
 
 @Test func c1AzureDefaultAndReleaseVersion() {
-    #expect(defaultModelPerProvider.first { $0.0 == .azure }?.1 == "gpt-6.1-sol")
+    #expect(defaultModelPerProvider.first { $0.0 == .azure }?.1 == "gpt-6.2-sol")
     // Upstream v1.0.4 package.json:3: report the release version.
     // C1 v1.1.0: update the library version assertion.
     // Upstream 4a080252f: pin the v1.4.0 release version.
-    #expect(VERSION == "1.5.2")
+    #expect(VERSION == "1.6.0")
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-public let PI_AI_VERSION = "1.5.2"
+public let PI_AI_VERSION = "1.6.0"
 
 /// The User-Agent mode. The JSON representation matches pi-ai.
 public enum UserAgentMode: Sendable, Equatable, Codable {

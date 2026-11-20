@@ -221,6 +221,18 @@ func a2RecordsIncompleteAndFutureReasons(_ status: String, _ reason: String) asy
 }
 
 // openai-codex-stream.test.ts:1103,1132,1145.
+// max-thinking.test.ts:88-106: the tagged GPT-6.2 models send max in a configuration update.
+@Test("sends max as a configuration_update item to the Codex Responses API for GPT-6.2",
+      arguments: ["gpt-6.2-astra", "gpt-6.2-sol"])
+func a4CodexGPT62MaxConfigurationUpdate(_ id: String) async throws {
+    let model = try #require(getModel(provider: "openai-codex", modelId: id))
+    let (_, body) = try await a2CodexRun([a2User("Hello")], model: model, effort: .max)
+    let input = try #require(body["input"] as? [[String: Any]])
+    #expect(input.last?["type"] as? String == "configuration_update")
+    #expect(input.last?["reasoning"] as? [String: String] == ["effort": "max"])
+}
+
+// openai-codex-stream.test.ts:1103,1132,1145.
 @Test func a2CodexThinkingChangesUseConfigurationUpdates() async throws {
     let model = a2Model(api: .openAICodexResponses,
         compat: OpenAICompat(supportsMidConvoEffort: true))
