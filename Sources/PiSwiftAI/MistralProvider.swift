@@ -392,7 +392,8 @@ private func buildMistralPayload(
 
     if let tools = context.tools, !tools.isEmpty {
         payload["tools"] = try tools.map { tool -> [String: Any] in
-            let strict = try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true)
+            let strict = try resolveJsonSchemaStrictSampling(tool: tool,
+                supportsStrictMode: model.compat?.supportsStrictMode ?? false)
             var function: [String: Any] = [
                 "name": tool.name,
                 "description": tool.description,

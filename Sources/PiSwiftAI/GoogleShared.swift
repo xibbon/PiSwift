@@ -386,7 +386,7 @@ func mapGoogleStopReason(_ reason: String) -> StopReasonResult {
     switch reason {
     case "STOP":
         return StopReasonResult(stopReason: .stop)
-    case "MAX_TOKENS":
+    case "MAX_TOKENS", "CONTINUATION":
         return StopReasonResult(stopReason: .length)
     default:
         return StopReasonResult(stopReason: .error, errorMessage: "Provider stopped with: \(reason)")

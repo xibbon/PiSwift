@@ -5,6 +5,15 @@ import Testing
 
 @Suite("v1.5.2 MCP shared helpers")
 struct M3HelpersTests {
+    @Test("takes the first line of the configured description, else of the instructions")
+    func serverSummary() {
+        #expect(mcpServerSummary(description: " Docs search.\nMore. ", instructions: "Ignored.") == "Docs search.")
+        #expect(mcpServerSummary(description: nil,
+            instructions: "\n  Web search for current information.\nDetails.") == "Web search for current information.")
+        #expect(mcpServerSummary(description: "  ", instructions: "From instructions.") == "From instructions.")
+        #expect(mcpServerSummary(description: nil, instructions: nil) == "")
+    }
+
     private func error(_ result: McpServerConfigResult) -> String? {
         if case .invalid(let message) = result { return message }
         return nil

@@ -1024,9 +1024,12 @@ public struct OpenAICompat: Sendable, Codable {
 public struct MistralConversationsCompat: Sendable, Codable, Equatable {
     /// Whether later system messages can remain in the conversation. Defaults to false.
     public var supportsMidConvoSystemMessages: Bool?
+    /// Whether Mistral may receive strict tool schemas. Defaults to false.
+    public var supportsStrictMode: Bool?
 
-    public init(supportsMidConvoSystemMessages: Bool? = nil) {
+    public init(supportsMidConvoSystemMessages: Bool? = nil, supportsStrictMode: Bool? = nil) {
         self.supportsMidConvoSystemMessages = supportsMidConvoSystemMessages
+        self.supportsStrictMode = supportsStrictMode
     }
 }
 
@@ -1180,7 +1183,8 @@ public struct Model: CatalogModel, Sendable, Codable {
     public var mistralConversationsCompat: MistralConversationsCompat? {
         guard api == .mistralConversations, let compat else { return nil }
         return MistralConversationsCompat(
-            supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages
+            supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+            supportsStrictMode: compat.supportsStrictMode
         )
     }
 
@@ -1256,7 +1260,8 @@ public struct Model: CatalogModel, Sendable, Codable {
             id: id, name: name, api: api, provider: provider, baseUrl: baseUrl,
             reasoning: reasoning, input: input, cost: cost, contextWindow: contextWindow,
             maxTokens: maxTokens, samplingParams: samplingParams, headers: headers,
-            compat: OpenAICompat(supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages),
+            compat: OpenAICompat(supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+                supportsStrictMode: compat.supportsStrictMode),
             thinkingLevelMap: thinkingLevelMap, inputLimits: inputLimits, promptCache: promptCache,
             samplingParamsByThinkingLevel: samplingParamsByThinkingLevel
         )
