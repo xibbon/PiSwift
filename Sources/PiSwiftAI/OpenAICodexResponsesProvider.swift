@@ -11,6 +11,10 @@ public func streamOpenAICodexResponses(
     let stream = AssistantMessageEventStream()
 
     Task {
+        let configurationUpdateEffort = responsesConfigurationUpdateEffort(
+            model: model, requestedEffort: options.reasoningEffort, apiKey: options.apiKey
+        ) ?? (model.reasoning && options.reasoningEffort == nil && model.compat?.supportsMidConvoEffort == true
+            ? mappedOffThinkingLevel(model: model) : nil)
         var output = AssistantMessage(
             content: [],
             api: model.api,
@@ -19,6 +23,7 @@ public func streamOpenAICodexResponses(
             usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
             stopReason: .pending
         )
+        output.providerThinkingLevel = configurationUpdateEffort
 
         do {
             let apiKey = options.apiKey ?? ""
@@ -49,7 +54,8 @@ public func streamOpenAICodexResponses(
                 "input": try convertCodexMessages(
                     model: model,
                     context: context,
-                    grammarToolInputProperties: grammarToolInputProperties
+                    grammarToolInputProperties: grammarToolInputProperties,
+                    configurationUpdateEffort: configurationUpdateEffort
                 ),
                 "stream": true,
                 "tool_choice": options.toolChoice.map(responsesToolChoicePayload) ?? "auto",
@@ -64,9 +70,6 @@ public func streamOpenAICodexResponses(
                 body["service_tier"] = serviceTier.rawValue
             }
 
-            if let maxTokens = options.maxTokens, model.compat?.supportsMaxOutputTokens != false {
-                body["max_output_tokens"] = maxTokens
-            }
             if let temperature = options.temperature {
                 body["temperature"] = temperature
             }
@@ -78,11 +81,6 @@ public func streamOpenAICodexResponses(
                 )
             }
 
-            if let instructions = context.systemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !instructions.isEmpty {
-                body["instructions"] = instructions
-            }
-
             // v0.70.3: default Codex Responses verbosity to .low when caller didn't specify.
             // Matches upstream default and produces shorter / faster responses.
             let requestOptions = OpenAICodexRequestOptions(
@@ -92,6 +90,13 @@ public func streamOpenAICodexResponses(
                 include: options.include
             )
             transformCodexRequestBody(&body, options: requestOptions, prompt: nil, model: model)
+            if configurationUpdateEffort != nil {
+                body["reasoning"] = ["effort": "medium", "summary": options.reasoningSummary?.rawValue ?? "auto"]
+            }
+            if let maxTokens = options.maxTokens, maxTokens != 0,
+               model.compat?.supportsMaxOutputTokens != false {
+                body["max_output_tokens"] = max(maxTokens, 16)
+            }
             let requestData = try await transformPayload(options.onPayload, jsonObject: body)
             if let replacement = try JSONSerialization.jsonObject(with: requestData) as? [String: Any] {
                 body = replacement
@@ -203,6 +208,10 @@ public func streamOpenAICodexResponses(
                 if eventType.isEmpty { return }
 
                 switch eventType {
+                case "response.created":
+                    if let response = rawEvent["response"] as? [String: Any] {
+                        output.responseId = response["id"] as? String ?? output.responseId
+                    }
                 case "response.output_item.added":
                     guard let item = rawEvent["item"] as? [String: Any],
                           let type = item["type"] as? String else { return }
@@ -342,6 +351,8 @@ public func streamOpenAICodexResponses(
 
                 case "response.completed", "response.done", "response.incomplete":
                     if let responseInfo = rawEvent["response"] as? [String: Any] {
+                        output.responseId = responseInfo["id"] as? String ?? output.responseId
+                        appendOpenAIReasoningRemovals(responseInfo["input_transformations"], to: &output)
                         if let endTurn = responseInfo["end_turn"] as? Bool { output.endTurn = endTurn }
                         if let usage = responseInfo["usage"] as? [String: Any] {
                             let cachedTokens = intValue(usage["input_tokens_details"], key: "cached_tokens") ?? 0
@@ -384,8 +395,9 @@ public func streamOpenAICodexResponses(
                     }
 
                 case "error":
-                    let code = rawEvent["code"] as? String ?? ""
-                    let message = rawEvent["message"] as? String ?? ""
+                    let nestedError = rawEvent["error"] as? [String: Any]
+                    let code = rawEvent["code"] as? String ?? nestedError?["code"] as? String ?? ""
+                    let message = rawEvent["message"] as? String ?? nestedError?["message"] as? String ?? ""
                     throw OpenAICodexStreamError.codedApiError(
                         code: code,
                         message: formatCodexErrorEvent(rawEvent, code: code, message: message)
@@ -408,16 +420,20 @@ public func streamOpenAICodexResponses(
                 throw StreamError.unsupportedHTTPClient("OpenAI Codex WebSocket transport")
             }
             let transport: Transport = options.httpClient != nil ? .sse : (options.transport ?? .auto)
+            // Upstream openai-codex-responses.ts:1568: only an explicit `websocket-cached` or `auto`
+            // sends deltas with `previous_response_id`; an unset transport sends the full input.
+            let useCachedContext = options.transport == .websocketCached || options.transport == .auto
             if transport != .sse {
                 // Swift UUID generation can throw. Generate the ID only for a WebSocket request.
                 let websocketRequestId = try codexWebSocketRequestId(sessionId: codexSessionId)
                 let websocketHeaders = buildCodexWebSocketHeaders(baseHeaders: baseHeaders, requestId: websocketRequestId)
                 var websocketStarted = false
                 var retriedMissingContinuation = false
+                var retriedConnectionLimit = false
                 while true {
                     websocketStarted = false
                     do {
-                        try await processCodexWebSocketStream(
+                        let lease = try await processCodexWebSocketStream(
                             url: codexWebSocketUrl(baseUrl: model.baseUrl),
                             body: body,
                             headers: websocketHeaders,
@@ -426,6 +442,7 @@ public func streamOpenAICodexResponses(
                             signal: options.signal,
                             env: options.env,
                             websocketConnectTimeoutMs: options.websocketConnectTimeoutMs,
+                            useCachedContext: useCachedContext,
                             onStart: {
                                 websocketStarted = true
                                 startStreamIfNeeded()
@@ -456,6 +473,21 @@ public func streamOpenAICodexResponses(
                             throw OpenAICodexStreamError.apiError(message)
                         }
 
+                        if useCachedContext, let responseId = output.responseId {
+                            let replay = try convertCodexMessages(model: model,
+                                context: Context(messages: [.assistant(output)]),
+                                grammarToolInputProperties: grammarToolInputProperties)
+                            (CodexWebSocketEnvironment.current?.cache ?? CodexWebSocketCache.shared).recordContinuation(lease,
+                                fullBody: body, responseId: responseId,
+                                responseItems: replay.compactMap { value in
+                                    guard var item = value as? [String: Any] else { return nil }
+                                    if item["type"] as? String == "function_call_output" ||
+                                       item["type"] as? String == "custom_tool_call_output" { return nil }
+                                    item.removeValue(forKey: "id")
+                                    return item
+                                })
+                        }
+
                         stream.push(.done(reason: output.stopReason, message: output))
                         stream.end()
                         return
@@ -466,6 +498,20 @@ public func streamOpenAICodexResponses(
                             retried: &retriedMissingContinuation
                         ) {
                             output.content = []
+                            output.responseId = nil
+                            output.stopReason = .pending
+                            output.rawStopReason = nil
+                            output.errorMessage = nil
+                            pendingToolCallIndices.removeAll()
+                            continue
+                        }
+                        if !websocketStarted, !retriedConnectionLimit,
+                           let codexError = error as? OpenAICodexStreamError,
+                           case .codedApiError(let code, _) = codexError,
+                           code == "websocket_connection_limit_reached" {
+                            retriedConnectionLimit = true
+                            output.content = []
+                            output.responseId = nil
                             output.stopReason = .pending
                             output.rawStopReason = nil
                             output.errorMessage = nil
@@ -489,7 +535,8 @@ public func streamOpenAICodexResponses(
             }
             let retryRequest = request
 
-            let client = options.httpClient ?? DefaultProviderHTTPClient(env: options.env)
+            let client = options.httpClient ?? CodexWebSocketEnvironment.current?.sseClient
+                ?? DefaultProviderHTTPClient(env: options.env)
             let response = try await retryProviderRequest(
                 maxRetries: options.maxRetries,
                 maxRetryDelayMs: options.maxRetryDelayMs,
@@ -631,7 +678,11 @@ private func codexWebSocketUrl(baseUrl: String) -> URL {
 
 private let codexWebSocketBetaHeader = "responses_websockets=2026-02-06"
 private let codexSessionWebSocketCacheTtl: TimeInterval = 5 * 60
-private let codexSessionWebSocketMaxAge: TimeInterval = 55 * 60
+private let codexSessionWebSocketMaxAge: TimeInterval = 45 * 60
+
+func codexWebSocketShouldRotate(createdAt: Date, now: Date) -> Bool {
+    now.timeIntervalSince(createdAt) >= codexSessionWebSocketMaxAge
+}
 
 struct CodexWebSocketCacheKey: Hashable, Sendable {
     let sessionId: String
@@ -646,6 +697,33 @@ struct CodexWebSocketLease: Sendable {
     let task: URLSessionWebSocketTask
     let cacheKey: CodexWebSocketCacheKey?
     let cached: Bool
+    let continuation: CodexWebSocketContinuation?
+}
+
+struct CodexWebSocketContinuation: Sendable {
+    let lastRequestBody: Data
+    let lastResponseId: String
+    let lastResponseItems: Data
+}
+
+protocol CodexWebSocketIO: Sendable {
+    func send(task: URLSessionWebSocketTask, text: String) async throws
+    func receive(task: URLSessionWebSocketTask) async throws -> URLSessionWebSocketTask.Message
+}
+
+struct CodexWebSocketEnvironment: Sendable {
+    let cache: CodexWebSocketCache
+    let io: any CodexWebSocketIO
+    let sseClient: (any ProviderHTTPClient)?
+
+    init(cache: CodexWebSocketCache, io: any CodexWebSocketIO,
+         sseClient: (any ProviderHTTPClient)? = nil) {
+        self.cache = cache
+        self.io = io
+        self.sseClient = sseClient
+    }
+
+    @TaskLocal static var current: CodexWebSocketEnvironment?
 }
 
 final class CodexWebSocketCache: Sendable {
@@ -654,6 +732,7 @@ final class CodexWebSocketCache: Sendable {
         var busy: Bool
         var idleTask: Task<Void, Never>?
         let createdAt: Date
+        var continuation: CodexWebSocketContinuation?
     }
 
     static let shared: CodexWebSocketCache = {
@@ -666,7 +745,17 @@ final class CodexWebSocketCache: Sendable {
 
     private let entries = LockedState<[CodexWebSocketCacheKey: Entry]>([:])
 
-    init() {}
+    private let now: @Sendable () -> Date
+    private let connectionFactory: (@Sendable () -> URLSessionWebSocketTask)?
+    private let reusableOverride: (@Sendable (URLSessionWebSocketTask) -> Bool)?
+
+    init(now: @escaping @Sendable () -> Date = Date.init,
+         connectionFactory: (@Sendable () -> URLSessionWebSocketTask)? = nil,
+         isReusable: (@Sendable (URLSessionWebSocketTask) -> Bool)? = nil) {
+        self.now = now
+        self.connectionFactory = connectionFactory
+        self.reusableOverride = isReusable
+    }
 
     var sessionKeys: Set<CodexWebSocketCacheKey> {
         entries.withLock { Set($0.keys) }
@@ -683,37 +772,62 @@ final class CodexWebSocketCache: Sendable {
     ) -> CodexWebSocketLease {
         entries.withLock { entries in
             func makeConnection() -> URLSessionWebSocketTask {
-                connectionFactory?() ?? connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
+                connectionFactory?() ?? self.connectionFactory?()
+                    ?? connect(url: url, headers: headers, connectTimeoutMs: connectTimeoutMs, env: env)
             }
             guard let sessionId, !sessionId.isEmpty else {
                 let task = makeConnection()
-                return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
+                return CodexWebSocketLease(task: task, cacheKey: nil, cached: false, continuation: nil)
             }
             let cacheKey = codexWebSocketCacheKey(sessionId: sessionId, accountId: accountId)
 
             if var existing = entries[cacheKey] {
                 existing.idleTask?.cancel()
                 existing.idleTask = nil
-                if !existing.busy, isReusable(existing.task), Date().timeIntervalSince(existing.createdAt) < codexSessionWebSocketMaxAge {
+                if !existing.busy, isReusable(existing.task),
+                   !codexWebSocketShouldRotate(createdAt: existing.createdAt, now: now()) {
                     existing.busy = true
                     entries[cacheKey] = existing
-                    return CodexWebSocketLease(task: existing.task, cacheKey: cacheKey, cached: true)
+                    return CodexWebSocketLease(task: existing.task, cacheKey: cacheKey, cached: true,
+                        continuation: existing.continuation)
                 }
-                if !isReusable(existing.task) || Date().timeIntervalSince(existing.createdAt) >= codexSessionWebSocketMaxAge {
+                if !isReusable(existing.task) || codexWebSocketShouldRotate(createdAt: existing.createdAt, now: now()) {
                     closeSilently(existing.task, reason: "connection_rotation")
                     entries.removeValue(forKey: cacheKey)
                 } else {
                     entries[cacheKey] = existing
                     if existing.busy {
                         let task = makeConnection()
-                        return CodexWebSocketLease(task: task, cacheKey: nil, cached: false)
+                        return CodexWebSocketLease(task: task, cacheKey: nil, cached: false, continuation: nil)
                     }
                 }
             }
 
             let task = makeConnection()
-            entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: Date())
-            return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true)
+            entries[cacheKey] = Entry(task: task, busy: true, idleTask: nil, createdAt: now(), continuation: nil)
+            return CodexWebSocketLease(task: task, cacheKey: cacheKey, cached: true, continuation: nil)
+        }
+    }
+
+    func recordContinuation(_ lease: CodexWebSocketLease, fullBody: [String: Any],
+                            responseId: String, responseItems: [[String: Any]]) {
+        guard lease.cached, let key = lease.cacheKey,
+              let body = try? JSONSerialization.data(withJSONObject: fullBody),
+              let items = try? JSONSerialization.data(withJSONObject: responseItems) else { return }
+        entries.withLock { entries in
+            guard var entry = entries[key], entry.task === lease.task else { return }
+            entry.continuation = CodexWebSocketContinuation(lastRequestBody: body,
+                lastResponseId: responseId, lastResponseItems: items)
+            entries[key] = entry
+        }
+    }
+
+    func clearContinuation(_ lease: CodexWebSocketLease) {
+        guard let key = lease.cacheKey else { return }
+        entries.withLock { entries in
+            guard var entry = entries[key], entry.task === lease.task else { return }
+            entry.continuation = nil
+            entries[key] = entry
         }
     }
 
@@ -782,7 +896,7 @@ final class CodexWebSocketCache: Sendable {
     }
 
     private func isReusable(_ task: URLSessionWebSocketTask) -> Bool {
-        task.state == .running && task.closeCode == .invalid
+        reusableOverride?(task) ?? (task.state == .running && task.closeCode == .invalid)
     }
 
     private func closeSilently(_ task: URLSessionWebSocketTask, reason: String = "done") {
@@ -947,10 +1061,13 @@ private func processCodexWebSocketStream(
     signal: CancellationToken?,
     env: [String: String]?,
     websocketConnectTimeoutMs: Int?,
+    useCachedContext: Bool,
     onStart: () -> Void,
     onEvent: (CodexRawEvent) async throws -> Void
-) async throws {
-    let lease = CodexWebSocketCache.shared.acquire(
+) async throws -> CodexWebSocketLease {
+    let environment = CodexWebSocketEnvironment.current
+    let cache = environment?.cache ?? CodexWebSocketCache.shared
+    let lease = cache.acquire(
         url: url,
         headers: headers,
         sessionId: sessionId,
@@ -960,7 +1077,13 @@ private func processCodexWebSocketStream(
     )
     var keepConnection = true
     do {
-        var payload = body
+        let delta = useCachedContext
+            ? lease.continuation.flatMap { codexCachedDeltaBody(fullBody: body, continuation: $0) }
+            : nil
+        if useCachedContext, lease.continuation != nil, delta == nil {
+            cache.clearContinuation(lease)
+        }
+        var payload = delta ?? body
         payload["type"] = "response.create"
         let payloadData = try JSONSerialization.data(withJSONObject: payload, options: [])
         guard let payloadText = String(data: payloadData, encoding: .utf8) else {
@@ -971,18 +1094,28 @@ private func processCodexWebSocketStream(
             throw OpenAICodexStreamError.aborted
         }
 
-        try await lease.task.send(.string(payloadText))
-        onStart()
+        if let environment {
+            try await environment.io.send(task: lease.task, text: payloadText)
+        } else {
+            try await lease.task.send(.string(payloadText))
+        }
 
         var sawCompletion = false
+        var sawEvent = false
         while true {
             if signal?.isCancelled == true {
                 throw OpenAICodexStreamError.aborted
             }
 
-            let message = try await lease.task.receive()
+            let message: URLSessionWebSocketTask.Message
+            if let environment {
+                message = try await environment.io.receive(task: lease.task)
+            } else {
+                message = try await lease.task.receive()
+            }
             guard let event = parseCodexWebSocketMessage(message) else { continue }
             let type = event["type"] as? String ?? ""
+            if !sawEvent, type != "error" { sawEvent = true; onStart() }
             if type == "response.completed" || type == "response.done" || type == "response.incomplete" {
                 sawCompletion = true
             }
@@ -995,12 +1128,37 @@ private func processCodexWebSocketStream(
         if !sawCompletion {
             throw OpenAICodexStreamError.apiError("WebSocket stream closed before response.completed")
         }
-        CodexWebSocketCache.shared.release(lease, keep: keepConnection)
+        cache.release(lease, keep: keepConnection)
+        return lease
     } catch {
         keepConnection = false
-        CodexWebSocketCache.shared.release(lease, keep: keepConnection)
+        cache.release(lease, keep: keepConnection)
         throw error
     }
+}
+
+/// A delta is safe only when every earlier input item and every other request field match.
+func codexCachedDeltaBody(fullBody: [String: Any], continuation: CodexWebSocketContinuation) -> [String: Any]? {
+    guard let prior = try? JSONSerialization.jsonObject(with: continuation.lastRequestBody) as? [String: Any],
+          let responseItems = try? JSONSerialization.jsonObject(with: continuation.lastResponseItems) as? [[String: Any]],
+          let priorInput = prior["input"] as? [[String: Any]],
+          let input = fullBody["input"] as? [[String: Any]] else { return nil }
+    var oldFields = prior
+    var newFields = fullBody
+    oldFields.removeValue(forKey: "input")
+    newFields.removeValue(forKey: "input")
+    oldFields.removeValue(forKey: "previous_response_id")
+    newFields.removeValue(forKey: "previous_response_id")
+    guard oldFields as NSDictionary == newFields as NSDictionary else { return nil }
+    let prefix = priorInput + responseItems
+    guard input.count >= prefix.count,
+          zip(input, prefix).allSatisfy({ pair in
+              pair.0 as NSDictionary == pair.1 as NSDictionary
+          }) else { return nil }
+    var delta = fullBody
+    delta["input"] = Array(input.dropFirst(prefix.count))
+    delta["previous_response_id"] = continuation.lastResponseId
+    return delta
 }
 
 private func parseCodexWebSocketMessage(_ message: URLSessionWebSocketTask.Message) -> CodexRawEvent? {
@@ -1073,7 +1231,8 @@ private func collectCodexData(from bytes: URLSession.AsyncBytes) async throws ->
 func convertCodexMessages(
     model: Model,
     context: Context,
-    grammarToolInputProperties: [String: String]
+    grammarToolInputProperties: [String: String],
+    configurationUpdateEffort: String? = nil
 ) throws -> [Any] {
     var messages: [Any] = []
     let codexToolCallProviders: Set<String> = ["openai", "openai-codex", "opencode"]
@@ -1109,8 +1268,7 @@ func convertCodexMessages(
             if anchors && system.toolsAdded?.isEmpty == false {
                 messages.append(["role": "developer", "content": "\u{0}__PI_TRANSCRIPT_TOOLS__:\(toolIndex)"])
             }
-            if index == 0 { continue }
-            let text = responsesSystemText(system, initial: false, anchorsTools: anchors)
+            let text = responsesSystemText(system, initial: index == 0, anchorsTools: anchors)
             if !text.isEmpty { messages.append(["role": model.reasoning && model.compat?.supportsDeveloperRole != false ? "developer" : "system", "content": sanitizeSurrogates(text)]) }
         case .user(let user):
             switch user.content {
@@ -1215,6 +1373,11 @@ func convertCodexMessages(
                 }
             }
             if !outputItems.isEmpty {
+                if configurationUpdateEffort != nil,
+                   assistant.provider == model.provider, assistant.api == model.api, assistant.model == model.id,
+                   let effort = assistant.providerThinkingLevel {
+                    messages.append(responsesConfigurationUpdateItem(effort))
+                }
                 messages.append(contentsOf: outputItems)
             }
 
@@ -1256,10 +1419,11 @@ func convertCodexMessages(
                 ])
             }
         }
-        msgIndex += 1
+        if !(index == 0 && message.transcriptSystemMessage != nil) { msgIndex += 1 }
     }
 
-    let replay = try makeResponsesReplayMiddleware(model: model, context: context, includeSystemPrompt: false)
+    if let configurationUpdateEffort { messages.append(responsesConfigurationUpdateItem(configurationUpdateEffort)) }
+    let replay = try makeResponsesReplayMiddleware(model: model, context: context)
     return replay.rewriteInput(messages.compactMap { $0 as? [String: Any] })
 }
 

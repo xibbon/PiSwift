@@ -115,8 +115,8 @@ func r1DeclaresEveryResponsesBatchAndPreservesRequiredChoice(_ api: Api) async t
     #expect(input[noticeIndex + 1]["type"] as? String == "additional_tools")
     #expect(input.last?["content"] as? String == "updated guidance\n\nThe following tools are no longer available. Do not call them:\n- base_tool")
     if api == .openAICodexResponses {
-        #expect(body["instructions"] as? String == "base prompt")
-        #expect(!input.contains { $0["content"] as? String == "base prompt" })
+        #expect(body["instructions"] == nil)
+        #expect(input.contains { $0["content"] as? String == "base prompt" })
     } else {
         #expect(input[1]["content"] as? String == "base prompt")
     }
@@ -282,14 +282,20 @@ func r1InitialBatchesPreserveStrictAndGrammarTools(_ api: Api) async throws {
     #expect(input.first { $0["type"] as? String == "tool_search_output" }?["call_id"] as? String == expected)
 }
 
-// Shared Responses handles initial additions before it skips Codex system text (:282-292).
-@Test(.timeLimit(.minutes(1))) func r1CodexInitialRemovalIsNotRecordedWithoutNotice() async throws {
-    let body = try await r1Capture(.openAICodexResponses, messages: [
+// v1.6.0 (openai-responses-shared.ts:280-296, edfe6b2ef): Codex no longer skips the leading system
+// message, so its initial removal is recorded as on the other Responses adapters and a later
+// incremental update names it. Before v1.6.0 Codex dropped it without a record.
+@Test(.timeLimit(.minutes(1))) func r1CodexInitialRemovalIsRecordedAsOnResponses() async throws {
+    let messages = [
         r1System("base", added: [r1Tool("base_tool")], removed: ["never_announced"]),
         r1User("before"), r1System(added: [r1Tool("late_tool")])
-    ])
-    let input = try r1Input(body)
-    #expect(r1Batches(input) == [["base_tool"], ["late_tool"]])
-    #expect(input.compactMap { $0["content"] as? String }.filter { $0.contains("incremental tools update") } == [r1Incremental])
-    #expect(!input.compactMap { $0["content"] as? String }.contains { $0.contains("never_announced") })
+    ]
+    func updates(_ body: [String: Any]) throws -> [String] {
+        try r1Input(body).compactMap { $0["content"] as? String }.filter { $0.contains("incremental tools update") }
+    }
+    let codex = try await r1Capture(.openAICodexResponses, messages: messages)
+    #expect(r1Batches(try r1Input(codex)) == [["base_tool"], ["late_tool"]])
+    #expect(try updates(codex) == [r1Incremental + "\nStill unavailable: never_announced."])
+    let responses = try await r1Capture(.openAIResponses, messages: messages)
+    #expect(try updates(responses) == updates(codex))
 }
