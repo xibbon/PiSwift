@@ -35,7 +35,7 @@ public final class AgentSessionRuntime: Sendable {
     private let agentDirState: LockedState<String>
     private let runtimeState: LockedState<State>
     private let rebindState = LockedState<(@Sendable (AgentSession) async -> Void)?>(nil)
-    private let beforeInvalidateState = LockedState<(@Sendable () -> Void)?>(nil)
+    private let beforeInvalidateState = LockedState<(@Sendable () async -> Void)?>(nil)
 
     public init(
         agentDir: String,
@@ -74,7 +74,8 @@ public final class AgentSessionRuntime: Sendable {
     }
 
     /// Run host teardown after session_shutdown and before the outgoing session is disposed.
-    public func setBeforeSessionInvalidate(_ handler: (@Sendable () -> Void)?) {
+    /// The runtime awaits the handler, so a host can pass a `@MainActor` closure that resets its UI.
+    public func setBeforeSessionInvalidate(_ handler: (@Sendable () async -> Void)?) {
         beforeInvalidateState.withLock { $0 = handler }
     }
 
@@ -293,7 +294,7 @@ public final class AgentSessionRuntime: Sendable {
                 _ = await runner.emit(SessionShutdownEvent(reason: reason,
                     targetSessionFile: args.sessionManager.getSessionFile()))
             }
-            beforeInvalidateState.withLock { $0 }?()
+            if let beforeInvalidate = beforeInvalidateState.withLock({ $0 }) { await beforeInvalidate() }
             prev.dispose()
         }
         runtimeState.withLock { $0.session = next }

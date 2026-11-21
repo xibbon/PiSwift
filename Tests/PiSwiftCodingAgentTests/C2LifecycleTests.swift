@@ -167,6 +167,29 @@ struct C2LifecycleTests {
         ])
     }
 
+    /// PT1 found that a host must reset its UI on the main actor before the old session is disposed.
+    @Test func beforeInvalidateAwaitsAMainActorHandlerBeforeDisposal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("c2-invalidate-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let trace = C2LifecycleTrace()
+        let first = c2LifecycleSession(.inMemory(root.path), trace, "old")
+        await first.startExtensions()
+        trace.clear()
+        let runtime = AgentSessionRuntime(agentDir: root.path, factory: { args in
+            c2LifecycleSession(args.sessionManager, trace, "next")
+        }, initialSession: first)
+        runtime.setBeforeSessionInvalidate { @MainActor in
+            MainActor.assertIsolated()
+            await Task.yield()
+            trace.add("host:beforeInvalidate:disposed=\(first.hookRunner == nil)")
+        }
+        _ = try await runtime.newSessionRebinding()
+        #expect(trace.take().contains("host:beforeInvalidate:disposed=false"))
+        #expect(first.hookRunner == nil)
+        runtime.dispose()
+    }
+
     @Test("new_session")
     func factoryNewSessionOrder() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("c2-lifecycle-\(UUID())")
