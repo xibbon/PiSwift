@@ -1,4 +1,4 @@
-// Extract the v1.5.2 TypeBox declarations without importing the working tree.
+// Extract the v1.6.0 TypeBox declarations without importing the working tree.
 // Only the Type constructors used by the seven built-in tools are accepted.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire('/Users/miguel/cvs/pi/pi-mono/package.json');
 const ts = require('typescript');
 const repo = '/Users/miguel/cvs/pi/pi-mono';
-const destination = fileURLToPath(new URL('../../Tests/PiSwiftCodingAgentTests/fixtures/builtin-tool-schemas-v152.json', import.meta.url));
+const destination = fileURLToPath(new URL('../../Tests/PiSwiftCodingAgentTests/fixtures/builtin-tool-schemas.json', import.meta.url));
 const names = ['bash', 'edit', 'find', 'grep', 'ls', 'read', 'write'];
 
 function key(node) {
@@ -60,9 +60,9 @@ function schema(node, declarations) {
   throw new Error(`Unsupported Type.${kind}`);
 }
 
-const result = { tag: 'v1.5.2', source: 'packages/coding-agent/src/core/tools/{bash,edit,find,grep,ls,read,write}.ts', schemas: {} };
+const result = { tag: 'v1.6.0', source: 'packages/coding-agent/src/core/tools/{bash,edit,find,grep,ls,read,write}.ts', schemas: {} };
 for (const name of names) {
-  const source = execFileSync('git', ['-C', repo, 'show', `v1.5.2:packages/coding-agent/src/core/tools/${name}.ts`], { encoding: 'utf8' });
+  const source = execFileSync('git', ['-C', repo, 'show', `v1.6.0:packages/coding-agent/src/core/tools/${name}.ts`], { encoding: 'utf8' });
   const file = ts.createSourceFile(`${name}.ts`, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const declarations = new Map();
   for (const statement of file.statements) {
@@ -75,9 +75,9 @@ for (const name of names) {
 }
 const encoded = `${JSON.stringify(result, null, 2)}\n`;
 if (process.argv.includes('--check')) {
-  if (readFileSync(destination, 'utf8') !== encoded) throw new Error('Built-in schema fixture differs from v1.5.2');
-  console.log('Built-in schema fixture matches v1.5.2 (7 tools).');
+  if (readFileSync(destination, 'utf8') !== encoded) throw new Error('Built-in schema fixture differs from v1.6.0');
+  console.log('Built-in schema fixture matches v1.6.0 (7 tools).');
 } else {
   writeFileSync(destination, encoded);
-  console.log('Built-in schema fixture written for v1.5.2 (7 tools).');
+  console.log('Built-in schema fixture written for v1.6.0 (7 tools).');
 }

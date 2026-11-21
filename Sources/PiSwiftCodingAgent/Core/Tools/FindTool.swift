@@ -37,7 +37,7 @@ func createFindTool(cwd: String, environment: [String: String]) -> AgentTool {
         parameters: [
             "type": AnyCodable("object"),
             "properties": AnyCodable([
-                "pattern": ["type": "string", "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"],
+                "pattern": ["type": "string", "description": "Glob pattern relative to the search directory, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth"],
                 "path": ["type": "string", "description": "Directory to search in (default: current directory)"],
                 "limit": ["type": "number", "description": "Maximum number of results (default: 1000)"],
             ]),
@@ -65,8 +65,11 @@ func createFindTool(cwd: String, environment: [String: String]) -> AgentTool {
         #else
         let normalizedPattern = pattern
         #endif
-        let patternRegex = findGlobRegex(normalizedPattern)
-        let matchBasename = !normalizedPattern.contains("/")
+        var effectivePattern = normalizedPattern
+        while effectivePattern.hasPrefix("./") { effectivePattern.removeFirst(2) }
+        let patternRegex = findGlobRegex(effectivePattern)
+        let matchBasename = !effectivePattern.contains("/")
+        let matchAbsolute = effectivePattern.hasPrefix("/")
 
         var matches: [String] = []
         var resultLimitReached = false
@@ -91,7 +94,9 @@ func createFindTool(cwd: String, environment: [String: String]) -> AgentTool {
             let normalized = item.relative.replacingOccurrences(of: "\\", with: "/")
             if item.isDirectory { continue }
 
-            let candidate = matchBasename ? url.lastPathComponent : normalized
+            let absoluteRoot = URL(fileURLWithPath: searchPath).standardizedFileURL.path
+            let absoluteCandidate = absoluteRoot.hasSuffix("/") ? absoluteRoot + normalized : absoluteRoot + "/" + normalized
+            let candidate = matchBasename ? url.lastPathComponent : (matchAbsolute ? absoluteCandidate : normalized)
             if let patternRegex, patternRegex.firstMatch(in: candidate, options: [], range: NSRange(location: 0, length: candidate.utf16.count)) == nil {
                 continue
             }

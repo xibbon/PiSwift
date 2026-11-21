@@ -1,40 +1,80 @@
 import PiSwiftAI
 import PiSwiftAgent
 
-/// The full provider diagnostics remain on the assistant message stored in the session.
+/// A provider report that reasoning was withheld from a request.
 public struct ThinkingDropNotice: Sendable {
-    /// Cumulative number in the current Anthropic response, matching the upstream notice.
+    public let provider: String
+    public let kind: String
     public let count: Int
-    /// The transformation records that produced this notice, including paths and reasons.
+    public let reasons: [String]
     public let transformations: [[String: AnyCodable]]
-}
 
-public func thinkingDropTransformations(in message: AssistantMessage) -> [[String: AnyCodable]] {
-    (message.diagnostics ?? []).filter { $0.type == "anthropic_input_transformations" }.flatMap { diagnostic -> [[String: AnyCodable]] in
-        guard let records = diagnostic.details["transformations"]?.value as? [[String: Any]] else { return [] }
-        return records.filter { $0["type"] as? String == "thinking_dropped" }.map { record in
-            record.mapValues { AnyCodable($0) }
+    public var text: String {
+        let noun: String
+        switch kind {
+        case "openai_input_transformations": noun = count == 1 ? "reasoning item" : "reasoning items"
+        default: noun = count == 1 ? "thinking block" : "thinking blocks"
         }
+        let suffix = reasons.isEmpty ? "" : ": " + reasons.joined(separator: ", ")
+        return "\(provider) dropped \(count) \(noun)\(suffix) (details in session)"
     }
 }
 
-/// Suppress cumulative repeats. The UI can call this at message_end, before persistence.
+/// The first diagnostic in a response with withheld reasoning, in source order.
+public func reasoningDropNotice(in message: AssistantMessage) -> ThinkingDropNotice? {
+    for diagnostic in message.diagnostics ?? [] {
+        let provider: String
+        let droppedType: String
+        switch diagnostic.type {
+        case "anthropic_input_transformations":
+            provider = "Anthropic"; droppedType = "thinking_dropped"
+        case "openai_input_transformations":
+            provider = "OpenAI"; droppedType = "reasoning"
+        default: continue
+        }
+        guard let raw = diagnostic.details["transformations"]?.value as? [Any] else { continue }
+        let transformations = raw.compactMap { $0 as? [String: Any] }
+            .filter { $0["type"] as? String == droppedType }
+            .map { $0.mapValues { AnyCodable($0) } }
+        guard !transformations.isEmpty else { continue }
+        var reasons: [String] = []
+        for transformation in transformations {
+            if let reason = transformation["reason"]?.value as? String, !reasons.contains(reason) {
+                reasons.append(reason)
+            }
+        }
+        return ThinkingDropNotice(provider: provider, kind: diagnostic.type,
+                                  count: transformations.count, reasons: reasons,
+                                  transformations: transformations)
+    }
+    return nil
+}
+
+/// Compatibility API. Use `reasoningDropNotice(in:)` for both providers.
+public func thinkingDropTransformations(in message: AssistantMessage) -> [[String: AnyCodable]] {
+    reasoningDropNotice(in: message)?.transformations ?? []
+}
+
+/// Suppress a cumulative notice when the latest earlier assistant reported the same kind and count.
 public func newThinkingDropNotice(current: AssistantMessage, previous: AssistantMessage?) -> ThinkingDropNotice? {
-    let transformations = thinkingDropTransformations(in: current)
-    guard !transformations.isEmpty else { return nil }
-    let previousCount = previous.map { thinkingDropTransformations(in: $0).count } ?? 0
-    guard transformations.count > previousCount else { return nil }
-    return ThinkingDropNotice(count: transformations.count, transformations: transformations)
+    guard let notice = reasoningDropNotice(in: current) else { return nil }
+    if let previousNotice = previous.flatMap(reasoningDropNotice(in:)),
+       previousNotice.kind == notice.kind, previousNotice.count >= notice.count { return nil }
+    return notice
 }
 
 extension SessionManager {
-    /// Compare with the last persisted assistant in the current branch.
+    /// The current message is already persisted when the Swift UI receives `message_end`.
     public func newThinkingDropNotice(for current: AssistantMessage) -> ThinkingDropNotice? {
-        let previous = getBranch().reversed().compactMap { entry -> AssistantMessage? in
+        var assistants = getBranch().reversed().compactMap { entry -> AssistantMessage? in
             guard case .message(let messageEntry) = entry,
                   case .assistant(let assistant) = messageEntry.message else { return nil }
             return assistant
-        }.first
-        return PiSwiftCodingAgent.newThinkingDropNotice(current: current, previous: previous)
+        }
+        if let latest = assistants.first, latest.timestamp == current.timestamp,
+           latest.model == current.model, latest.diagnostics == current.diagnostics {
+            assistants.removeFirst()
+        }
+        return PiSwiftCodingAgent.newThinkingDropNotice(current: current, previous: assistants.first)
     }
 }

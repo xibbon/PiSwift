@@ -286,6 +286,7 @@ public func createBashTool(cwd: String, options: BashToolOptions? = nil) -> PiSw
                     "totalBytes": truncation.totalBytes,
                     "outputLines": truncation.outputLines,
                     "outputBytes": truncation.outputBytes,
+                    "lastLinePartial": truncation.lastLinePartial,
                 ],
                 "fullOutputPath": tempFilePath as Any,
             ])

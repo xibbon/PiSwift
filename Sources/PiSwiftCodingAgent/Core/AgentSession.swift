@@ -3578,7 +3578,12 @@ public final class AgentSession: Sendable {
     public func getLastAssistantText() -> String? {
         let lastAssistant = agent.state.messages.reversed().first { message in
             if case .assistant(let assistant) = message {
-                return !(assistant.stopReason == .aborted && assistant.content.isEmpty)
+                return assistant.stopReason == .stop || assistant.content.contains { block in
+                    if case .text(let text) = block {
+                        return !text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
+                    return false
+                }
             }
             return false
         }
