@@ -1353,6 +1353,9 @@ private func withTempDir(_ body: (String) async throws -> Void) async rethrows {
         let session = result.session
         defer { session.dispose() }
 
+        // v1.6.0 agent-session.ts:3448-3452: resource discovery follows session_start.
+        await session.startExtensions()
+
         let prompt = try #require(session.promptTemplates.first { $0.name == "extension-prompt" })
         #expect(prompt.content.contains("Prompt loaded from resources_discover."))
         #expect(prompt.sourceInfo.source == "extension:resources-extension")

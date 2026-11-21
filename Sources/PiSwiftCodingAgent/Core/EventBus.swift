@@ -63,11 +63,14 @@ public final class EventBusImpl: Sendable, EventBusController {
 
 /// Tracks one extension's event-bus subscriptions so reload and disposal can remove them.
 final class TrackedEventBus: Sendable, EventBus {
+    typealias ErrorReporter = @Sendable (any Error) -> Void
+
     private struct State: Sendable {
         var unsubscribers: [UUID: @Sendable () -> Void] = [:]
         var disposed = false
         var staging = false
         var pending: [UUID: (String, EventBusHandler)] = [:]
+        var makeErrorReporter: (@Sendable (String) -> ErrorReporter?)?
     }
 
     private let base: EventBus
@@ -75,6 +78,12 @@ final class TrackedEventBus: Sendable, EventBus {
 
     init(_ base: EventBus) {
         self.base = base
+    }
+
+    func setErrorReporterFactory(_ factory: @escaping @Sendable (String) -> ErrorReporter?) {
+        state.withLock {
+            if !$0.disposed { $0.makeErrorReporter = factory }
+        }
     }
 
     func emit(_ channel: String, _ data: (any Sendable)?) {
@@ -111,7 +120,15 @@ final class TrackedEventBus: Sendable, EventBus {
     }
 
     private func subscribe(_ id: UUID, _ channel: String, _ handler: @escaping EventBusHandler) {
-        let unsubscribe = base.on(channel, handler)
+        let unsubscribe = base.on(channel) { [weak self] data in
+            let reportError = self?.errorReporter(for: channel)
+            do {
+                try await handler(data)
+            } catch {
+                // The runner can be installed while a handler from extension loading is suspended.
+                (reportError ?? self?.errorReporter(for: channel))?(error)
+            }
+        }
         let keep = state.withLock { state -> Bool in
             guard !state.disposed else { return false }
             state.unsubscribers[id] = unsubscribe
@@ -120,10 +137,16 @@ final class TrackedEventBus: Sendable, EventBus {
         if !keep { unsubscribe() }
     }
 
+    private func errorReporter(for channel: String) -> ErrorReporter? {
+        let makeErrorReporter = state.withLock { $0.makeErrorReporter }
+        return makeErrorReporter?(channel)
+    }
+
     func dispose() {
         let unsubscribers = state.withLock { state -> [@Sendable () -> Void] in
             guard !state.disposed else { return [] }
             state.disposed = true
+            state.makeErrorReporter = nil
             state.pending.removeAll()
             let values = Array(state.unsubscribers.values)
             state.unsubscribers.removeAll()

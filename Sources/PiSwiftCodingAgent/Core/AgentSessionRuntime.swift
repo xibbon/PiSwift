@@ -14,21 +14,28 @@ import PiSwiftAI
 /// retained for source compatibility. The runtime is the recommended path forward and matches
 /// the upstream extension migration shape (`session_start.reason` discriminator on the event).
 ///
-/// The runtime supports two modes:
-///   1. **Same-cwd replacement** (default): delegates to the existing `AgentSession` legacy
-///      methods. No factory invocation. Cheap.
-///   2. **Cross-cwd / full rebuild**: invokes the factory closure to construct a fresh session
-///      against a new cwd / SessionManager. Use this for `/fork` into a different worktree
-///      or `switchSession` into a session whose stored cwd differs from the current one.
+/// The rebinding methods use the factory for every replacement, including the same cwd.
+/// Legacy same-cwd methods remain available while older hosts migrate.
 ///
 /// SAFETY: mutable runtime state is stored in `LockedState`; the factory closure is
 /// `@Sendable` and invoked from async methods that publish the replacement only after
 /// construction succeeds.
 public final class AgentSessionRuntime: Sendable {
+    private struct DiagnosticKey: Hashable, Sendable {
+        let type: String
+        let message: String
+    }
+
+    private struct State: Sendable {
+        var session: AgentSession?
+        var reportedDiagnostics: Set<DiagnosticKey> = []
+    }
+
     private let factory: CreateAgentSessionRuntimeFactory
     private let agentDirState: LockedState<String>
-    private let sessionState: LockedState<AgentSession?>
+    private let runtimeState: LockedState<State>
     private let rebindState = LockedState<(@Sendable (AgentSession) async -> Void)?>(nil)
+    private let beforeInvalidateState = LockedState<(@Sendable () -> Void)?>(nil)
 
     public init(
         agentDir: String,
@@ -37,7 +44,7 @@ public final class AgentSessionRuntime: Sendable {
     ) {
         self.factory = factory
         self.agentDirState = LockedState(agentDir)
-        self.sessionState = LockedState(initialSession)
+        self.runtimeState = LockedState(State(session: initialSession))
     }
 
     /// Build each replacement from the host's session options. The host supplies its
@@ -66,9 +73,28 @@ public final class AgentSessionRuntime: Sendable {
         rebindState.withLock { $0 = handler }
     }
 
+    /// Run host teardown after session_shutdown and before the outgoing session is disposed.
+    public func setBeforeSessionInvalidate(_ handler: (@Sendable () -> Void)?) {
+        beforeInvalidateState.withLock { $0 = handler }
+    }
+
     /// The current live session. `nil` only after `dispose()`.
     public var session: AgentSession? {
-        sessionState.withLock { $0 }
+        runtimeState.withLock { $0.session }
+    }
+
+    /// Returns the current session's diagnostics once per type and message for this runtime.
+    /// Call at startup and after a successful replacement.
+    public func takeUnreportedDiagnostics() -> [ResourceDiagnostic] {
+        // A custom resource loader can provide diagnostics. Query it outside the runtime lock.
+        let current = session
+        let diagnostics = current?.creationDiagnostics ?? []
+        return runtimeState.withLock { state in
+            guard state.session === current else { return [] }
+            return diagnostics.filter { diagnostic in
+                state.reportedDiagnostics.insert(DiagnosticKey(type: diagnostic.type, message: diagnostic.message)).inserted
+            }
+        }
     }
 
     public var agentDir: String {
@@ -79,10 +105,33 @@ public final class AgentSessionRuntime: Sendable {
     /// Equivalent to upstream `runtime.newSession()` for the common single-cwd case.
     /// Delegates to the existing `AgentSession.newSession(_:)` rather than re-creating
     /// the session entirely — fast path.
+    @available(*, deprecated, message: "Use newSessionRebinding(_:) to rebuild and bind the replacement.")
     @discardableResult
     public func newSession(_ options: NewSessionOptions? = nil) async -> Bool {
         guard let s = session else { return false }
         return await s.newSession(options)
+    }
+
+    /// Creates a session and rebuilds its services before the replacement is published.
+    @discardableResult
+    public func newSessionRebinding(_ options: NewSessionOptions? = nil) async throws -> AgentSession {
+        guard let current = session else { throw AgentSessionRuntimeError.switchCancelled }
+        try await checkBeforeSwitch(reason: .new)
+        let cwd = current.sessionManager.getCwd()
+        let sessionDir = current.sessionManager.getSessionDir()
+        let manager: SessionManager
+        if sessionDir.isEmpty {
+            manager = SessionManager.inMemory(cwd, options: options)
+        } else {
+            manager = SessionManager.create(cwd, sessionDir)
+            if let options, manager.newSession(options) == nil {
+                throw SessionCreationError(message: manager.getLastWriteError() ?? "Could not create session.")
+            }
+        }
+        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+            cwd: cwd, agentDir: agentDir, sessionManager: manager,
+            sessionStartEvent: AgentSessionStartEvent(reason: .new, previousSessionFile: current.sessionFile)),
+            rollbackSessionFile: manager.getSessionFile())
     }
 
     /// Resume an existing session by file path.
@@ -129,6 +178,53 @@ public final class AgentSessionRuntime: Sendable {
     public func fork(_ entryId: String) async throws -> (selectedText: String, cancelled: Bool) {
         guard let s = session else { return ("", true) }
         return try await s.fork(entryId)
+    }
+
+    /// Rebuild a fork through the runtime factory. `includeEntry` implements `/clone`.
+    @discardableResult
+    public func forkRebinding(_ entryId: String, includeEntry: Bool = false) async throws -> AgentSession {
+        guard let current = session,
+              let sourcePath = current.sessionFile,
+              FileManager.default.fileExists(atPath: sourcePath) else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
+        guard let entry = current.sessionManager.getEntry(entryId) else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
+        if !includeEntry {
+            guard case .message(let message) = entry, case .user = message.message else {
+                throw AgentSessionError.invalidEntryIdForForking
+            }
+        }
+        if let runner = current.hookRunner, runner.hasHandlers("session_before_fork") {
+            let position: SessionForkPosition = includeEntry ? .at : .before
+            let result = await runner.emit(SessionBeforeForkEvent(entryId: entryId, position: position))
+            if (result as? SessionBeforeForkResult)?.cancel == true {
+                throw AgentSessionRuntimeError.switchCancelled
+            }
+        }
+        let manager = try SessionManager.openValidated(sourcePath, current.sessionManager.getSessionDir())
+        let branchPoint = includeEntry ? entryId : entry.parentId
+        let path: String?
+        if let branchPoint {
+            path = manager.createBranchedSession(branchPoint)
+        } else {
+            path = manager.newSession(NewSessionOptions(parentSession: sourcePath))
+        }
+        guard let path else { throw AgentSessionError.invalidEntryIdForForking }
+        return try await replaceSession(args: AgentSessionRuntimeFactoryArgs(
+            cwd: manager.getCwd(), agentDir: agentDir, sessionManager: manager,
+            sessionStartEvent: AgentSessionStartEvent(reason: .fork, previousSessionFile: sourcePath)),
+            rollbackSessionFile: path)
+    }
+
+    /// Clone the current leaf, including its entry, through the runtime factory.
+    @discardableResult
+    public func cloneAtLeafRebinding() async throws -> AgentSession {
+        guard let leaf = session?.sessionManager.getLeafId() else {
+            throw AgentSessionError.invalidEntryIdForForking
+        }
+        return try await forkRebinding(leaf, includeEntry: true)
     }
 
     public func importFromJsonl(_ inputPath: String, fallbackCwd: String? = nil) async throws -> HookCommandResult {
@@ -197,9 +293,10 @@ public final class AgentSessionRuntime: Sendable {
                 _ = await runner.emit(SessionShutdownEvent(reason: reason,
                     targetSessionFile: args.sessionManager.getSessionFile()))
             }
+            beforeInvalidateState.withLock { $0 }?()
             prev.dispose()
         }
-        sessionState.withLock { $0 = next }
+        runtimeState.withLock { $0.session = next }
         if let rebind = rebindState.withLock({ $0 }) { await rebind(next) }
         if let runner = next.hookRunner {
             let reason = SessionStartReason(rawValue: args.sessionStartEvent.reason.rawValue) ?? .resume
@@ -209,9 +306,9 @@ public final class AgentSessionRuntime: Sendable {
         return next
     }
 
-    private func checkBeforeSwitch(_ targetSessionFile: String) async throws {
+    private func checkBeforeSwitch(_ targetSessionFile: String? = nil, reason: SessionSwitchReason = .resume) async throws {
         guard let runner = session?.hookRunner, runner.hasHandlers("session_before_switch") else { return }
-        let result = await runner.emit(SessionBeforeSwitchEvent(reason: .resume, targetSessionFile: targetSessionFile))
+        let result = await runner.emit(SessionBeforeSwitchEvent(reason: reason, targetSessionFile: targetSessionFile))
         if (result as? SessionBeforeSwitchResult)?.cancel == true {
             throw AgentSessionRuntimeError.switchCancelled
         }
@@ -252,7 +349,7 @@ public final class AgentSessionRuntime: Sendable {
             session.dispose()
             await registry.settleCredentialWrites()
         }
-        sessionState.withLock { $0 = nil }
+        runtimeState.withLock { $0.session = nil }
     }
 
     /// Tear down the runtime and the live session synchronously. This compatibility API does not
@@ -261,8 +358,13 @@ public final class AgentSessionRuntime: Sendable {
         if let s = session {
             s.dispose()
         }
-        sessionState.withLock { $0 = nil }
+        runtimeState.withLock { $0.session = nil }
     }
+}
+
+private struct SessionCreationError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 public enum AgentSessionRuntimeError: LocalizedError, Sendable {

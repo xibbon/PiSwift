@@ -107,7 +107,7 @@ public struct ExtensionDylibLoader {
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners,
             isExtension: true
-        )
+        ).withTrackedEventBus(api.trackedEventBus)
     }
 }
 

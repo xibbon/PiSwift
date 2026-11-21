@@ -174,6 +174,10 @@ public struct ModelScopeDiagnostic: Sendable, Equatable {
 public struct ResolveModelScopeResult: Sendable {
     public let scopedModels: [ScopedModel]
     public let diagnostics: [ModelScopeDiagnostic]
+
+    var resourceDiagnostics: [ResourceDiagnostic] {
+        diagnostics.map { ResourceDiagnostic(type: $0.type.rawValue, message: $0.message) }
+    }
 }
 
 public func resolveModelScopeFromModels(_ patterns: [String], _ models: [Model]) -> ResolveModelScopeResult {
@@ -225,12 +229,28 @@ public func resolveModelScopeFromModels(_ patterns: [String], _ models: [Model])
 }
 
 public func resolveModelScopeWithDiagnostics(_ patterns: [String], _ modelRegistry: ModelRegistry) async -> ResolveModelScopeResult {
-    resolveModelScopeFromModels(patterns, await modelRegistry.getAvailable())
+    guard !patterns.isEmpty else { return ResolveModelScopeResult(scopedModels: [], diagnostics: []) }
+    return resolveModelScopeFromModels(patterns, await modelRegistry.getAvailable())
 }
 
 @available(*, deprecated, message: "Use resolveModelScopeWithDiagnostics and display its diagnostics in the host.")
 public func resolveModelScope(_ patterns: [String], _ modelRegistry: ModelRegistry) async -> [ScopedModel] {
     await resolveModelScopeWithDiagnostics(patterns, modelRegistry).scopedModels
+}
+
+func modelRestoreFallbackMessage(provider: String, modelID: String, fallback: Model) -> String {
+    "Could not restore model \(provider)/\(modelID). Using \(fallback.provider)/\(fallback.id)"
+}
+
+func findSessionDefaultModel(_ settings: SettingsManager, _ registry: ModelRegistry) async -> Model? {
+    if let provider = settings.getDefaultProvider(),
+       let id = settings.getDefaultModel(),
+       let model = registry.find(provider, id),
+       await registry.isAvailable(model) {
+        return model
+    }
+    let available = await registry.getAvailable()
+    return await selectDefaultModel(available: available, registry: registry) ?? available.first
 }
 
 public struct InitialModelResult: Sendable {

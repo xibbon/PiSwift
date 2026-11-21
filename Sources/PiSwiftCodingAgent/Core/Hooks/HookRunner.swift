@@ -28,6 +28,19 @@ public final class HookRunner: Sendable {
     private let settingsManager: SettingsManager?
     private let state: LockedState<State>
     private let eventObservers = LockedState<[UUID: @Sendable (any HookEvent) -> Void]>([:])
+    private let lifecycleState = LockedState((bound: false, afterStart: Optional<@Sendable (SessionStartEvent) async -> Void>.none))
+
+    /// Record that a host installed extension bindings, including an empty binding.
+    public var extensionsBound: Bool { lifecycleState.withLock { $0.bound } }
+
+    /// The session constructor wires the runner before a host binds extensions.
+    public func markExtensionsUnbound() { lifecycleState.withLock { $0.bound = false } }
+
+    /// Runs after every ordinary session start emission. Session owners use this to discover
+    /// resources registered by a session_start handler.
+    public func setAfterSessionStart(_ handler: (@Sendable (SessionStartEvent) async -> Void)?) {
+        lifecycleState.withLock { $0.afterStart = handler }
+    }
 
     private struct State: Sendable {
         var hooks: [LoadedHook]
@@ -59,6 +72,7 @@ public final class HookRunner: Sendable {
         var mode: HookMode
         var hasUI: Bool
         var errorListeners: [UUID: @Sendable (HookError) -> Void]
+        var eventBusSessionGeneration = UUID()
         var reportedMcpServers: Set<String>
         /// Per-hook setters captured at initialize() so they can be re-applied to hooks
         /// added via `replaceExtensionHooks(_:)` without re-plumbing the whole TUI.
@@ -233,11 +247,6 @@ public final class HookRunner: Sendable {
         set { state.withLock { $0.hasUI = newValue } }
     }
 
-    private var errorListeners: [UUID: @Sendable (HookError) -> Void] {
-        get { state.withLock { $0.errorListeners } }
-        set { state.withLock { $0.errorListeners = newValue } }
-    }
-
     public init(_ hooks: [LoadedHook], _ cwd: String, _ sessionManager: SessionManager, _ modelRegistry: ModelRegistry,
                 settingsManager: SettingsManager? = nil) {
         self.mcpServers = hooks.compactMap(\.mcpServerRegistry).first ?? McpServerRegistry()
@@ -285,6 +294,7 @@ public final class HookRunner: Sendable {
 
     private func wireProviderHandlers(for hook: LoadedHook) {
         hook.setGetSettingsHandler { [settingsManager] in settingsManager?.getSettings() ?? Settings() }
+        wireEventBusErrors(for: hook)
         let sourceId = hook.resolvedPath
         hook.setRegisterProviderHandler { [modelRegistry] config in
             modelRegistry.registerProvider(config, sourceId: sourceId)
@@ -373,6 +383,7 @@ public final class HookRunner: Sendable {
         mode: HookMode = .print,
         hasUI: Bool = false
     ) {
+        lifecycleState.withLock { $0.bound = true }
         self.getModel = getModel
         self.getScopedModels = getScopedModels
         self.getSystemPrompt = getSystemPrompt
@@ -740,14 +751,43 @@ public final class HookRunner: Sendable {
 
     public func onError(_ listener: @escaping @Sendable (HookError) -> Void) -> @Sendable () -> Void {
         let id = UUID()
-        errorListeners[id] = listener
+        state.withLock { $0.errorListeners[id] = listener }
         return { [weak self] in
-            self?.errorListeners[id] = nil
+            self?.state.withLock { $0.errorListeners[id] = nil }
+        }
+    }
+
+    func advanceEventBusSessionGeneration() {
+        state.withLock { $0.eventBusSessionGeneration = UUID() }
+    }
+
+    private func wireEventBusErrors(for hook: LoadedHook) {
+        guard let eventBus = hook.trackedEventBus else { return }
+        let hookPath = hook.path
+        eventBus.setErrorReporterFactory { [weak self, weak eventBus] channel in
+            guard let self, let eventBus else { return nil }
+            let sessionId = self.sessionManager.getSessionId()
+            let generation = self.state.withLock { $0.eventBusSessionGeneration }
+            return { [weak self, weak eventBus] error in
+                guard let self, let eventBus,
+                      self.sessionManager.getSessionId() == sessionId else { return }
+                // Reload can keep the same path. Check the bus instance for this load.
+                let listeners = self.state.withLock { state -> [@Sendable (HookError) -> Void] in
+                    guard state.eventBusSessionGeneration == generation,
+                          state.hooks.contains(where: { $0.trackedEventBus === eventBus }) else { return [] }
+                    return Array(state.errorListeners.values)
+                }
+                guard !listeners.isEmpty else { return }
+                let report = HookError(hookPath: hookPath, event: "events:\(channel)",
+                                       error: error.localizedDescription, stack: captureStack())
+                for listener in listeners { listener(report) }
+            }
         }
     }
 
     public func emitError(_ error: HookError) {
-        for listener in errorListeners.values {
+        let listeners = state.withLock { Array($0.errorListeners.values) }
+        for listener in listeners {
             listener(error)
         }
     }
@@ -948,6 +988,12 @@ public final class HookRunner: Sendable {
             emitError(HookError(hookPath: "<runner>", event: event.type, error: "Use emitBoundary for boundary events"))
             return nil
         }
+        if let start = event as? SessionStartEvent {
+            if start.reason == .new || start.reason == .resume || start.reason == .fork {
+                advanceEventBusSessionGeneration()
+            }
+            lifecycleState.withLock { $0.bound = true }
+        }
         var lastResult: Any?
         await dispatchEvent(event, consume: { result, _ in
             lastResult = result
@@ -957,6 +1003,10 @@ public final class HookRunner: Sendable {
             if let result = result as? SessionBeforeSwitchResult, result.cancel { return true }
             return false
         })
+        if let start = event as? SessionStartEvent,
+           let afterStart = lifecycleState.withLock({ $0.afterStart }) {
+            await afterStart(start)
+        }
         return lastResult
     }
 
