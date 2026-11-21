@@ -66,6 +66,8 @@ public struct CreateAgentSessionOptions: Sendable {
     public var customTools: [CustomToolDefinition]?
     public var additionalCustomToolPaths: [String]?
     public var resourceLoader: ResourceLoader?
+    public var packageCommandOutput: PackageCommandOutput
+    public var onPackageProgress: ProgressCallback?
     public var hooks: [HookDefinition]?
     public var additionalHookPaths: [String]?
     public var additionalExtensionPaths: [String]?
@@ -105,6 +107,8 @@ public struct CreateAgentSessionOptions: Sendable {
         customTools: [CustomToolDefinition]? = nil,
         additionalCustomToolPaths: [String]? = nil,
         resourceLoader: ResourceLoader? = nil,
+        packageCommandOutput: PackageCommandOutput = .inherit,
+        onPackageProgress: ProgressCallback? = nil,
         hooks: [HookDefinition]? = nil,
         additionalHookPaths: [String]? = nil,
         additionalExtensionPaths: [String]? = nil,
@@ -142,6 +146,8 @@ public struct CreateAgentSessionOptions: Sendable {
         self.customTools = customTools
         self.additionalCustomToolPaths = additionalCustomToolPaths
         self.resourceLoader = resourceLoader
+        self.packageCommandOutput = packageCommandOutput
+        self.onPackageProgress = onPackageProgress
         self.hooks = hooks
         self.additionalHookPaths = additionalHookPaths
         self.additionalExtensionPaths = additionalExtensionPaths
@@ -600,6 +606,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             cwd: cwd,
             agentDir: agentDir,
             settingsManager: settingsManager,
+            packageCommandOutput: options.packageCommandOutput,
+            onPackageProgress: options.onPackageProgress,
             noExtensions: options.noExtensions,
             builtinExtensions: (options.inlineExtensions ?? []).filter(\.builtin).map(\.name),
             disabledBuiltinExtensions: options.disabledBuiltinExtensions,

@@ -19,6 +19,14 @@ public struct ExecOptions: Sendable {
     }
     /// Discard stderr instead of retaining it in memory.
     public var captureStderr: Bool
+    /// Explicit child environment. Nil inherits the current process environment.
+    public var environment: [String: String]?
+    /// Keep the end of combined stdout and stderr, in characters.
+    public var combinedOutputTailCharacters: Int?
+    /// After child exit, close quiet pipes held by descendants after this interval.
+    public var postExitPipeIdleGrace: TimeInterval?
+    /// Use a closed input stream for commands that cannot prompt.
+    public var ignoreStdin: Bool
     /// Delay before forcing a child that ignores SIGTERM to exit.
     public var terminationGracePeriod: TimeInterval
 
@@ -29,7 +37,11 @@ public struct ExecOptions: Sendable {
         maxOutputBytes: Int? = nil,
         maxBuffer: Int? = nil,
         captureStderr: Bool = true,
-        terminationGracePeriod: TimeInterval = 5
+        terminationGracePeriod: TimeInterval = 5,
+        environment: [String: String]? = nil,
+        combinedOutputTailCharacters: Int? = nil,
+        postExitPipeIdleGrace: TimeInterval? = nil,
+        ignoreStdin: Bool = false
     ) {
         self.signal = signal
         self.timeout = timeout
@@ -37,6 +49,10 @@ public struct ExecOptions: Sendable {
         self.maxOutputBytes = maxBuffer ?? maxOutputBytes
         self.captureStderr = captureStderr
         self.terminationGracePeriod = terminationGracePeriod
+        self.environment = environment
+        self.combinedOutputTailCharacters = combinedOutputTailCharacters
+        self.postExitPipeIdleGrace = postExitPipeIdleGrace
+        self.ignoreStdin = ignoreStdin
     }
 }
 
@@ -47,13 +63,15 @@ public struct ExecResult: Sendable {
     public var killed: Bool
     public var outputExceeded: Bool
     public var truncated: Bool { outputExceeded }
+    public var combinedOutput: String?
 
-    public init(stdout: String, stderr: String, code: Int, killed: Bool, outputExceeded: Bool = false) {
+    public init(stdout: String, stderr: String, code: Int, killed: Bool, outputExceeded: Bool = false, combinedOutput: String? = nil) {
         self.stdout = stdout
         self.stderr = stderr
         self.code = code
         self.killed = killed
         self.outputExceeded = outputExceeded
+        self.combinedOutput = combinedOutput
     }
 }
 
@@ -117,6 +135,8 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
 
     let directory = options?.cwd ?? cwd
     process.currentDirectoryURL = URL(fileURLWithPath: directory)
+    process.environment = options?.environment
+    if options?.ignoreStdin == true { process.standardInput = FileHandle.nullDevice }
 
     let stdoutPipe = Pipe()
     let stderrPipe = options?.captureStderr == false ? nil : Pipe()
@@ -125,6 +145,23 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
 
     let stdoutBuffer = OutputBuffer()
     let stderrBuffer = OutputBuffer()
+    let combinedTail = options?.combinedOutputTailCharacters.map { CharacterTailBuffer(limit: $0) }
+    let stdoutTail = options?.combinedOutputTailCharacters.map { CharacterTailBuffer(limit: $0) }
+    let postExitIdle = options?.postExitPipeIdleGrace
+    let exited = ManagedAtomic(false)
+    let idleTimer = LockedState<DispatchSourceTimer?>(nil)
+    let readersToCancel = LockedState<(@Sendable () -> Void)?>(nil)
+    let armIdleTimer: @Sendable () -> Void = {
+        guard let postExitIdle, exited.load() else { return }
+        idleTimer.withLock { timer in
+            timer?.cancel()
+            let next = DispatchSource.makeTimerSource()
+            next.schedule(deadline: .now() + postExitIdle)
+            next.setEventHandler { readersToCancel.withLock { $0 }?() }
+            timer = next
+            next.resume()
+        }
+    }
     let outputBudget = ExecOutputBudget(limit: maxBuffer)
     let outputExceeded = ManagedAtomic(false)
     let killedFlag = ManagedAtomic(false)
@@ -197,6 +234,9 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
         return source
     }
     let stdoutReader = startReader(stdoutPipe) { data in
+        combinedTail?.append(data)
+        armIdleTimer()
+        if let stdoutTail { stdoutTail.append(data); return }
         let (kept, exceeded) = outputBudget.take(data)
         _ = stdoutBuffer.append(kept)
         if exceeded {
@@ -207,6 +247,9 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
     }
     let stderrReader = stderrPipe.map { pipe in
         startReader(pipe) { data in
+            combinedTail?.append(data)
+            armIdleTimer()
+            if combinedTail != nil { return }
             let (kept, exceeded) = outputBudget.take(data)
             _ = stderrBuffer.append(kept)
             if exceeded {
@@ -222,10 +265,13 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             stderrReader?.cancel()
         }
     }
+    readersToCancel.withLock { $0 = { stdoutReader.cancel(); stderrReader?.cancel() } }
 
     // Foundation reports exit independently of the queues that drain the pipes.
     readers.enter()
     process.terminationHandler = { _ in
+        exited.store(true)
+        armIdleTimer()
         if outputExceeded.load() {
             stdoutReader.cancel()
             stderrReader?.cancel()
@@ -270,11 +316,12 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
             removeCancellationHandler?()
             timeoutTimerRef?.cancel()
             forceKillTimer.withLock { $0?.cancel(); $0 = nil }
+            idleTimer.withLock { $0?.cancel(); $0 = nil }
 
             let wasTruncated = outputExceeded.load()
             let stdoutData = stdoutBuffer.snapshot()
             let stderrData = stderrBuffer.snapshot()
-            let stdoutText = String(decoding: wasTruncated ? dropIncompleteUTF8Suffix(stdoutData) : stdoutData, as: UTF8.self)
+            let stdoutText = stdoutTail?.snapshot() ?? String(decoding: wasTruncated ? dropIncompleteUTF8Suffix(stdoutData) : stdoutData, as: UTF8.self)
             let stderrText = String(decoding: wasTruncated ? dropIncompleteUTF8Suffix(stderrData) : stderrData, as: UTF8.self)
 
             let killed = killedFlag.load()
@@ -286,8 +333,32 @@ public func execCommand(_ command: String, _ args: [String], _ cwd: String, _ op
                 stderr: stderrText,
                 code: code,
                 killed: killed,
-                outputExceeded: outputExceeded.load()
+                outputExceeded: outputExceeded.load(),
+                combinedOutput: combinedTail?.snapshot()
             ))
+        }
+    }
+}
+
+private final class CharacterTailBuffer: Sendable {
+    private let state = LockedState(Data())
+    private let limit: Int
+
+    init(limit: Int) { self.limit = limit }
+
+    func append(_ data: Data) {
+        state.withLock { bytes in
+            bytes.append(data)
+            // Four bytes per Unicode scalar cover at least `limit` trailing UTF-16 units.
+            let byteLimit = max(0, limit) * 4 + 4
+            if bytes.count > byteLimit { bytes.removeFirst(bytes.count - byteLimit) }
+        }
+    }
+
+    func snapshot() -> String {
+        state.withLock { bytes in
+            let decoded = String(decoding: bytes, as: UTF8.self)
+            return String(decoding: decoded.utf16.suffix(limit), as: UTF16.self)
         }
     }
 }
