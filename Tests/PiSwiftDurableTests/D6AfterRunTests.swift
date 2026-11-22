@@ -227,20 +227,27 @@ struct D6AfterRunTests {
                 extensionFields: saved.extensionFields)
             _ = try await storage.commitOne([.task(value: marked)], context: .background)
         }
-        let asked = Mutex(0), reports = HarnessReports(), registry = Registry()
+        let asked = Mutex(0), reports = HarnessReports(), reported = SessionTestGate(), registry = Registry()
         try registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
             asked.withLock { $0 += 1 }
             return AfterRunResult(tasks: [])
         }))]))
         let harness = try await Harness.open(storage: storage, options: .init(models: FakeDurableModels(), registry: registry,
             settings: HarnessSettingsProvider { HarnessSettings(restartLimit: 1) }, now: { 0 },
-            onReport: { (report: Report) in reports.appendReport(report) }), context: .background)
+            onReport: { (report: Report) in
+                reports.appendReport(report)
+                if reports.infos.filter({ $0.kind == "task_interrupted" }).count == 2 { reported.release() }
+            }), context: .background)
         try harness.resume()
         for id in [try TaskID(2), try TaskID(3)] {
             #expect(try await harness.waitForTask(id: id, context: .background).outcome.status == "completed")
         }
         #expect(asked.withLock { $0 } == 0)
-        #expect(reports.infos.filter { $0.kind == "task_interrupted" }.count == 2)
+        // A terminal task receipt can arrive before its report callback.
+        await reported.wait()
+        let interrupted = reports.infos.filter { $0.kind == "task_interrupted" }
+        #expect(interrupted.count == 2)
+        #expect(Set(interrupted.compactMap { $0.task?.id }) == Set([try TaskID(2), try TaskID(3)]))
         try await harness.close(context: .background)
     }
 
