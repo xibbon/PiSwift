@@ -20,21 +20,25 @@ private func providerTestError(
 
 @Test(.timeLimit(.minutes(1))) func abortableSleepReturnsPromptlyWhenCancelled() async {
     let token = CancellationToken()
-    let started = Date()
+    let started = AsyncStream<Void>.makeStream()
     let task = Task {
-        try await abortableSleep(ms: 5_000, signal: token)
+        started.continuation.yield()
+        try await abortableSleep(ms: 86_400_000, signal: token)
     }
 
-    try? await Task.sleep(for: .milliseconds(30))
+    var events = started.stream.makeAsyncIterator()
+    _ = await events.next()
+    started.continuation.finish()
     token.cancel()
 
     do {
         try await task.value
         #expect(Bool(false), "Expected cancellation")
+    } catch StreamError.requestAborted {
+        // Cancellation must finish before the 24-hour sleep reaches its deadline.
     } catch {
-        #expect(error.localizedDescription.contains("aborted"))
+        #expect(Bool(false), "Expected requestAborted, got \(error)")
     }
-    #expect(Date().timeIntervalSince(started) < 0.5)
 }
 
 @Test func providerRetryDelayHonorsCapAndServerHeaders() throws {

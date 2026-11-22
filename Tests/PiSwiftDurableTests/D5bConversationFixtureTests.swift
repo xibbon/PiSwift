@@ -144,6 +144,8 @@ struct D5bConversationFixtureTests {
                         model: .set(.init(provider: "faux", modelId: "faux-1")), cwd: .set(directory.path))), context: .background)
                     chat = .init(harness: harness, root: root)
                 } else { chat = try await openChat(storage: storage, setup: setup) }
+                // The tagged fixture uses a zero-duration tool clock.
+                chat.harness.tasks.toolServices.setExecutionTime { .zero }
                 if kind == "turnLimit" {
                     try await chat.root.configure(change: .init(maxTurns: .set(1)), context: .background)
                 }

@@ -221,7 +221,8 @@ public final class TaskRuntime: Sendable {
     public func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationHandle? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
-            return try await scheduler.conversation(id, .init(signal: signal, check: { [invocation] in try invocation.check() }), context)
+            return try await scheduler.conversation(id, .init(invocation: invocation, signal: signal,
+                check: { [invocation] in try invocation.check() }), context)
         }
     }
     /// v1.5.2 util.ts raw history reader: pages entries within this task's

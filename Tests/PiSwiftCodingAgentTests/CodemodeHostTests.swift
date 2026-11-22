@@ -179,7 +179,10 @@ func codemodeHostQueuedModelsStayCancelled(type: ModelType) async throws {
     #expect(CodemodeExtensionOptions().defaultTimeoutMs == nil)
     let options = CodemodeToolOptions(defaultTimeoutMs: 50, maxTimeoutMs: 2_000,
                                       validationErrorPrefix: "validation: ")
-    let timed = try await executeCodemode(toolCallId: "timeout", params: ["code": AnyCodable("while (true) {}")],
+    // The watchdog returns before a synchronous script stops. Let the worker exit after
+    // the timeout so it cannot consume a core for the rest of the test suite.
+    let timed = try await executeCodemode(toolCallId: "timeout", params: ["code": AnyCodable(
+        "const end = Date.now() + 3000; while (Date.now() < end) {}")],
                                           options: options, forceWatchdog: true)
     #expect(timed.isError == true)
     #expect(hostText(timed).contains("50 ms"))

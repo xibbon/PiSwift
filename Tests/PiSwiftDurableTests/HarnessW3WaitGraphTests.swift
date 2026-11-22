@@ -279,6 +279,7 @@ private final class W3WaitNodes: Sendable {
         nodes.gate("bridge").release(); nodes.gate("ended-owner").release()
         #expect(try await nodes.outcome(harness, "bridge").status == "completed")
         let bridge = try nodes.id("bridge"), endedOwner = try nodes.id("ended-owner")
+        try await harnessEventually { harness.tasks.state.withLock { $0.nodes[bridge] == nil && $0.nodes[endedOwner] == nil } }
         #expect(harness.tasks.state.withLock { $0.nodes[bridge] == nil })
         #expect(harness.tasks.state.withLock { $0.nodes[endedOwner] == nil })
         try await root.commit({ tx in

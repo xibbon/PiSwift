@@ -128,6 +128,8 @@ struct D6ConversationFixtureTests {
                     ], tasks: [AnyTaskDefinition(child)]))
                 }
                 let chat = try await openChat(storage: storage, setup: setup)
+                // The tagged fixture uses a zero-duration tool clock.
+                chat.harness.tasks.toolServices.setExecutionTime { .zero }
                 func answer() -> AssistantMessage {
                     var message = chatAssistant("answer-\(seed)")
                     message.timestamp = 1_700_000_000_000

@@ -506,6 +506,7 @@ struct D6AfterRunTests {
     @Test(.timeLimit(.minutes(1)))
     func childAdmitsFollowUpBeforeRunEnds() async throws {
         let summaries = SessionTestLog<GenerationRunSummary>()
+        let secondSummary = SessionTestGate()
         let child = harnessOneStep("test.after-run-follow-up") { _, runtime, context in
             let handle = try #require(await runtime.conversation(runtime.conversationId, context: context))
             try await runtime.commit({ tx, _ in
@@ -516,12 +517,15 @@ struct D6AfterRunTests {
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { run, _, _ in
             summaries.append(run)
-            return summaries.count == 1 ? AfterRunResult(tasks: [try runEndTask(child, input: 0)]) : nil
+            let count = summaries.count
+            if count == 2 { secondSummary.release() }
+            return count == 1 ? AfterRunResult(tasks: [try runEndTask(child, input: 0)]) : nil
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("first")), .message(chatAssistant("fixed"))])
         let chat = try await openChat(setup: setup)
         #expect(try await generationSubmit(chat).wait(context: .background).status == "done")
         try await chat.harness.waitForIdle(context: .background)
+        await secondSummary.wait()
         let entries = try await allEntries(chat.root).filter { $0.kind != "pi.system" }
         #expect(entries.map(\.kind) == ["pi.user", "pi.assistant", "pi.user", "pi.assistant"])
         #expect(summaries.count == 2)

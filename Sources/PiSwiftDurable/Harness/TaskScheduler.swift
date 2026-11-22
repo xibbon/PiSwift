@@ -3,6 +3,7 @@ import PiSwiftChord
 import Synchronization
 
 internal struct InvocationBinding: Sendable {
+    let invocation: TaskInvocation
     let signal: AbortSignal
     let check: @Sendable () throws -> Void
 }

@@ -372,7 +372,39 @@ private final class IntegrationUsageModels: DurableModels {
 }
 
 extension HarnessToolIntegrationTests {
-    // ownership:647. Admission queued after a durable abort mark must fail.
+    // An abort mark can be durable before an invocation's abort signal arrives.
+    @Test func boundHandleChecksDurableAbortMarkWithStaleSignal() async throws {
+        let setup = HarnessChatSetup(), ready = HarnessChatSignal()
+        let children = SessionTestLog<ConversationID>(), owners = SessionTestLog<TaskID>()
+        try installHarnessTool(harnessTestTool(execute: { _, api, context in
+            let child = try await integrationChild(api, context)
+            children.append(child); owners.append(api.taskId)
+            ready.signal()
+            try await integrationWaitForAbort(context)
+            return .init(output: [])
+        }), setup: setup)
+        setup.models.setResponses([.message(try toolCalls([("echo", [:], "c1")])), .message(chatAssistant("done"))])
+        let chat = try await openChat(setup: setup)
+        let input = try await chat.root.submit(.input(content: .text("go")), context: .background)
+        await ready.wait()
+        let owner = owners.values[0]
+        let record = try #require(await chat.harness.getTask(id: owner, context: .background))
+        let invocation = TaskInvocation(record, abort: false, context: .background)
+        let staleSignal = AbortController()
+        let stale = ConversationHandle(Conversation(id: children.values[0], harness: chat.harness,
+            binding: .init(invocation: invocation, signal: staleSignal.signal, check: { try invocation.check() })))
+
+        _ = try await chat.harness.abortTask(id: owner, context: .background)
+        await #expect(throws: (any Error).self) {
+            try await stale.submit(.input(content: .text("late")), context: .background)
+        }
+        _ = try await input.wait(context: .background)
+        let child = try #require(try await chat.harness.conversation(id: children.values[0], context: .background))
+        #expect(try await allEntries(child).isEmpty)
+        try await chat.harness.close(context: .background)
+    }
+
+    // ownership:647. Admission after a published abort mark must fail.
     @Test func queuedHandleSubmissionRejectsAfterAbortMark() async throws {
         let setup = HarnessChatSetup(), ready = HarnessChatSignal(), go = HarnessChatSignal(), queued = HarnessChatSignal()
         defer { go.signal() }
@@ -399,9 +431,14 @@ extension HarnessToolIntegrationTests {
         await entered.wait()
         let aborting = Task { try await chat.harness.abortTask(id: owners.values[0], context: .background) }
         try await eventually { chat.harness.session.line.queuedCount >= 1 }
+        release.signal(); try await holding.value
+        // The abort transaction can leave the Session line before its writer
+        // publishes the mark. The scheduler's current record advances on publication.
+        try await eventually {
+            chat.harness.tasks.current(owners.values[0])?.abortRequested == true
+        }
         go.signal(); await queued.wait()
-        try await eventually { chat.harness.session.line.queuedCount >= 2 }
-        release.signal(); try await holding.value; _ = try await aborting.value
+        _ = try await aborting.value
         await #expect(throws: (any Error).self) { try await operations.values[0].value }
         #expect(try await input.wait(context: .background).status == "done")
         let child = try #require(try await chat.harness.conversation(id: children.values[0], context: .background))
