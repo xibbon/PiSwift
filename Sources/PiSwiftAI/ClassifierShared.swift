@@ -44,6 +44,9 @@ func requiredNumber(_ value: Any?, label: String, field: String) throws -> Doubl
     return number.doubleValue
 }
 
+/// Parses classifier token usage. Cached and cache-write tokens are included in
+/// `input_tokens`, so they are split out of uncached input before pricing.
+/// Missing or malformed usage leaves the result without usage.
 func parseClassifierUsage(_ value: Any?, model: ClassifierModel) -> Usage? {
     guard let raw = value as? [String: Any],
           raw["input_tokens"] != nil || raw["output_tokens"] != nil else { return nil }
@@ -52,10 +55,14 @@ func parseClassifierUsage(_ value: Any?, model: ClassifierModel) -> Usage? {
               number.doubleValue.isFinite, number.doubleValue > 0 else { return 0 }
         return Int(clamping: number.int64Value)
     }
-    let input = count(raw["input_tokens"])
+    let totalInput = count(raw["input_tokens"])
     let output = count(raw["output_tokens"])
-    var usage = Usage(input: input, output: output, cacheRead: 0, cacheWrite: 0,
-                      totalTokens: input + output)
+    let details = raw["input_tokens_details"] as? [String: Any]
+    let cacheRead = min(count(details?["cached_tokens"]), totalInput)
+    let cacheWrite = min(count(details?["cache_write_tokens"]), totalInput - cacheRead)
+    var usage = Usage(input: totalInput - cacheRead - cacheWrite, output: output,
+                      cacheRead: cacheRead, cacheWrite: cacheWrite,
+                      totalTokens: totalInput + output)
     calculateCost(model: model, usage: &usage)
     return usage
 }

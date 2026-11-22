@@ -93,7 +93,7 @@ private let providerModels_classifier_openai: [String: ClassifierModel] = [
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0, cacheRead: 0, cacheWrite: 0)]),
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0.1, cacheWrite: 0.1, tiers: [ModelCostTier(inputTokensAbove: 272000, input: 0.2, output: 0, cacheRead: 0.2, cacheWrite: 0.2)]),
         contextWindow: 922000
     ),
 ]

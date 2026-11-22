@@ -341,3 +341,24 @@ private func classifierSharedV110InvalidUsageRemainsUnbilledOrZero(_ transport: 
         }
     }
 }
+
+@Test(.timeLimit(.minutes(1)), arguments: SharedV110Transport.allCases)
+private func classifierSharedV110ClampsCacheDetails(_ transport: SharedV110Transport) async {
+    let cases: [(String, Int, Int, Int)] = [
+        (#"{"input_tokens":10,"input_tokens_details":{"cached_tokens":4,"cache_write_tokens":3},"output_tokens":2}"#, 3, 4, 3),
+        (#"{"input_tokens":10,"input_tokens_details":{"cached_tokens":15,"cache_write_tokens":3},"output_tokens":2}"#, 0, 10, 0),
+        (#"{"input_tokens":10,"input_tokens_details":{"cached_tokens":4,"cache_write_tokens":12},"output_tokens":2}"#, 0, 4, 6),
+        (#"{"input_tokens":10,"input_tokens_details":[],"output_tokens":2}"#, 10, 0, 0),
+        (#"{"input_tokens":10,"output_tokens":2}"#, 10, 0, 0)
+    ]
+    for (usage, input, cacheRead, cacheWrite) in cases {
+        let client = SharedV110Client([.init(body: transport.success(usage: usage))])
+        let result = await transport.classify(options: ClassifierOptions(apiKey: "secret", httpClient: client))
+        #expect(result.stopReason == .stop)
+        #expect(result.usage?.input == input)
+        #expect(result.usage?.cacheRead == cacheRead)
+        #expect(result.usage?.cacheWrite == cacheWrite)
+        #expect(result.usage?.output == 2)
+        #expect(result.usage?.totalTokens == 12)
+    }
+}

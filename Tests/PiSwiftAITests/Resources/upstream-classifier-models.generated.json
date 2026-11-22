@@ -143,14 +143,14 @@
       "baseUrl": "https://api.openai.com/v1",
       "contextWindow": 922000,
       "cost": {
-        "cacheRead": 0,
-        "cacheWrite": 0,
+        "cacheRead": 0.1,
+        "cacheWrite": 0.1,
         "input": 0.1,
         "output": 0,
         "tiers": [
           {
-            "cacheRead": 0,
-            "cacheWrite": 0,
+            "cacheRead": 0.2,
+            "cacheWrite": 0.2,
             "input": 0.2,
             "inputTokensAbove": 272000,
             "output": 0

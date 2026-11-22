@@ -88,6 +88,20 @@ private func decisionsV110Run(_ client: DecisionsV110Client, context: Classifier
         #expect(abs((result.usage?.cost.total ?? 0) - 0.06) < 1e-12)
     }
 
+    @Test func reportsCachedAndCacheWriteTokensAtCatalogPrice() async throws {
+        let model = try #require(getClassifierModel(provider: "openai", modelId: "gpt-6-luna"))
+        let client = DecisionsV110Client([.init(body: #"{"answers":[\#(decisionsV110Choice),\#(decisionsV110Score),\#(decisionsV110Predicate)],"usage":{"input_tokens":2000,"input_tokens_details":{"cached_tokens":1600,"cache_write_tokens":100},"output_tokens":0,"total_tokens":2000}}"#)])
+        let result = await classify(model: model, context: decisionsV110Context(),
+            options: ClassifierOptions(apiKey: "secret", httpClient: client))
+        #expect(result.stopReason == .stop)
+        #expect(result.usage?.input == 300)
+        #expect(result.usage?.output == 0)
+        #expect(result.usage?.cacheRead == 1600)
+        #expect(result.usage?.cacheWrite == 100)
+        #expect(result.usage?.totalTokens == 2000)
+        #expect(abs((result.usage?.cost.total ?? 0) - 0.0002) < 1e-12)
+    }
+
     @Test func sendsImagesAfterStateInOneUserMessage() async throws {
         let client = DecisionsV110Client([.init(body: decisionsV110Success())])
         let result = await decisionsV110Run(client, context: decisionsV110Context(images: [decisionsV110Image, ImageContent(data: "aW1hZ2U=", mimeType: "image/jpeg")]))
