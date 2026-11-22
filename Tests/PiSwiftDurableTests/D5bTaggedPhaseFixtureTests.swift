@@ -13,7 +13,10 @@ struct D5bTaggedPhaseFixtureTests {
             .appendingPathComponent("Scripts/durable-fixtures/d5b-phase-v152")
     }
     private func item(_ name: String) throws -> JSONValue {
-        let data = try Data(contentsOf: fixtureDirectory.appendingPathComponent("manifest.json"))
+        // v1.6.0 D1: generate-d5b-phase-v152.mjs --v160 resumes the frozen pre
+        // with generation.ts:188 version 3; the v1.5.2 input files stay unchanged.
+        let data = try Data(contentsOf: fixtureDirectory.deletingLastPathComponent()
+            .appendingPathComponent("d5b-phase-v160/manifest.json"))
         return try #require(JSONValue(jsonData: data)["cases"]?[name])
     }
     private func open(_ path: URL, backend: String) async throws -> any DurableStorage {
@@ -121,7 +124,7 @@ struct D5bTaggedPhaseFixtureTests {
             }
             try tx.setTask(record.replacing(state: .pending(checkpoint: try JSONValue(encoding: checkpoint))))
         }, context: .background)
-        #expect(try await snapshot(storage, root: root.id) == item["pre"])
+        #expect(try await snapshot(storage, root: root.id) == item["swiftPre"])
         try await harness.close(context: .background)
 
         let log = directory.appendingPathComponent("node.log")
@@ -131,7 +134,7 @@ struct D5bTaggedPhaseFixtureTests {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         child.arguments = ["node", fixtureDirectory.deletingLastPathComponent()
-            .appendingPathComponent("generate-d5b-phase-v152.mjs").path, "--resume-swift", name, path.path]
+            .appendingPathComponent("generate-d5b-phase-v152.mjs").path, "--v160", "--resume-swift", name, path.path]
         child.standardOutput = handle; child.standardError = handle
         try child.run(); child.waitUntilExit()
         let output = try String(contentsOf: log, encoding: .utf8)

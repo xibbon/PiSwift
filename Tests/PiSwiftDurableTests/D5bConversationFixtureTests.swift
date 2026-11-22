@@ -10,7 +10,9 @@ struct D5bConversationFixtureTests {
     private var fixture: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Scripts/durable-fixtures/d5b-conversations-v152.json")
+            // v1.6.0 D1: generate-d5b-conversations-v152.mjs --v160 runs the
+            // same scripts with generation.ts:188 and tool.ts:159 versions.
+            .appendingPathComponent("Scripts/durable-fixtures/d5b-conversations-v160.json")
     }
 
     private func snapshot(_ storage: any DurableStorage, root: ConversationID) async throws -> JSONValue {

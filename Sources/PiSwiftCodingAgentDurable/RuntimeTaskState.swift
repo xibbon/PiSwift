@@ -63,7 +63,7 @@ internal func runtimeWork(graph: TaskGraph?, conversation: ConversationView,
             let count = restarts[node.id] ?? 0
             work.blocked.append(.init(id: node.id, kind: node.kind, reason: reason, restarts: count))
         }
-        if case .sleeping(let phase, let until) = node.state {
+        if case .sleeping(let phase, let until?) = node.state {
             work.sleeping.append(.init(id: node.id, kind: node.kind, phase: phase, until: until))
         }
         guard node.blocked == nil else { continue }

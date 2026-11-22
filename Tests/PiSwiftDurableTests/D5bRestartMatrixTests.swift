@@ -25,7 +25,11 @@ struct D5bRestartMatrixTests {
         return data
     }
     private func item(_ name: String) throws -> JSONValue {
-        let data = try readGzip(fixtureDirectory.appendingPathComponent("manifest.json.gz"))
+        // v1.6.0 D1: generate-d5b-restart-round1-v152.mjs --v160 resumes
+        // each frozen pre file with generation.ts:188 v3 and tool.ts:159 v4.
+        let oracle = fixtureDirectory.deletingLastPathComponent()
+            .appendingPathComponent("d5b-restart-round1-v160/manifest.json.gz")
+        let data = try readGzip(oracle)
         return try #require(JSONValue(jsonData: data)["cases"]?[name])
     }
     private func open(_ path: URL, backend: String) async throws -> any DurableStorage {

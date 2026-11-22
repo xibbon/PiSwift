@@ -463,28 +463,43 @@ internal final class TaskScheduler: Sendable {
     func fit(_ record: TaskBlockedSubject, definition: AnyTaskDefinition?) -> (reason: String?, error: (any Error)?, migrates: Bool) {
         guard let definition else { return ("missing_task", nil, false) }
         if definition.version < record.version { return ("task_too_old", nil, false) }
-        if let phase = unsupportedBuiltInPhase(record) {
+        if let unsupported = unsupportedBuiltInPhase(record) {
             // The tagged scheduler blocks work it cannot migrate as migration_failed
-            // (scheduler.ts:2083-2096). Block these D5/D6 shapes before reservation.
-            let order = record.kind == "pi.generation" ? "D5b" : "D6"
-            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires \(order) for \(phase)"), false)
+            // (scheduler.ts:2178-2185). Keep unsupported v1.6.0 records unchanged.
+            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires \(unsupported.order) for \(unsupported.shape)"), false)
         }
         if definition.version == record.version { return (nil, nil, false) }
         if let failed = state.withLock({ $0.failedMigrations[record.id] }), failed.0 == definition.identity { return ("migration_failed", failed.1, false) }
         return (nil, nil, true)
     }
-    private func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> String? {
+    func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> (shape: String, order: String)? {
+        if record.status == "sleeping", record.signals != nil {
+            let order = record.kind == "pi.tool" && record.checkpoint?["phase"]?.stringValue == "parked"
+                ? "D2 and D3a" : "D2"
+            return ("signal sleep", order)
+        }
+        if record.status == "waiting", record.policy == .any { return ("any wait", "D3") }
+        if let wake = record.wake?.objectValue, let reason = wake["reason"]?.stringValue {
+            return ("\(reason) wake", reason == "signal" ? "D2" : "D3")
+        }
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
-            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return "phase \(phase)" }
+            if let phase, ["afterTools", "yield"].contains(phase) { return ("phase \(phase)", "D5") }
+            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return ("phase \(phase)", "D5b") }
         }
         if record.kind == "pi.tool" {
-            if let phase, !["call", "execute"].contains(phase) { return "phase \(phase)" }
+            if phase == "parked" { return ("phase parked", "D3a") }
+            if phase == "execute", let checkpoint = record.checkpoint?.objectValue,
+               checkpoint["wake"] != nil || checkpoint["checkpoint"] != nil {
+                return ("execute park recovery", "D3a")
+            }
+            if let phase, !["call", "execute"].contains(phase) { return ("phase \(phase)", "D6") }
         }
         return nil
     }
     func blockedReason(_ record: TaskBlockedSubject) -> TaskBlockedReason? {
-        if ["running", "completing", "terminal"].contains(record.status) { return nil }
+        if ["completing", "terminal"].contains(record.status) { return nil }
+        if unsupportedBuiltInPhase(record) != nil { return .migrationFailed }
         if record.abortRequested && record.abortReason == nil { return nil }
         let definition = registry.snapshot().task(name: record.kind), fit = fit(record, definition: definition)
         if let reason = fit.reason { return TaskBlockedReason(rawValue: reason) }
@@ -547,6 +562,15 @@ internal final class TaskScheduler: Sendable {
                     try await session.touch(SessionKeys.taskKey(id))
                     guard let original = current(id), original.state.status != "completing", !state.withLock({ $0.invocations[id] != nil }) else {
                         dropped.insert(id); continue
+                    }
+                    if let unsupported = unsupportedBuiltInPhase(TaskBlockedSubject(record: original)) {
+                        snapshot = snapshot ?? registry.snapshot()
+                        if state.withLock({ $0.unsupportedReported.insert(original.id).inserted }) {
+                            let error = TaskDefinitionError("Task \(original.kind) requires \(unsupported.order) for \(unsupported.shape)")
+                            report(error, .migrationFailed(task: ReportTask(original), extension: snapshot!.installer(of: snapshot!.task(name: original.kind))))
+                        }
+                        dropped.insert(id)
+                        continue
                     }
                     if !waitingOn(original, first: true).isEmpty { dropped.insert(id); continue }
                     if notDue(original) { dropped.insert(id); continue }

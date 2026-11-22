@@ -1,0 +1,1 @@
+{"tag":"v1.6.0","operation":"two plain answer turns","cases":[{"backend":"sqlite","tasks":[{"id":9,"kind":"pi.generation","version":3,"status":"terminal"},{"id":13,"kind":"pi.generation","version":3,"status":"terminal"}]},{"backend":"jsonl","tasks":[{"id":9,"kind":"pi.generation","version":3,"status":"terminal"},{"id":13,"kind":"pi.generation","version":3,"status":"terminal"}]}]}

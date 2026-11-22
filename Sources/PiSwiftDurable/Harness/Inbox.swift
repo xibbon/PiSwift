@@ -2,6 +2,8 @@ import PiSwiftChord
 
 /// A queued input or write waiting for a generation boundary.
 public struct InboxItem: Sendable, Equatable, Codable {
+    /// A stored input that survives conversation abort. The default policy is omitted.
+    public enum OnAbort: String, Sendable, Codable { case keep }
     /// The queue or execution policy selected for this operation.
     public enum Mode: String, Sendable, Codable {
         /// Admits the input at a steering boundary.
@@ -21,21 +23,27 @@ public struct InboxItem: Sendable, Equatable, Codable {
     public var entry: EntryDraft?
     /// The application kind and data of a queued input.
     public var inputEntry: InputEntry?
+    /// The queued input's abort policy, when it is `keep`.
+    public var onAbort: OnAbort?
     /// Pairs a queued submission with its admission mode and input or entry content.
-    public init(id: SubmissionID, mode: Mode, content: JSONValue? = nil, entry: EntryDraft? = nil, inputEntry: InputEntry? = nil) {
-        self.id = id; self.mode = mode; self.content = content; self.entry = entry; self.inputEntry = inputEntry
+    public init(id: SubmissionID, mode: Mode, content: JSONValue? = nil, entry: EntryDraft? = nil, inputEntry: InputEntry? = nil,
+                onAbort: OnAbort? = nil) {
+        self.id = id; self.mode = mode; self.content = content; self.entry = entry; self.inputEntry = inputEntry; self.onAbort = onAbort
     }
-    private enum Keys: String, CodingKey { case id, mode, content, entry }
+    private enum Keys: String, CodingKey { case id, mode, content, entry, onAbort }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
         id = try container.decode(SubmissionID.self, forKey: .id)
         mode = try container.decode(Mode.self, forKey: .mode)
         if mode == .write {
+            if container.contains(.onAbort) { throw DecodingError.dataCorruptedError(forKey: .onAbort, in: container, debugDescription: "Write inbox items do not have onAbort") }
             entry = try container.decode(EntryDraft.self, forKey: .entry); content = nil; inputEntry = nil
+            onAbort = nil
         } else {
             content = try container.decode(JSONValue.self, forKey: .content); entry = nil
             inputEntry = try container.decodeIfPresent(InputEntry.self, forKey: .entry)
+            onAbort = container.contains(.onAbort) ? try container.decode(OnAbort.self, forKey: .onAbort) : nil
         }
     }
     /// Encodes input metadata or a write draft under the shared entry key.
@@ -43,10 +51,14 @@ public struct InboxItem: Sendable, Equatable, Codable {
         var container = encoder.container(keyedBy: Keys.self)
         try container.encode(id, forKey: .id)
         try container.encode(mode, forKey: .mode)
-        if mode == .write { try container.encode(entry, forKey: .entry) }
+        if mode == .write {
+            guard onAbort == nil else { throw EncodingError.invalidValue(onAbort as Any, .init(codingPath: encoder.codingPath, debugDescription: "Write inbox items do not have onAbort")) }
+            try container.encode(entry, forKey: .entry)
+        }
         else {
             try container.encode(content, forKey: .content)
             try container.encodeIfPresent(inputEntry, forKey: .entry)
+            try container.encodeIfPresent(onAbort, forKey: .onAbort)
         }
     }
 }

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { mirrorV152 } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
@@ -14,6 +15,7 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(child.status ?? 1);
 }
 if (!process.argv.includes('--check')) throw new Error('The migration chain only writes temporary copies; use --check');
+const v160 = process.argv.includes('--v160');
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const frozen = join(root, 'Tests/PiSwiftDurableTests/Fixtures');
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d12-migration-'));
@@ -43,7 +45,8 @@ function difference(actual, expected, path = '$') {
   return `${path}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`;
 }
 try {
-  source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+  source = await (v160 ? mirrorV160 : mirrorV152)(
+    { dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
   const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
   const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
   const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -133,7 +136,7 @@ try {
       if (mismatch) throw new Error(`${tag}-${backend} ${label}: ${mismatch}`);
     }
   }
-  console.log('D12 migration chains pass: v1.3.0 and v1.4.0, both language orders, SQLite and JSONL; two stored turns each.');
+  console.log(`D12 migration chains pass: v1.3.0 and v1.4.0, both language orders, SQLite and JSONL; two stored turns each; tag ${v160 ? 'v1.6.0' : 'v1.5.2'}.`);
 } finally {
   Date.now = oldDateNow;
   if (oldPerformanceNow) Object.defineProperty(performance, 'now', oldPerformanceNow);

@@ -170,6 +170,11 @@ struct D1V152FixtureTests {
 
     @Test func builtInTaskMigrationsMatchTypeScript() throws {
         let fixture = try fixture("migration")
+        // v1.6.0 D1: generate-v152-fixtures.mjs --v160 runs tool.ts:161-167 and
+        // generation.ts:190-194 on these exact frozen v1.5.2 records.
+        let oracleURL = try #require(Bundle.module.url(forResource: "task-migration-oracle-v160", withExtension: "json", subdirectory: "Fixtures"))
+        let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
+        let migrations = try #require(oracle["migrations"]?.arrayValue)
         for item in try #require(fixture["taskMigrations"]?.arrayValue) {
             let kind = try #require(item["kind"]?.stringValue)
             let rawID = try #require(item["recordId"])
@@ -182,12 +187,13 @@ struct D1V152FixtureTests {
             let record = try raw.decode(TaskRecord.self)
             #expect(record.id == id)
             let definition = try #require(createRegistry().snapshot().task(name: kind))
-            #expect(definition.version == item["toVersion"]?.numberValue)
+            let expected = try #require(migrations.first { $0["recordId"] == item["recordId"] })
+            #expect(definition.version == expected["toVersion"]?.numberValue)
             let migrate = try #require(definition.migrate)
             let checkpoint = try #require(raw["state"]?["checkpoint"])
             let result = try migrate(record.input, checkpoint, try #require(item["fromVersion"]?.numberValue))
-            #expect(result.input == item["result"]?["input"])
-            #expect(result.checkpoint == item["result"]?["checkpoint"])
+            #expect(result.input == expected["result"]?["input"])
+            #expect(result.checkpoint == expected["result"]?["checkpoint"])
             if kind == "pi.generation" {
                 #expect(try JSONValue(encoding: result.checkpoint.decode(GenerationCheckpoint.self)) == result.checkpoint)
             } else if kind == "pi.tool" {
@@ -204,12 +210,18 @@ struct D1V152FixtureTests {
             let record = try raw.decode(TaskRecord.self)
             guard let checkpoint = raw["state"]?["checkpoint"] else { continue }
             if checkpoint["phase"] == "future" { continue }
-            if record.kind == "pi.generation", record.version == generationTask.version {
+            // v1.6.0 D1: generation.ts:190-194 and tool.ts:161-167 retain
+            // older checkpoints; decode all known old versions, not only current.
+            if record.kind == "pi.generation" {
                 let phase = try checkpoint.decode(GenerationCheckpoint.self)
                 #expect(try JSONValue(encoding: phase) == checkpoint)
-            } else if record.kind == "pi.tool", record.version == toolTask.version {
-                let input = try record.input.decode(ToolTaskInput.self)
-                #expect(try JSONValue(encoding: input) == record.input)
+            } else if record.kind == "pi.tool" {
+                // v1 input has no `kind`; tool.ts:161-167 adds it during migration.
+                let migrate = try #require(toolTask.eraseToAnyTaskDefinition().migrate)
+                let migrated = try migrate(record.input, checkpoint, record.version)
+                let input = try migrated.input.decode(ToolTaskInput.self)
+                #expect(try JSONValue(encoding: input) == migrated.input)
+                #expect(migrated.checkpoint == checkpoint)
                 let phase = try checkpoint.decode(ToolTaskCheckpoint.self)
                 #expect(try JSONValue(encoding: phase) == checkpoint)
             }
@@ -217,10 +229,12 @@ struct D1V152FixtureTests {
     }
 
     @Test func taggedNodeResumeOracleHasTypedRecord() throws {
-        let url = try #require(Bundle.module.url(forResource: "generation-resume-oracle-v152", withExtension: "json", subdirectory: "Fixtures"))
+        // v1.6.0 D1: generate-v152-resume-oracle.mjs --v160 resumes the same frozen v1.4 seed;
+        // generation.ts:188 registers the installed version 3.
+        let url = try #require(Bundle.module.url(forResource: "generation-resume-oracle-v160", withExtension: "json", subdirectory: "Fixtures"))
         let oracle = try JSONValue(jsonData: Data(contentsOf: url))
         #expect(oracle["sourceTag"] == "v1.4.0")
-        #expect(oracle["targetTag"] == "v1.5.2")
+        #expect(oracle["targetTag"] == "v1.6.0")
         let before = try #require(oracle["before"]?["record"])
         let after = try #require(oracle["after"]?["record"])
         let seeded = try before.decode(TaskRecord.self)

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { mirrorV152 } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
@@ -13,8 +14,9 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
+const v160 = process.argv.includes('--v160');
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const output = fileURLToPath(new URL('./d12-codemode-image-v152.json', import.meta.url));
+const output = fileURLToPath(new URL(v160 ? './d12-codemode-image-v160.json' : './d12-codemode-image-v152.json', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d12-image-'));
 let source;
 const oldDateNow = Date.now, oldMathRandom = Math.random, oldGetRandomValues = crypto.getRandomValues;
@@ -48,7 +50,7 @@ function difference(actual, expected, path = '$') {
   return `${path}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`;
 }
 try {
-  source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4', 'quickjs-wasi@3.6.2'] });
+  source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4', 'quickjs-wasi@3.6.2'] });
   const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
   const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
   const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -100,7 +102,7 @@ try {
   }
   const sqlite = await run('sqlite'), jsonl = await run('jsonl');
   if (!isDeepStrictEqual(sqlite, jsonl)) throw new Error(`Tagged image records differ by storage: ${difference(sqlite, jsonl)}`);
-  const serialized = JSON.stringify({ tag: 'v1.5.2', code, png, records: sqlite }) + '\n';
+  const serialized = JSON.stringify({ tag: v160 ? 'v1.6.0' : 'v1.5.2', code, png, records: sqlite }) + '\n';
   if (check) {
     if (await readFile(output, 'utf8') !== serialized) throw new Error('Tagged codemode image fixture differs');
     const child = spawnSync('swift', ['test', '--skip-build', '--filter', 'D12CodemodeImageTests'], {

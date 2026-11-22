@@ -90,13 +90,19 @@ extension TaskScheduler {
             if state.withLock({ $0.invocations[record.id] != nil }) { derived = .running }
             else if record.state.status == "completing" { derived = .completing }
             else {
+                let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)
                 let on = waitingOn(record)
-                if !on.isEmpty { derived = .waiting(on: on) }
+                let unsupported = unsupportedBuiltInPhase(TaskBlockedSubject(record: record)) != nil
+                if unsupported, let reason = fit.reason {
+                    derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error)
+                }
+                else if !on.isEmpty { derived = .waiting(on: on) }
                 else if notDue(record), case .sleeping(_, let until, _) = record.state { derived = .sleeping(until: until) }
+                else if let reason = fit.reason {
+                    derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error)
+                }
                 else {
-                    let definition = snapshot.task(name: record.kind), fit = fit(record, definition: definition)
-                    if let reason = fit.reason { derived = .blocked(reason: TaskBlockedReason(rawValue: reason)!, error: fit.error) }
-                    else if fit.migrates && definition?.migrate == nil {
+                    if fit.migrates && definition?.migrate == nil {
                         derived = .blocked(reason: .migrationFailed, error: SessionError.message("Task \(record.kind) version \(definition!.version) has no migration from \(record.version)"))
                     } else { derived = .pending(migrates: fit.migrates) }
                 }
@@ -144,7 +150,7 @@ extension TaskScheduler {
         }
         if case .sleeping(_, let until, _) = next {
             if invocation.abort { throw SessionError.message("Abort handler of task \(current.id.rawValue) cannot sleep") }
-            guard until.isFinite, until >= 0 else {
+            if let until, !until.isFinite || until < 0 {
                 throw SessionError.message("Task \(current.id.rawValue) cannot sleep until \(sleepTimeText(until)): not a time in milliseconds")
             }
         }

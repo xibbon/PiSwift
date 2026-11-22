@@ -16,7 +16,18 @@ struct D6ConversationFixtureTests {
     private var fixture: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Scripts/durable-fixtures/d6-conversations-v152.json")
+            // v1.6.0 D1: generate-d6-conversations-v152.mjs --v160 runs the
+            // same scripts with tool.ts:159 and generation.ts:188 versions.
+            .appendingPathComponent("Scripts/durable-fixtures/d6-conversations-v160.json")
+    }
+
+    private var taggedAtomicFixture: URL {
+        // v1.6.0 D1: the read-only cross-open uses the tag that wrote the file;
+        // tool.ts:159 and generation.ts:188 advance only new continuations.
+        guard ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_ATOMIC_TAG"] == "v1.5.2" else {
+            return fixture
+        }
+        return fixture.deletingLastPathComponent().appendingPathComponent("d6-conversations-v152.json")
     }
 
     private func snapshot(_ storage: any DurableStorage, root: ConversationID) async throws -> JSONValue {
@@ -176,7 +187,7 @@ struct D6ConversationFixtureTests {
           .timeLimit(.minutes(1)))
     func opensTaggedAtomicSubmitFile() async throws {
         let base = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["PISWIFT_D12_TAGGED_ATOMIC_DIR"]))
-        let scripts = try #require(JSONValue(jsonData: Data(contentsOf: fixture))["scripts"]?.arrayValue)
+        let scripts = try #require(JSONValue(jsonData: Data(contentsOf: taggedAtomicFixture))["scripts"]?.arrayValue)
         let expected = try #require(scripts.first { $0["seed"]?.intValue == 30 }?["records"])
         for backend in ["sqlite", "jsonl"] {
             let path = base.appendingPathComponent("tagged-atomic-\(backend)")

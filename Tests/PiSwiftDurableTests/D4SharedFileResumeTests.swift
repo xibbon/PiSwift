@@ -211,6 +211,13 @@ struct D4SharedFileResumeTests {
         var expected: [JSONValue] = []
         for name in ["retrySleep", "pollSleep", "legacyRunningRetry"] {
             let item = try #require(cases[name]), raw = try #require(item["record"])
+            // v1.6.0 D1: generate-v152-resume-oracle.mjs --v160 --case NAME
+            // runs generation.ts:188 and scheduler.ts:2160-2175 on this exact frozen seed.
+            let suffix = name == "retrySleep" ? "" : "-\(name)"
+            let oracleURL = try #require(Bundle.module.url(forResource: "generation-resume-oracle-v160\(suffix)",
+                withExtension: "json", subdirectory: "Fixtures"))
+            let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
+            #expect(oracle["before"]?["record"] == raw)
             let record = try raw.decode(TaskRecord.self), clock = TestClock(now: 1000), models = D4ResumeModels()
             let storage = try await open(path(directory, backend: backend, name: name), backend: backend)
             try await checkSeed(storage, item: item)
@@ -220,18 +227,13 @@ struct D4SharedFileResumeTests {
             try harness.resume()
             try await harnessEventually { try await harness.getTask(id: record.id, context: .background)?.state.status == "sleeping" }
             try await idle(harness)
-            var sleeping = try #require(raw.objectValue)
-            if name == "legacyRunningRetry" {
-                // v1.5.2 D1: scheduler.ts:2083-2088 migrates this runnable task before sleeping.
-                sleeping["version"] = 2
-                sleeping["state"] = ["status": "sleeping", "checkpoint": try #require(raw["state"]?["checkpoint"]), "until": 61_000]
-            }
-            #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == .object(sleeping))
+            let sleeping = try #require(oracle["sleeping"])
+            #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == sleeping)
             #expect(models.base.calls().streamSimple == 0)
             #expect(models.handles == [])
             clock.advance(by: 59_999)
             try harness.resume(); try await idle(harness)
-            #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == .object(sleeping))
+            #expect(try JSONValue(encoding: await harness.getTask(id: record.id, context: .background)) == sleeping)
             #expect(models.base.calls().streamSimple == 0)
             #expect(models.handles == [])
             clock.advance(by: 1)
@@ -245,19 +247,7 @@ struct D4SharedFileResumeTests {
             #expect(entry.kind == "pi.assistant")
             #expect(entry.model?.count == 1)
             #expect(entry.model?.first?["content"]?[0]?["text"] == "resumed")
-            var terminal = try #require(raw.objectValue)
-            // v1.5.2 D1: scheduler.ts:2083-2088 writes the migrated version.
-            terminal["version"] = 2
-            terminal["state"] = ["status": "terminal", "outcome": ["status": "completed", "result": ["entryId": try JSONValue(encoding: entryID)]]]
-            terminal["restarts"] = nil
-            terminal["endedAt"] = 61_000
-            #expect(try JSONValue(encoding: receipt.record) == .object(terminal))
-            if name == "retrySleep" {
-                // v1.5.2 D1: scheduler.ts:2083-2088; tagged Node resumes this frozen v1.4.0 seed.
-                let oracleURL = try #require(Bundle.module.url(forResource: "generation-resume-oracle-v152", withExtension: "json", subdirectory: "Fixtures"))
-                let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
-                #expect(try JSONValue(encoding: receipt.record) == oracle["after"]?["record"])
-            }
+            #expect(try JSONValue(encoding: receipt.record) == oracle["after"]?["record"])
             if name == "pollSleep" {
                 #expect(models.base.calls().streamSimple == 0)
                 #expect(try JSONValue(encoding: models.handles.map(GenerationDeferredHandle.init)) == [#require(raw["state"]?["checkpoint"]?["handle"])])

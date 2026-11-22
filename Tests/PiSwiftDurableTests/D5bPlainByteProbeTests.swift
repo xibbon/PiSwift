@@ -61,14 +61,29 @@ struct D5bPlainByteProbeTests {
         let baseline = root.appendingPathComponent("Scripts/durable-fixtures/d5b-plain-pre/plain-\(backend).json")
         if FileManager.default.fileExists(atPath: baseline.path) {
             let before = try JSONValue(jsonData: Data(contentsOf: baseline))
+            // v1.6.0 D1: generate-v160-plain.mjs runs these two answer turns in the tag;
+            // generation.ts:188 registers v3, which its terminal task writes retain.
+            let oracleURL = root.appendingPathComponent("Scripts/durable-fixtures/d5b-plain-v160.json")
+            let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
+            let tagged = try #require(oracle["cases"]?.arrayValue?.first { $0["backend"] == .string(backend) })
+            let taggedTasks = try #require(tagged["tasks"]?.arrayValue)
+            #expect(taggedTasks.count == 2)
+            #expect(taggedTasks.allSatisfy { $0["kind"] == "pi.generation" && $0["version"] == 3 && $0["status"] == "terminal" })
             // v1.5.2 D7 generation.ts:276-286 and session.ts:1091-1101: each cleared pi.live progress
             // commit is held and folded into the next stored commit. All other bytes keep the D5b diff.
             var prior = try #require(before.arrayValue)
             prior.remove(at: 9); prior.remove(at: 4)
             #expect(Set(changedPaths(.array(prior), current)) == Set([
                 "$[1][3].content.value.run.first", "$[4][0].value.model[0].thinkingLevel",
-                "$[5][3].content.value.run.first", "$[8][0].value.model[0].thinkingLevel"
+                "$[5][3].content.value.run.first", "$[8][0].value.model[0].thinkingLevel",
+                "$[1][2].value.version", "$[2][0].value.version", "$[3][0].value.version", "$[4][2].value.version",
+                "$[5][2].value.version", "$[6][0].value.version", "$[7][0].value.version", "$[8][2].value.version"
             ]))
+            let versions = [current[1]?[2]?["value"]?["version"], current[2]?[0]?["value"]?["version"],
+                current[3]?[0]?["value"]?["version"], current[4]?[2]?["value"]?["version"],
+                current[5]?[2]?["value"]?["version"], current[6]?[0]?["value"]?["version"],
+                current[7]?[0]?["value"]?["version"], current[8]?[2]?["value"]?["version"]]
+            #expect(versions.allSatisfy { $0 == taggedTasks[0]["version"] })
             #expect(current[1]?[3]?["content"]?["value"]?["run"]?["first"] == 7)
             #expect(current[5]?[3]?["content"]?["value"]?["run"]?["first"] == 11)
             #expect(current[4]?[0]?["value"]?["model"]?[0]?["thinkingLevel"] == "off")

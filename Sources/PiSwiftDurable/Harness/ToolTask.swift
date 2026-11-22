@@ -60,6 +60,8 @@ public struct ToolTaskCheckpoint: TaskCheckpoint {
         case call
         /// Runs the prepared tool call.
         case execute
+        /// The tool is asleep or waiting without an active invocation.
+        case parked
     }
     /// The saved prepare or execute phase.
     public var phase: Phase
@@ -67,9 +69,15 @@ public struct ToolTaskCheckpoint: TaskCheckpoint {
     public var arguments: JSONObject?
     /// Whether this tool can execute again after a restart.
     public var replay: ToolReplay?
+    /// Why a recovered execute phase resumed after a park.
+    public var wake: WakeReason?
+    /// Opaque tool state saved before a park or on resumed execution.
+    public var checkpoint: JSONValue?
     /// Selects the saved tool phase, prepared arguments, and replay policy.
-    public init(phase: Phase, arguments: JSONObject? = nil, replay: ToolReplay? = nil) {
+    public init(phase: Phase, arguments: JSONObject? = nil, replay: ToolReplay? = nil,
+                wake: WakeReason? = nil, checkpoint: JSONValue? = nil) {
         self.phase = phase; self.arguments = arguments; self.replay = replay
+        self.wake = wake; self.checkpoint = checkpoint
     }
 }
 /// The tool result entry produced by a completed tool task.
@@ -100,7 +108,7 @@ public enum ToolTaskResult: Codable, Sendable, Equatable {
 }
 /// The built-in tool definition installed in every registry.
 public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>(
-    name: "pi.tool", version: 3, initial: { _ in ToolTaskCheckpoint(phase: .call) },
+    name: "pi.tool", version: 4, initial: { _ in ToolTaskCheckpoint(phase: .call) },
     phase: { task, runtime, context in try await runToolTask(task, runtime, context) },
     abort: { task, runtime, context in
         let call = try await readToolCall(runtime, task.input, context)
@@ -114,7 +122,7 @@ public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTask
     },
     migrate: { input, checkpoint, fromVersion in
         guard case .object(var object) = input else { throw TaskDefinitionError("Tool task input must be an object") }
-        // v1.5.2 tool.ts:141-147 tags only v1 input; v2 and later stay unchanged.
+        // v1.6.0 tool.ts:161-167 tags only v1 input; v2 and v3 stay unchanged.
         if fromVersion == 1 { object["kind"] = "model" }
         return (try JSONValue.object(object).decode(ToolTaskInput.self), try checkpoint.decode(ToolTaskCheckpoint.self))
     }
@@ -155,6 +163,9 @@ private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ 
 }
 private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>, _ runtime: TaskRuntime,
                          _ context: ChordContext) async throws {
+    if task.checkpoint.phase == .parked {
+        throw TaskDefinitionError("Tool parked phase requires v1.6.0 park handling")
+    }
     let call = try await readToolCall(runtime, task.input, context)
     if let restarts = task.record.storedRestarts, restarts >= runtime.settings.restartLimit {
         let count = restarts == 1 ? "once" : "\(Int(restarts)) times in a row"

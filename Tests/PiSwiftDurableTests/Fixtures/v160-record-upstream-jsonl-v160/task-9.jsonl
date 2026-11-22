@@ -1,0 +1,2 @@
+{"format":1,"type":"record","seq":9,"ordinal":0,"payload":{"type":"task","value":{"id":9,"conversationId":1,"kind":"pi.generation","version":3,"input":{},"background":false,"abortRequested":false,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}}}}
+{"format":1,"type":"record","seq":17,"ordinal":7,"payload":{"type":"task","value":{"id":9,"conversationId":1,"kind":"pi.generation","version":3,"input":{},"background":false,"abortRequested":false,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1},"wake":{"reason":"expired"}}}}}

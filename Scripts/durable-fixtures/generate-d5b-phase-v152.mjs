@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
@@ -13,9 +14,11 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
+const v160 = process.argv.includes('--v160');
 const output = fileURLToPath(new URL('./d5b-phase-v152/', import.meta.url));
+const oracleOutput = fileURLToPath(new URL('./d5b-phase-v160/manifest.json', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-phase-'));
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -98,6 +101,52 @@ async function resume(kind, path, ids, rootId) {
   return post;
 }
 try {
+  if (v160) {
+    const reverse = process.argv.indexOf('--resume-swift');
+    if (reverse >= 0) {
+      const name = process.argv[reverse + 1], path = process.argv[reverse + 2];
+      const item = JSON.parse(await readFile(oracleOutput, 'utf8')).cases[name];
+      if (!item || !path) throw new Error('--v160 --resume-swift needs CASE and PATH');
+      const copied = join(temporary, `${name}-swift${item.backend === 'sqlite' ? '.sqlite' : ''}`);
+      await copy(item.backend, path, copied);
+      const store = await storage(item.backend, copied);
+      const before = await snapshot(store, item.rootId);
+      await store.close(context);
+      if (!isDeepStrictEqual(before, item.swiftPre)) throw new Error(`${name} Swift v1.6 pre differs`);
+      const after = await resume(item.backend, copied, item.ids, item.rootId);
+      if (!isDeepStrictEqual(after, item.swiftPost)) throw new Error(`${name} Swift v1.6 post differs`);
+      console.log(`Swift ${name} file resumes under v1.6.0 to the tagged final records.`);
+    } else {
+    const frozen = JSON.parse(await readFile(join(output, 'manifest.json'), 'utf8'));
+    if (frozen.tag !== 'v1.5.2') throw new Error('Frozen phase manifest differs');
+    const manifest = { sourceTag: 'v1.5.2', tag: 'v1.6.0', clock, cases: {} };
+    for (const [name, item] of Object.entries(frozen.cases)) {
+      const kind = item.backend;
+      const sourcePath = join(output, name, `pre${kind === 'sqlite' ? '.sqlite' : ''}`);
+      const copied = join(temporary, `${name}-v160${kind === 'sqlite' ? '.sqlite' : ''}`);
+      await copy(kind, sourcePath, copied);
+      const store = await storage(kind, copied);
+      const pre = await snapshot(store, item.rootId);
+      await store.close(context);
+      if (!isDeepStrictEqual(pre, item.pre)) throw new Error(`${name} frozen pre differs`);
+      const post = await resume(kind, copied, item.ids, item.rootId);
+      const swiftSeedPath = join(temporary, `${name}-new-seed${kind === 'sqlite' ? '.sqlite' : ''}`);
+      const seeded = await seed(kind, swiftSeedPath, item.phase);
+      const swiftPostPath = join(temporary, `${name}-new-post${kind === 'sqlite' ? '.sqlite' : ''}`);
+      await copy(kind, swiftSeedPath, swiftPostPath);
+      const swiftPost = await resume(kind, swiftPostPath, seeded.ids, seeded.rootId);
+      manifest.cases[name] = { ...item, post, swiftPre: seeded.pre, swiftPost };
+    }
+    const text = JSON.stringify(manifest) + '\n';
+    if (check) {
+      if (await readFile(oracleOutput, 'utf8') !== text) throw new Error('v1.6.0 phase continuation differs');
+    } else {
+      await mkdir(join(output, '..', 'd5b-phase-v160'), { recursive: true });
+      await writeFile(oracleOutput, text);
+    }
+    console.log(`D5b v1.6.0 frozen phase continuations ${check ? 'match' : 'written'}: ${Object.keys(manifest.cases).length} cases.`);
+    }
+  } else {
   const reverse = process.argv.indexOf('--resume-swift');
   if (reverse >= 0) {
     const name = process.argv[reverse + 1], path = process.argv[reverse + 2];
@@ -154,6 +203,7 @@ try {
     await writeFile(join(output, 'manifest.json'), serialized);
   }
   console.log(`D5b tagged phases ${check ? 'match' : 'written'}: 3 phases, SQLite and JSONL.`);
+  }
   }
 } finally {
   Date.now = oldDateNow;

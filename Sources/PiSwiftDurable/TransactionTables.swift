@@ -266,11 +266,19 @@ extension Transaction {
                 }
                 let startedAt = candidate?.startedAt ?? value.startedAt ?? (value.state.status == "running" ? Double(now()) : nil)
                 let endedAt = candidate?.endedAt ?? value.endedAt ?? (value.state.status == "terminal" ? Double(now()) : nil)
+                // v1.6.0 transaction.ts:579-584: a live replacement keeps memos staged
+                // by an earlier write in this transaction. The later value wins for a key.
+                var memos = value.memos
+                if let earlier = candidate?.memos, value.state.status != "terminal", value.state.status != "completing" {
+                    var merged = earlier
+                    for (name, memo) in value.memos ?? [:] { merged[name] = memo }
+                    memos = merged
+                }
                 let record = TaskRecord(id: value.id, conversationId: value.conversationId, kind: value.kind, version: value.version,
                                         input: value.input, state: value.state, owner: value.owner, background: value.background,
                                         abortRequested: value.abortRequested, abortReason: value.abortReason,
                                         abandonOnRestart: value.abandonOnRestart, startedAt: startedAt, endedAt: endedAt,
-                                        memos: value.memos, restarts: value.storedRestarts,
+                                        memos: memos, restarts: value.storedRestarts,
                                         extensionFields: value.carrierCopyFields)
                 try validateTableJSON(record)
                 task.write = record

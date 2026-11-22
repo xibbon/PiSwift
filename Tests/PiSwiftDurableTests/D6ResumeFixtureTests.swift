@@ -19,7 +19,10 @@ struct D6ResumeFixtureTests {
     }
     private var generator: URL { directory.deletingLastPathComponent().appendingPathComponent("generate-d6-resume-v152.mjs") }
     private func item(_ name: String) throws -> JSONValue {
-        try #require(JSONValue(jsonData: Data(contentsOf: directory.appendingPathComponent("manifest.json")))["cases"]?[name])
+        // v1.6.0 D1: generate-d6-resume-v152.mjs --v160 resumes the same frozen
+        // pre files with tool.ts:159 v4 and generation.ts:188 v3.
+        let oracle = directory.deletingLastPathComponent().appendingPathComponent("d6-resume-v160/manifest.json")
+        return try #require(JSONValue(jsonData: Data(contentsOf: oracle))["cases"]?[name])
     }
     private func open(_ path: URL, backend: String) async throws -> any DurableStorage {
         if backend == "jsonl" { return try await JsonlStorage.open(directory: path.path, fileSystem: LocalExecutionEnv(cwd: path.path)) }
@@ -88,6 +91,21 @@ struct D6ResumeFixtureTests {
             }
         }
         return "\(path): \(actual) != \(expected)"
+    }
+    private func withLegacyDuration(_ saved: JSONValue) throws -> JSONValue {
+        var expected = try #require(saved["post"]?.objectValue)
+        var entries = try #require(expected["entries"]?.arrayValue)
+        guard entries.indices.contains(1), var entry = entries[1].objectValue,
+              var model = entry["model"]?.arrayValue, !model.isEmpty,
+              var assistant = model[0].objectValue else { return .object(expected) }
+        // v1.6.0 D1: tool.ts:1156-1200 changes durationMs. D3a/D13 owns
+        // that behavior. The v1.5.2 and v1.6.0 tagged oracles use one frozen pre.
+        assistant["durationMs"] = saved["legacyPost"]?["entries"]?[1]?["model"]?[0]?["durationMs"]
+        model[0] = .object(assistant)
+        entry["model"] = .array(model)
+        entries[1] = .object(entry)
+        expected["entries"] = .array(entries)
+        return .object(expected)
     }
     private func registry(_ scenario: String) throws -> Registry {
         let registry = createRegistry()
@@ -159,7 +177,9 @@ struct D6ResumeFixtureTests {
         try opened.resume()
         _ = try await opened.waitForTask(id: taskId, context: .background)
         let actual = try await snapshot(storage, root: root)
-        if let mismatch = difference(actual, try #require(saved["post"])) { Issue.record("\(name): \(mismatch)") }
+        #expect(actual["entries"]?[1]?["model"]?[0]?["durationMs"] ==
+            saved["legacyPost"]?["entries"]?[1]?["model"]?[0]?["durationMs"])
+        if let mismatch = difference(actual, try withLegacyDuration(saved)) { Issue.record("\(name): \(mismatch)") }
         try await opened.close(context: .background)
     }
 
@@ -198,7 +218,7 @@ struct D6ResumeFixtureTests {
             #expect(ids.1 == expectedParent)
             #expect(ids.2 == expectedChild)
             try await root.commit({ tx in
-                for record in try #require(saved["pre"]?["tasks"]?.arrayValue) { try tx.setTask(record.decode(TaskRecord.self)) }
+                for record in try #require(saved["swiftPre"]?["tasks"]?.arrayValue) { try tx.setTask(record.decode(TaskRecord.self)) }
             }, context: .background)
         } else if scenario == "afterRun-cutoff" {
             let ids = try await root.commit({ tx in
@@ -219,7 +239,7 @@ struct D6ResumeFixtureTests {
             #expect(ids.2 == expectedGeneration)
             #expect(ids.3 == expectedChild)
             try await root.commit({ tx in
-                for record in try #require(saved["pre"]?["tasks"]?.arrayValue) {
+                for record in try #require(saved["swiftPre"]?["tasks"]?.arrayValue) {
                     try tx.setTask(record.decode(TaskRecord.self))
                 }
             }, context: .background)
@@ -241,12 +261,12 @@ struct D6ResumeFixtureTests {
             #expect(ids.1 == expectedTask)
             if scenario.hasSuffix("replay") || scenario == "restart-limit" {
             try await root.commit({ tx in
-                try tx.setTask(try #require(saved["pre"]?["tasks"]?[0]).decode(TaskRecord.self))
+                try tx.setTask(try #require(saved["swiftPre"]?["tasks"]?[0]).decode(TaskRecord.self))
             }, context: .background)
             }
         }
         let actual = try await snapshot(storage, root: root.id)
-        if let mismatch = difference(actual, try #require(saved["pre"])) { Issue.record("\(name) Swift pre: \(mismatch)"); return }
+        if let mismatch = difference(actual, try #require(saved["swiftPre"])) { Issue.record("\(name) Swift pre: \(mismatch)"); return }
         try await opened.close(context: .background)
 
         let log = temporary.appendingPathComponent("node.log")
@@ -255,7 +275,7 @@ struct D6ResumeFixtureTests {
         defer { try? handle.close() }
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        child.arguments = ["node", generator.path, "--resume-swift", name, path.path]
+        child.arguments = ["node", generator.path, "--v160", "--resume-swift", name, path.path]
         child.standardOutput = handle; child.standardError = handle
         try child.run(); child.waitUntilExit()
         let output = try String(contentsOf: log, encoding: .utf8)

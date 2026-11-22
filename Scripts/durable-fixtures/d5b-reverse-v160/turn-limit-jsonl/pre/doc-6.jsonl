@@ -1,0 +1,2 @@
+{"format":1,"type":"record","seq":1,"ordinal":4,"payload":{"type":"document","id":6,"content":{"kind":"base","version":1,"value":{"model":{"provider":"faux","modelId":"faux-1"}}}}}
+{"format":1,"type":"record","seq":2,"ordinal":0,"payload":{"type":"document","id":6,"content":{"kind":"base","version":1,"value":{"model":{"provider":"faux","modelId":"faux-1"},"maxTurns":1}}}}
