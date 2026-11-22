@@ -378,7 +378,11 @@ private func runtimeToolCall(_ name: String, arguments: [String: AnyCodable]) ->
                 return chatAssistant("SUMMARY")
             }])
             await result.controller.compact(instructions: "Keep file paths")
-            try await eventually { result.view.current().notices.contains { $0.message == "Compacted." } }
+            // The notice and the compaction entry reach the view in separate updates (failed under load 32).
+            try await eventually {
+                result.view.current().notices.contains { $0.message == "Compacted." }
+                    && result.view.current().conversation.entries.contains { $0.kind == "pi.compaction" }
+            }
             #expect(result.view.current().notices.last?.level == .info)
             #expect(prompt.withLock { $0.contains("Additional focus: Keep file paths") })
             #expect(result.view.current().conversation.entries.contains { $0.kind == "pi.compaction" })
