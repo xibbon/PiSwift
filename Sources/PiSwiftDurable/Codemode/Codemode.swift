@@ -380,7 +380,7 @@ internal actor DurableCodemodeCall {
     }
     func complete(_ result: CodemodeResult) async throws -> ToolExecutionResult {
         let calls = details()
-        let formatted = await codemodeFormatResult(result, generatedImages: generatedImages, wallMs: Double(try api.now()) - start.startedAt,
+        let formatted = try await codemodeFormatResult(result, generatedImages: generatedImages, wallMs: Double(try api.now()) - start.startedAt,
             maxOutputTokens: start.maxOutputTokens, calls: calls, limits: .init(maxBytes: 4 * 1024 * 1024, maxLines: 100_000, retain: .tail), write: { name, data in await self.writeOutput(name, data: data) })
         var detail: JSONObject = ["calls": try JSONValue(encoding: calls)]
         if let path = formatted.fullOutputPath { detail["fullOutputPath"] = .string(path) }
