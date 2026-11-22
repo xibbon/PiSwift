@@ -17,6 +17,14 @@ public struct HookApi: Sendable {
     public var read: HarnessDocumentReader
     /// Reads a saved task memo or installs a candidate when absent.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    /// Reads a committed signal key in this hook's task.
+    public func readSignal<Value: Codable & Sendable>(
+        _ token: SignalToken<Value>, key: String, context: ChordContext
+    ) async throws -> SignalState<Value>? {
+        let name = signalMemoName(token.name, key)
+        let stored = try await memo(name, nil, context)
+        return try PiSwiftDurable.readSignal(token, key: key, memos: stored.map { [name: $0] })
+    }
     private let readEntries: @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor>
     private let readEntry: @Sendable (EntryID, ChordContext) async throws -> EntryRecord?
     /// Binds read services, models, and durable memos to a task invocation.

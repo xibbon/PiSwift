@@ -249,6 +249,19 @@ public struct DurableSleepingTask: Sendable, Equatable, Codable {
     }
 }
 
+/// A task waiting on signal keys, with no required deadline.
+public struct DurableSignalSleepingTask: Sendable, Equatable, Codable {
+    public let id: TaskID
+    public let kind: String
+    public let phase: String
+    public let signals: [SignalKey]
+    public let until: Double?
+
+    public init(id: TaskID, kind: String, phase: String, signals: [SignalKey], until: Double? = nil) {
+        self.id = id; self.kind = kind; self.phase = phase; self.signals = signals; self.until = until
+    }
+}
+
 /// The values shown by a durable session interface.
 public struct DurableView: Sendable, Equatable, Codable {
     /// The session location.
@@ -272,6 +285,8 @@ public struct DurableView: Sendable, Equatable, Codable {
     public let blockedTasks: [DurableBlockedTask]
     /// Durable waits in the shown conversation and its owned tasks, even with the panel hidden.
     public let sleepingTasks: [DurableSleepingTask]
+    /// Tasks waiting for a signal, including waits without a deadline.
+    public let signalSleepingTasks: [DurableSignalSleepingTask]
     /// Whether work can progress or waits for time or user action.
     @available(*, deprecated, message: "Use DurableHostView.activity")
     public let activity: DurableActivity
@@ -284,6 +299,7 @@ public struct DurableView: Sendable, Equatable, Codable {
                 notices: [Notice] = [], tasks: TaskGraph? = nil,
                 terminal: DurableSessionTerminal? = nil,
                 blockedTasks: [DurableBlockedTask] = [], sleepingTasks: [DurableSleepingTask] = [],
+                signalSleepingTasks: [DurableSignalSleepingTask] = [],
                 activity: DurableActivity = .idle, queuedInputs: [InboxItem] = []) {
         self.session = session
         self.conversation = conversation
@@ -294,13 +310,14 @@ public struct DurableView: Sendable, Equatable, Codable {
         self.terminal = terminal
         self.blockedTasks = blockedTasks
         self.sleepingTasks = sleepingTasks
+        self.signalSleepingTasks = signalSleepingTasks
         self.activity = activity
         self.queuedInputs = queuedInputs
     }
 
     private enum CodingKeys: String, CodingKey {
         case session, conversation, conversations, models, notices, tasks, terminal
-        case blockedTasks, sleepingTasks, activity, queuedInputs
+        case blockedTasks, sleepingTasks, signalSleepingTasks, activity, queuedInputs
     }
 
     /// Reads snapshots saved before task wait and queue fields were added.
@@ -315,6 +332,7 @@ public struct DurableView: Sendable, Equatable, Codable {
         terminal = try values.decodeIfPresent(DurableSessionTerminal.self, forKey: .terminal)
         blockedTasks = try values.decodeIfPresent([DurableBlockedTask].self, forKey: .blockedTasks) ?? []
         sleepingTasks = try values.decodeIfPresent([DurableSleepingTask].self, forKey: .sleepingTasks) ?? []
+        signalSleepingTasks = try values.decodeIfPresent([DurableSignalSleepingTask].self, forKey: .signalSleepingTasks) ?? []
         activity = try values.decodeIfPresent(DurableActivity.self, forKey: .activity) ?? .idle
         queuedInputs = try values.decodeIfPresent([InboxItem].self, forKey: .queuedInputs) ?? []
     }

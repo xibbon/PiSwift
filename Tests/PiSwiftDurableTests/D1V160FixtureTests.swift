@@ -60,10 +60,9 @@ struct D1V160FixtureTests {
     }
 
     private var blockedOrders: [String: String] {
-        ["parkedTool": "D2", "signalOnlySleep": "D2", "timedSignalSleep": "D2",
+        ["parkedTool": "D3a",
          "anyWait": "D3", "afterTools": "D5", "yield": "D5",
-         "executeTool": "D3a", "wakeTime": "D3", "wakeExpired": "D3",
-         "wakeSignal": "D2", "wakeTasks": "D3"]
+         "executeTool": "D3a", "wakeTasks": "D3"]
     }
 
     @Test func taggedWritesAndRecordsRoundTrip() throws {

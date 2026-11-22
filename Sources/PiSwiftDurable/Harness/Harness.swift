@@ -115,6 +115,14 @@ public final class Harness: Sendable {
             try assertOpen(); return try await session.commit(change, context: context, persistence: persistence)
         }
     }
+    /// Delivers one typed signal and enables task scheduling.
+    public func signal<Value: Codable & Sendable>(
+        taskId: TaskID, token: SignalToken<Value>, key: String, value: Value, context: ChordContext
+    ) async throws -> SignalResult {
+        try assertOpen()
+        try tasks.resume()
+        return try await commit({ tx in try await tx.signal(taskId, token: token, key: key, value: value) }, context: context)
+    }
     /// Attaches a synchronous observer of committed changes.
     public func observeCommits(_ observer: CommitObserver) throws -> CommitObservation {
         try assertOpen(); return try session.observeCommits(observer)

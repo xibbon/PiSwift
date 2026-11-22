@@ -332,6 +332,10 @@ extension Transaction {
         return try await committedTask(id)
     }
 
+    internal func stagedTask(_ id: TaskID) -> TaskRecord? {
+        tableState.withLock { $0.tasks[id]?.write }
+    }
+
     private func committedTask(_ id: TaskID) async throws -> TaskRecord? {
         let read = tableState.withLock { state in
             var task = state.tasks[id] ?? TransactionTask()

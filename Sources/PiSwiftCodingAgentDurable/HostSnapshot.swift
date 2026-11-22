@@ -111,6 +111,7 @@ public struct DurableHostView: Sendable {
     public let openMode: DurableOpenMode
     public let activity: DurableRunActivity
     public let sleepingTasks: [DurableSleepingTask]
+    public let signalSleepingTasks: [DurableSignalSleepingTask]
     public let documentError: String?
 
     /// Reads typed documents and retains a diagnostic if a document is invalid.
@@ -154,6 +155,7 @@ public struct DurableHostView: Sendable {
         case .blocked: activity = .blocked
         }
         sleepingTasks = legacy.sleepingTasks
+        signalSleepingTasks = legacy.signalSleepingTasks
     }
 }
 

@@ -309,6 +309,7 @@ internal final class RuntimeViewSource: DurableHostViewSource {
                                  conversations: view.conversations, models: view.models, notices: view.notices,
                                  tasks: state.tasksVisible ? state.graph : nil, terminal: view.terminal,
                                  blockedTasks: work.blocked, sleepingTasks: work.sleeping,
+                                 signalSleepingTasks: work.signalSleeping,
                                  activity: work.activity, queuedInputs: work.queued)
     }
 

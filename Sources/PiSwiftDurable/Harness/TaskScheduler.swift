@@ -163,9 +163,9 @@ internal final class TaskScheduler: Sendable {
                 }
             }
             for record in found where !readOnly {
-                if case .running(let checkpoint, _) = record.state {
+                if case .running(let checkpoint, let fields) = record.state {
                     let restarts = record.restarts + 1
-                    try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint), restarts: .some(restarts)))
+                    try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint, extensions: fields), restarts: .some(restarts)))
                 }
             }
         }, context: context)
@@ -197,8 +197,8 @@ internal final class TaskScheduler: Sendable {
                 // v1.5.2 scheduler.ts:592–599: take the record after all
                 // admitted marks. Swift's close listener has detached the
                 // scheduler observer, so its live map can lag publication.
-                guard let record = try await tx.task(id), case .running(let checkpoint, _) = record.state else { continue }
-                pending.append(record.replacing(state: .pending(checkpoint: checkpoint)))
+                guard let record = try await tx.task(id), case .running(let checkpoint, let fields) = record.state else { continue }
+                pending.append(record.replacing(state: .pending(checkpoint: checkpoint, extensions: fields)))
             }
             for record in pending { try tx.setTask(record) }
         }, context: context)
@@ -473,14 +473,11 @@ internal final class TaskScheduler: Sendable {
         return (nil, nil, true)
     }
     func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> (shape: String, order: String)? {
-        if record.status == "sleeping", record.signals != nil {
-            let order = record.kind == "pi.tool" && record.checkpoint?["phase"]?.stringValue == "parked"
-                ? "D2 and D3a" : "D2"
-            return ("signal sleep", order)
-        }
+        if record.status == "sleeping", record.kind == "pi.tool",
+           record.checkpoint?["phase"]?.stringValue == "parked" { return ("signal sleep", "D3a") }
         if record.status == "waiting", record.policy == .any { return ("any wait", "D3") }
         if let wake = record.wake?.objectValue, let reason = wake["reason"]?.stringValue {
-            return ("\(reason) wake", reason == "signal" ? "D2" : "D3")
+            if reason != "signal" && reason != "time" && reason != "expired" { return ("\(reason) wake", "D3") }
         }
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
@@ -596,7 +593,13 @@ internal final class TaskScheduler: Sendable {
                         do {
                             guard let migrate = definition.migrate else { throw SessionError.message("Task \(record.kind) version \(definition.version) has no migration from \(record.version)") }
                             let next = try migrate(record.input, record.state.checkpoint!, record.version)
-                            record = record.replacing(input: next.input, version: definition.version, state: .running(checkpoint: next.checkpoint))
+                            let fields: JSONObject
+                            switch record.state {
+                            case .pending(_, let kept), .running(_, let kept): fields = kept
+                            default: fields = [:]
+                            }
+                            record = record.replacing(input: next.input, version: definition.version,
+                                                      state: .running(checkpoint: next.checkpoint, extensions: fields))
                         } catch {
                             state.withLock { $0.failedMigrations[record.id] = (definition.identity, error) }; report(error, .migrationFailed(task: ReportTask(record), extension: snapshot!.installer(of: definition)))
                             refreshBlocked()
@@ -614,8 +617,19 @@ internal final class TaskScheduler: Sendable {
                         continue
                     }
                     guard let definition, let checkpoint = record.state.checkpoint else { continue }
+                    if !record.abortRequested, case .sleeping = original.state,
+                       let (wake, memos) = try sleepWake(original.state, memos: record.memos, now: Double(now())) {
+                        record = signalWithMemos(record, memos)
+                        record = record.replacing(state: .running(checkpoint: checkpoint,
+                            extensions: ["wake": try JSONValue(encoding: wake)]))
+                    }
                     if original.state.status != "running" || resolution.migrates {
-                        try tx.setTask(record.replacing(state: .running(checkpoint: checkpoint)))
+                        if record.state.status != "running" {
+                            let fields: JSONObject
+                            if case .pending(_, let kept) = record.state { fields = kept } else { fields = [:] }
+                            record = record.replacing(state: .running(checkpoint: checkpoint, extensions: fields))
+                        }
+                        try tx.setTask(record)
                     }
                     let invocation = TaskInvocation(record, abort: record.abortRequested, context: context), id = UUID()
                     state.withLock {
@@ -722,7 +736,9 @@ internal final class TaskScheduler: Sendable {
                 phase.state.withLock { $0.snapshot = snapshot }
                 if next?.identity != old.identity {
                     if let next, next.version == current.version || (next.version > current.version && next.migrate != nil) {
-                        try tx.setTask(current.replacing(state: .pending(checkpoint: current.state.checkpoint!))); return .end
+                        let fields: JSONObject
+                        if case .running(_, let kept) = current.state { fields = kept } else { fields = [:] }
+                        try tx.setTask(current.replacing(state: .pending(checkpoint: current.state.checkpoint!, extensions: fields))); return .end
                     }
                     let shouldReport = phase.state.withLock { state -> Bool in
                         if let next { if state.reported == next.identity && !state.reportedMissing { return false }; state.reported = next.identity; state.reportedMissing = false }

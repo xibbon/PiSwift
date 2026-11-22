@@ -18,6 +18,7 @@ public final class Transaction: Sendable {
     internal let now: @Sendable () -> Int64
     internal let conversationCreated: @Sendable (Transaction, ConversationRecord) async throws -> Void
     internal let tableState = Mutex(TransactionTableState())
+    private let signalDecisionGate = Mutex(())
     internal let documents = TransactionDocuments()
     internal let lifetime = DraftLifetime()
     private struct State: Sendable {
@@ -169,5 +170,24 @@ public final class Transaction: Sendable {
         SessionKeys.tableKeys(writes, into: &keys)
         keys.append(contentsOf: documents.writeKeys())
         return keys
+    }
+}
+
+extension Transaction {
+    /// Delivers a typed value to a live task in this commit.
+    public func signal<Value: Codable & Sendable>(
+        _ taskId: TaskID, token: SignalToken<Value>, key: String, value: Value
+    ) async throws -> SignalResult {
+        try await operation(tableRead: "signal") {
+            try await session.touch(SessionKeys.taskKey(taskId))
+            let committed = try await storage.task(taskId, context: context)
+            return try signalDecisionGate.withLock { _ in
+                let record = stagedTask(taskId) ?? committed
+                let (result, updated) = try deliverSignal(record: record, token: token, key: key,
+                                                           value: value, now: Double(now()))
+                if let updated { try setTask(updated) }
+                return result
+            }
+        }
     }
 }

@@ -29,6 +29,7 @@ internal struct RuntimeReport: Sendable {
 internal struct RuntimeWork {
     var blocked: [DurableBlockedTask] = []
     var sleeping: [DurableSleepingTask] = []
+    var signalSleeping: [DurableSignalSleepingTask] = []
     var activity: DurableActivity = .idle
     var queued: [InboxItem] = []
 }
@@ -66,15 +67,18 @@ internal func runtimeWork(graph: TaskGraph?, conversation: ConversationView,
         if case .sleeping(let phase, let until?) = node.state {
             work.sleeping.append(.init(id: node.id, kind: node.kind, phase: phase, until: until))
         }
+        if case .signalSleeping(let phase, let until, let signals) = node.state {
+            work.signalSleeping.append(.init(id: node.id, kind: node.kind, phase: phase, signals: signals, until: until))
+        }
         guard node.blocked == nil else { continue }
         switch node.state {
         case .pending, .running: active = true
-        case .sleeping, .waiting, .completing: break
+        case .sleeping, .signalSleeping, .waiting, .completing: break
         }
     }
     if active { work.activity = .progressing }
     else if !work.blocked.isEmpty { work.activity = .blocked }
-    else if !work.sleeping.isEmpty { work.activity = .sleeping }
+    else if !work.sleeping.isEmpty || !work.signalSleeping.isEmpty { work.activity = .sleeping }
     else if !included.isEmpty { work.activity = .progressing }
     return work
 }

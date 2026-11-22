@@ -11,6 +11,8 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
     case waiting(phase: String, on: [TaskID], policy: JoinPolicy)
     /// Work waits for a deadline, signal keys, or both.
     case sleeping(phase: String, until: Double?)
+    /// Work waits for signal keys, with an optional deadline.
+    case signalSleeping(phase: String, until: Double?, signals: [SignalKey])
     /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: String)
 
@@ -20,7 +22,7 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         case .pending: "pending"
         case .running: "running"
         case .waiting: "waiting"
-        case .sleeping: "sleeping"
+        case .sleeping, .signalSleeping: "sleeping"
         case .completing: "completing"
         }
     }
@@ -39,16 +41,23 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
             if let until { try recordValidateDeadline(until) }
             if let signals, signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
             if until == nil && signals == nil { throw recordUnknown("sleep", "missing until and signals") }
-            self = .sleeping(phase: try recordRequired(object, "phase"), until: until)
+            let phase: String = try recordRequired(object, "phase")
+            if let signals { self = .signalSleeping(phase: phase, until: until, signals: signals) }
+            else { self = .sleeping(phase: phase, until: until) }
         case "completing": self = .completing(outcome: try recordRequired(object, "outcome"))
         default: throw recordUnknown("status", status)
         }
     }
     /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
-        if case .sleeping(_, let until) = self {
+        switch self {
+        case .sleeping(_, let until):
             guard let until else { throw recordUnknown("sleep", "missing until and signals") }
             try recordValidateDeadline(until)
+        case .signalSleeping(_, let until, let signals):
+            if signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
+            if let until { try recordValidateDeadline(until) }
+        default: break
         }
         try json.encode(to: encoder)
     }
@@ -63,6 +72,10 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         case let .sleeping(phase, until):
             object["phase"] = .string(phase)
             if let until { object["until"] = .number(until) }
+        case let .signalSleeping(phase, until, signals):
+            object["phase"] = .string(phase)
+            if let until { object["until"] = .number(until) }
+            object["signals"] = (try? JSONValue(encoding: signals)) ?? .array([])
         case .completing(let outcome): object["outcome"] = .string(outcome)
         }
         return .object(object)
@@ -109,7 +122,10 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
         case .pending(let checkpoint, _): state = .pending(phase: phase(checkpoint))
         case .running(let checkpoint, _): state = .running(phase: phase(checkpoint))
         case let .waiting(checkpoint, on, policy, _): state = .waiting(phase: phase(checkpoint), on: on, policy: policy)
-        case let .sleeping(checkpoint, until, _): state = .sleeping(phase: phase(checkpoint), until: until)
+        case let .sleeping(checkpoint, until, _):
+            if let keys = try? record.state.sleepSignals() {
+                state = .signalSleeping(phase: phase(checkpoint), until: until, signals: keys)
+            } else { state = .sleeping(phase: phase(checkpoint), until: until) }
         case .completing(let outcome, _), .terminal(let outcome, _): state = .completing(outcome: outcome.status)
         }
     }
@@ -146,11 +162,14 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
     }
     /// Encodes a graph node with its JSON representation.
     public func encode(to encoder: any Encoder) throws {
-        if case .sleeping(_, let until) = state {
+        switch state {
+        case .sleeping(_, let until):
+            guard let until else { throw recordUnknown("sleep", "missing until and signals") }
+            try recordValidateDeadline(until)
+        case .signalSleeping(_, let until, let signals):
+            if signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
             if let until { try recordValidateDeadline(until) }
-            let signals = try sleepSignals()
-            if let signals, signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
-            if until == nil && signals == nil { throw recordUnknown("sleep", "missing until and signals") }
+        default: break
         }
         try json.encode(to: encoder)
     }

@@ -153,6 +153,7 @@ extension TaskScheduler {
             if let until, !until.isFinite || until < 0 {
                 throw SessionError.message("Task \(current.id.rawValue) cannot sleep until \(sleepTimeText(until)): not a time in milliseconds")
             }
+            try checkSleep(next, memos: current.memos, task: current.id)
         }
         switch next {
         case .terminal(let outcome, _):
@@ -161,8 +162,10 @@ extension TaskScheduler {
             }
             try await terminate(tx, record: current, outcome: outcome)
         case .running, .waiting, .sleeping:
-            let same = jsonStructurallyEqual(try JSONValue(encoding: current.state), try JSONValue(encoding: next))
-            try tx.setTask((same ? current : current.progressed()).replacing(state: next))
+            var prior = try JSONValue(encoding: current.state).objectValue ?? [:]
+            prior.removeValue(forKey: "wake")
+            let same = jsonStructurallyEqual(.object(prior), try JSONValue(encoding: next))
+            try tx.setTask((same ? current : current.progressed()).replacing(state: same ? current.state : next))
         default: throw SessionError.message("A task handler can commit only running, waiting, sleeping, or terminal state")
         }
     }

@@ -135,6 +135,14 @@ public struct ToolExecutionApi: Sendable {
     public var details: @Sendable (JSONValue, ChordContext) async throws -> Void
     /// A nil candidate reads; a supplied candidate installs only when no value exists.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    /// Reads a committed signal key in this tool's task.
+    public func readSignal<Value: Codable & Sendable>(
+        _ token: SignalToken<Value>, key: String, context: ChordContext
+    ) async throws -> SignalState<Value>? {
+        let name = signalMemoName(token.name, key)
+        let stored = try await memo(name, nil, context)
+        return try PiSwiftDurable.readSignal(token, key: key, memos: stored.map { [name: $0] })
+    }
     /// Binds tool services and publication callbacks to one task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: @autoclosure @escaping @Sendable () -> any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),

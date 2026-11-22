@@ -238,6 +238,38 @@ extension StorageChecks {
         try StorageAssertions.strictEqual(try await h.scan("task", ["status": "completing"]).items, [])
         try StorageAssertions.strictEqual(try await h.scan("task", ["status": "terminal"]).items, [terminal])
     }
+    static func signalRecords(_ h: Self) async throws {
+        let root = try await h.root()
+        let indefinite = try await h.mint()
+        let timed = try await h.mint()
+        let waiting = try await h.mint()
+        let pending = try await h.mint()
+        let running = try await h.mint()
+        let checkpoint: JSONValue = ["phase": "next"]
+        let signals: JSONValue = [["signal": "app.answer", "key": "a"]]
+        let records = [
+            task(indefinite, root, ["state": ["status": "sleeping", "checkpoint": checkpoint, "signals": signals]]),
+            task(timed, root, [
+                "state": ["status": "sleeping", "checkpoint": checkpoint, "until": 61_000, "signals": signals],
+                "memos": ["pi.signal.app.answer/a": ["version": 1, "value": ["text": "yes"]]],
+            ]),
+            task(waiting, root, ["state": [
+                "status": "waiting", "checkpoint": checkpoint, "on": [number(indefinite), number(timed)], "policy": "any",
+            ]]),
+            task(pending, root, ["state": [
+                "status": "pending", "checkpoint": checkpoint, "wake": ["reason": "tasks", "ended": [number(indefinite)]],
+            ]]),
+            task(running, root, ["state": [
+                "status": "running", "checkpoint": checkpoint, "wake": ["reason": "signal", "signal": "app.answer", "key": "a"],
+            ]]),
+        ]
+        try await h.commit(records.map { write("task", $0) })
+        for (id, expected) in zip([indefinite, timed, waiting, pending, running], records) {
+            try StorageAssertions.deepEqual(try await h.task(id), expected)
+        }
+        try StorageAssertions.strictEqual(try await h.scan("task", ["status": "sleeping"]).items, Array(records[0...1]))
+        try StorageAssertions.strictEqual(try await h.scan("task", ["status": "waiting"]).items, [records[2]])
+    }
     static func case13(_ h: Self) async throws {
         let root = try await h.root(), other = try await h.mint()
         try await h.commit([write("conversation", ["id": number(other)])])

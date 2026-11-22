@@ -61,7 +61,8 @@ for (const name of chordNames) {
 // run separately by the release proof command.
 const suites = [
   'SharedFileCloseoutTests', 'D4SharedFileCloseoutTests', 'D4SharedFileResumeTests',
-  'D1V152FixtureTests', 'D1V160FixtureTests', 'D2TaggedBatchFixtureTests', 'D5aRestartFixtureTests',
+  'D1V152FixtureTests', 'D1V160FixtureTests', 'D2TaggedBatchFixtureTests',
+  'HarnessSignalsTests', 'UpstreamSignalExamplesTests', 'D5aRestartFixtureTests',
   'D5bConversationFixtureTests', 'D5bEndingFixtureTests', 'D5bRestartMatrixTests',
   'D5bReverseFixtureTests', 'D5bTaggedPhaseFixtureTests', 'D6ConversationFixtureTests',
   'D6ResumeFixtureTests', 'D7CrossLanguageFixtureTests', 'D8SchemaVectorsTests',
@@ -77,6 +78,8 @@ run('two-language Swift matrix', 'swift', ['test', '--skip-build', '--filter', s
 const rows = [
   ['B1–B3 record reads', 'FILE', 'D1', 'D12', 'D12', 'D12', 'D1', 'D12'],
   ['B4 batch and torn cut', 'FILE', 'D2', 'D2', 'D2', 'D2', 'D2', 'D2'],
+  ['v1.6.0 signal sleep, delivery, and expiry', 'FILE', 'D2 parked, early delivery, expiry',
+    'D2 parked', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D2 parked, early delivery, expiry', 'D2 parked'],
   ['B5 live read-only refresh', 'FILE', 'D12', 'D12', 'D12', 'D12', 'D9', 'D9'],
   ['watches and views', 'N/A', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4'],
   ['Session writer/group commit', 'SCRIPT', 'D7', 'D7', 'GAP', 'GAP', 'D7', 'D7'],

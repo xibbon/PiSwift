@@ -70,6 +70,7 @@ public func storageConformanceCases(
         ("resolves a batched copy against the state the earlier batches left", StorageChecks.case28),
         ("stores continue submissions without an entry or queued state", StorageChecks.case29),
         ("refuses a creation and change of one document in either order", StorageChecks.case30),
+        ("round-trips signal sleeps, any waits, and wake reasons", StorageChecks.signalRecords),
     ]
     return cases.map { name, check in
         StorageConformanceCase(name: name) {
