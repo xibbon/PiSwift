@@ -79,7 +79,7 @@ public final class Harness: Sendable {
                     return ConversationHandle(Conversation(id: id, harness: harness, binding: binding))
                 }, report: report, context: context.withoutAbortSignal(),
                 settleOutcome: { tx, record, outcome in try await settleSchedulerOutcome(tx: tx, record: record, outcome: outcome) },
-                withdrawInputs: { tx, id in try await withdrawQueuedInputs(tx: tx, conversationId: id) })
+                withdrawInputs: { tx, id in try await withdrawAbortedInputs(tx: tx, conversationId: id) })
             hooks.scheduler.withLock { $0 = scheduler }
             let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, readOnly: options.readOnly, resume: { try scheduler.resume() })
             let harness = try Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)

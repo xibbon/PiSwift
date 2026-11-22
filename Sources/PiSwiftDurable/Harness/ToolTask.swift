@@ -244,14 +244,17 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
             result: harnessToolError(code: "invalid_arguments", message: toolErrorText(error)), context: context)
     }
     var block: String?
+    var gateSleep: GateSleep?
+    let gateEpoch = runtime.phase.registryEpoch
     try await runtime.hooks.each(ToolHooks.self, context: context) { hooks in
-        guard block == nil, let hook = hooks.beforeTool else { return }
+        guard block == nil, gateSleep == nil, let hook = hooks.beforeTool else { return }
         var candidate = call
         candidate.arguments = (try foundationJSON(from: .object(args)) as! [String: Any]).mapValues(AnyCodable.init)
         candidate.argumentsJSON = nil
         do {
             if let decision = try await hook(candidate, runtime.hookApi, context) {
                 if let reason = decision.block { block = reason }
+                else if let sleep = decision.sleep { gateSleep = sleep }
                 else if let replacement = decision.arguments { args = replacement }
             }
         } catch {
@@ -262,6 +265,9 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
     if let block {
         return try await rejectTool(runtime, task.input, call, tool: tool,
             result: harnessToolError(code: "blocked", message: "Tool call blocked: \(block)"), context: context)
+    }
+    if let gateSleep {
+        return try await parkAtGate(runtime, task.input, call, tool, gateSleep, gateEpoch: gateEpoch, context: context)
     }
     do { args = try checkedToolArguments(tool, call.call, .object(args), preserveCallOrder: false) }
     catch {
@@ -338,6 +344,32 @@ private func rejectTool(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ call: 
                         tool: ToolRegistration?, result: ToolExecutionResult, context: ChordContext) async throws {
     let final = try await afterHarnessToolResult(runtime, input, call, tool: tool, result: result, context: context)
     try await settleTool(runtime, call, .completed, result: final, context: context)
+}
+
+/// Save a gate sleep at the call phase so every wake checks the full gate chain.
+private func parkAtGate(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ call: ToolHookCall,
+                        _ tool: ToolRegistration, _ gate: GateSleep, gateEpoch: UInt64,
+                        context: ChordContext) async throws {
+    do {
+        try await runtime.commit({ tx, _ in
+            if let slot = try toolSlot(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId) {
+                try slot.set("status", .string("sleeping"))
+            }
+            let checkpoint = ToolTaskCheckpoint(phase: .call)
+            if let signals = gate.signals {
+                return try toolTask.sleeping(checkpoint, signals: signals, until: gate.until)
+            }
+            if let until = gate.until { return try toolTask.sleeping(checkpoint, until: until) }
+            throw TaskDefinitionError("Tool call \(call.id) cannot sleep without until or signals")
+        }, context: context)
+        // A publication may occur while the hook runs. Wake the just saved sleep.
+        runtime.scheduler.wakeGatedCallIfRegistryChanged(runtime.taskId, since: gateEpoch)
+    } catch {
+        if runtime.signal.aborted || context.abortSignal?.aborted == true || runtime.scheduler.closing { throw error }
+        let message = "Tool call \(call.id) cannot wait at its gates: \(toolErrorText(error))"
+        try await rejectTool(runtime, input, call, tool: tool,
+            result: harnessToolError(code: "invalid_park", message: message), context: context)
+    }
 }
 
 private func settleToolFromSlot(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ call: ToolHookCall,

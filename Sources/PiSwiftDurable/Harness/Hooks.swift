@@ -1,3 +1,4 @@
+import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
@@ -17,6 +18,9 @@ public struct HookApi: Sendable {
     public var read: HarnessDocumentReader
     /// Reads a saved task memo or installs a candidate when absent.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    private let clock: @Sendable () throws -> Int64
+    /// Returns the Harness clock time in milliseconds.
+    public func now() throws -> Int64 { try clock() }
     /// Reads a committed signal key in this hook's task.
     public func readSignal<Value: Codable & Sendable>(
         _ token: SignalToken<Value>, key: String, context: ChordContext
@@ -31,9 +35,10 @@ public struct HookApi: Sendable {
     public init(taskId: TaskID, conversationId: ConversationID, models: @autoclosure @escaping @Sendable () -> any DurableModels,
                 read: HarnessDocumentReader = .init(),
                 memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil },
+                now: @escaping @Sendable () throws -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                 entries: @escaping @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor> = { _, _, _, _ in throw SessionError.message("Hook entry reads unavailable") },
                 entry: @escaping @Sendable (EntryID, ChordContext) async throws -> EntryRecord? = { _, _ in throw SessionError.message("Hook entry reads unavailable") }) {
-        self.taskId = taskId; self.conversationId = conversationId; self.modelsProvider = models; self.read = read; self.memo = memo
+        self.taskId = taskId; self.conversationId = conversationId; self.modelsProvider = models; self.read = read; self.memo = memo; clock = now
         readEntries = entries; readEntry = entry
     }
     /// Reads a page of raw entries in this task's visible conversation history.
@@ -124,14 +129,29 @@ public struct GenerationHooks: Sendable {
     }
 }
 
-/// A tool hook decision that can replace arguments or block execution.
+/// A request to suspend a tool before execution.
+public struct GateSleep: Sendable {
+    /// Deadline in Harness clock milliseconds, if present.
+    public var until: Double?
+    /// Signal keys that can wake this gate.
+    public var signals: [SignalKey]?
+    /// Selects the deadline and signal keys for this gate.
+    public init(until: Double? = nil, signals: [SignalKey]? = nil) {
+        self.until = until; self.signals = signals
+    }
+}
+/// A tool hook decision that can replace arguments, block, or suspend execution.
 public struct BeforeToolResult: Sendable {
     /// Replacement JSON arguments for the tool call.
     public var arguments: JSONObject?
     /// The reason to reject execution of the tool call.
     public var block: String?
-    /// Selects replacement arguments or a reason to block the tool.
-    public init(arguments: JSONObject? = nil, block: String? = nil) { self.arguments = arguments; self.block = block }
+    /// Waits before the call is allowed to execute.
+    public var sleep: GateSleep?
+    /// Selects replacement arguments, a reason to block, or a gate sleep.
+    public init(arguments: JSONObject? = nil, block: String? = nil, sleep: GateSleep? = nil) {
+        self.arguments = arguments; self.block = block; self.sleep = sleep
+    }
 }
 /// Callbacks that can block a tool or replace its arguments and result.
 public struct ToolHooks: Sendable {

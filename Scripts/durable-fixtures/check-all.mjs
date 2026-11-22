@@ -73,6 +73,7 @@ const suites = [
   'SessionCacheReadCountsD3bTests', 'SessionCacheMeasurementsD3bTests',
   'D6ToolHookTests', 'D6HookReadsTests', 'SearchFixtureTests',
   'StructuredToolSchemaFixtureTests', 'ToolReadDifferentialTests',
+  'HarnessToolGateTests', 'HarnessInputEntryTests',
 ];
 run('two-language Swift matrix', 'swift', ['test', '--skip-build', '--filter', suites.join('|')]);
 const rows = [
@@ -84,6 +85,8 @@ const rows = [
     'D3a all four cases', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D3a all four cases', 'D3a all four cases'],
   ['v1.6.0 keyed nested calls, notify settlement, and parked-child restart', 'FILE', 'D3b three cases',
     'D3b three cases', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D3b three cases', 'D3b three cases'],
+  ['v1.6.0 beforeTool gated call', 'FILE', 'D4 gate', 'D4 gate', 'GAP', 'GAP', 'D4 gate', 'D4 gate'],
+  ['v1.6.0 kept input after abort', 'FILE', 'D4 kept input', 'D4 kept input', 'GAP', 'GAP', 'D4 kept input', 'D4 kept input'],
   ['B5 live read-only refresh', 'FILE', 'D12', 'D12', 'D12', 'D12', 'D9', 'D9'],
   ['watches and views', 'N/A', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4'],
   ['Session writer/group commit', 'SCRIPT', 'D7', 'D7', 'GAP', 'GAP', 'D7', 'D7'],

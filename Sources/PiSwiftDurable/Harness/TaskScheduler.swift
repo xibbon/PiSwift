@@ -47,8 +47,10 @@ internal final class RuntimePhase: Sendable {
     }
     let state: Mutex<State>
     let installer: String?
-    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot) {
+    let registryEpoch: UInt64
+    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot, registryEpoch: UInt64) {
         installer = snapshot.installer(of: definition)
+        self.registryEpoch = registryEpoch
         state = Mutex(State(definition: definition, snapshot: snapshot))
     }
 }
@@ -87,6 +89,8 @@ internal final class TaskScheduler: Sendable {
         var intent = Set<TaskID>()
         var runnable = Set<TaskID>()
         var sleeping = Set<TaskID>()
+        var gatedWake = Set<TaskID>()
+        var registryEpoch: UInt64 = 0
         var refreshBlocked: (@Sendable () -> Void)?
         var sleepDisarm: HarnessDisarm?
         var sleepAt: Double?
@@ -151,6 +155,20 @@ internal final class TaskScheduler: Sendable {
         state.withLock { state in state.live.values.sorted { state.liveOrder[$0.id, default: 0] < state.liveOrder[$1.id, default: 0] } }
     }
     func current(_ id: TaskID) -> TaskRecord? { state.withLock { $0.live[id] } }
+    var registryEpoch: UInt64 { state.withLock { $0.registryEpoch } }
+    /// Recheck a gate when its registry snapshot changed while its hook ran.
+    func wakeGatedCallIfRegistryChanged(_ id: TaskID, since epoch: UInt64) {
+        let changed = state.withLock { state -> Bool in
+            guard state.registryEpoch != epoch, let record = state.live[id], isGatedCall(record) else { return false }
+            state.gatedWake.insert(id); state.runnable.insert(id)
+            return true
+        }
+        if changed { kick() }
+    }
+    private func isGatedCall(_ record: TaskRecord) -> Bool {
+        guard record.kind == "pi.tool", case .sleeping(let checkpoint, _, _) = record.state else { return false }
+        return checkpoint["phase"]?.stringValue == "call"
+    }
     func open(context: ChordContext) async throws {
         let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in self?.seal() }
@@ -165,6 +183,7 @@ internal final class TaskScheduler: Sendable {
                 for record in found {
                     state.track(record)
                     if readOnly { continue } // v1.5.2 scheduler.ts:470
+                    if isGatedCall(record) { state.gatedWake.insert(record.id); state.runnable.insert(record.id) }
                     if case .waiting(_, _, .failFast, _) = record.state { state.failFastChecks.insert(record.id) }
                     if record.abandonOnRestart == true { state.abandoned.insert(record.id) }
                 }
@@ -263,6 +282,7 @@ internal final class TaskScheduler: Sendable {
                 if previous == nil || record.state.status == "terminal" { idleChanges.append(record) }
                 if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
                 state.track(record)
+                if !isGatedCall(record) { state.gatedWake.remove(record.id) }
                 if record.state.status == "terminal" {
                     state.failedMigrations.removeValue(forKey: record.id); state.failFastChecks.remove(record.id)
                     settled.append(record); repair = true
@@ -500,6 +520,13 @@ internal final class TaskScheduler: Sendable {
     }
     /// Registry notifications can arrive off the line. Graph frames use the Session order.
     private func registryChanged() {
+        state.withLock { state in
+            state.registryEpoch &+= 1
+            for id in state.sleeping {
+                guard let record = state.live[id], isGatedCall(record) else { continue }
+                state.gatedWake.insert(id); state.runnable.insert(id)
+            }
+        }
         Task { [weak self] in
             guard let self else { return }
             do { try await self.session.readOnLine { self.refreshBlocked() } }
@@ -508,8 +535,17 @@ internal final class TaskScheduler: Sendable {
         }
     }
     func refreshBlocked() { state.withLock { $0.refreshBlocked }?() }
-    struct Reservation: Sendable { let invocation: TaskInvocation; let definition: AnyTaskDefinition; let snapshot: RegistrySnapshot; let joinID: UUID }
+    struct Reservation: Sendable {
+        let invocation: TaskInvocation
+        let definition: AnyTaskDefinition
+        let snapshot: RegistrySnapshot
+        let registryEpoch: UInt64
+        let joinID: UUID
+    }
     private func reserve() async throws -> [Reservation] {
+        // Read the epoch before any awaited work or registry snapshot. A later
+        // publication must recheck a gate even if it arrived before the hook.
+        let reservationEpoch = registryEpoch
         var reservations: [Reservation] = []
         var faulted: [(TaskRecord, String)] = []
         var abandoned: Set<TaskID> = []
@@ -571,7 +607,7 @@ internal final class TaskScheduler: Sendable {
                         continue
                     }
                     if !waitingOn(original, first: true).isEmpty { dropped.insert(id); continue }
-                    if notDue(original) { dropped.insert(id); continue }
+                    if notDue(original) && !state.withLock({ $0.gatedWake.contains(id) }) { dropped.insert(id); continue }
                     if !original.abortRequested && !original.background && belowCancelled(original.parent) {
                         state.withLock { $0.cascadePending = true }; scheduleReconcile()
                         continue
@@ -633,11 +669,13 @@ internal final class TaskScheduler: Sendable {
                     }
                     let invocation = TaskInvocation(record, abort: record.abortRequested, context: context), id = UUID()
                     state.withLock {
+                        $0.gatedWake.remove(record.id)
                         $0.invocations[record.id] = invocation; $0.joining[id] = invocation
                         if $0.closing { $0.stopped.insert(record.id) }
                     }
                     dropped.insert(record.id)
-                    reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot!, joinID: id))
+                    reservations.append(Reservation(invocation: invocation, definition: definition,
+                        snapshot: snapshot!, registryEpoch: reservationEpoch, joinID: id))
                 }
             }, context: context)
             if !abandoned.isEmpty {
@@ -719,7 +757,8 @@ internal final class TaskScheduler: Sendable {
         } catch { end(invocation); if !closing { session.fail(error) }; return nil }
     }
     private func run(_ reservation: Reservation) async {
-        let invocation = reservation.invocation, phase = RuntimePhase(reservation.definition, reservation.snapshot)
+        let invocation = reservation.invocation, phase = RuntimePhase(reservation.definition,
+            reservation.snapshot, registryEpoch: reservation.registryEpoch)
         let runtime = TaskRuntime(scheduler: self, invocation: invocation, phase: phase)
         if invocation.abort {
             guard let current = current(invocation.taskId), !closing else { return }

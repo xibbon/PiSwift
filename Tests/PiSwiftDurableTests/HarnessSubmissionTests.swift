@@ -72,6 +72,43 @@ import PiSwiftDurableTesting
         try await chat.harness.close(context: .background)
         await #expect(throws: (any Error).self) { try await pending.value }
     }
+    // v1.6.0 harness-submissions.test.ts:163-191. Swift's stored Result cannot
+    // cause the JavaScript unhandled-rejection window; the rejection still reaches the caller.
+    @Test func reportsNoUnhandledRejectionForWaitCancelledBeforeItsResultIsDelivered() async throws {
+        let setup = HarnessChatSetup(), held = HarnessUnanswered()
+        setup.models.setResponses([held.step])
+        let chat = try await openChat(setup: setup)
+        let submission = try await chat.root.submit(.input(content: .text("hi")), context: .background)
+        await held.reached.wait()
+        let controller = AbortController()
+        controller.abort(TaskDefinitionError("stop waiting"))
+        await #expect(throws: (any Error).self) {
+            try await submission.wait(context: .background.withAbortSignal(controller.signal))
+        }
+        #expect(!chat.harness.submissions.hasPendingWait(id: submission.id))
+        #expect(try await submission.status(context: .background).status == "placed")
+        try await chat.harness.close(context: .background)
+    }
+    @Test func taskWaitCancellationAndCloseRejectOnlyTheirCallers() async throws {
+        let gate = SessionTestGate()
+        defer { gate.release() }
+        let definition = harnessOneStep("test.wait-cancel-close") { _, runtime, context in
+            try await holdInvocation(on: gate, runtime: runtime, context: context)
+            try await runtime.commit({ _, _ in try completed(1) }, context: context)
+        }
+        let harness = try await harnessOpen([AnyTaskDefinition(definition)])
+        let root = try await harness.root(context: .background)
+        let id = try await harnessStart(root, definition)
+        let controller = AbortController()
+        controller.abort(TaskDefinitionError("stop waiting"))
+        await #expect(throws: (any Error).self) {
+            try await harness.waitForTask(id: id, context: .background.withAbortSignal(controller.signal))
+        }
+        let pending = Task { try await harness.waitForTask(id: id, context: .background) }
+        try await eventually { harness.tasks.taskWaiters.keys.contains(id) }
+        try await harness.close(context: .background)
+        await #expect(throws: (any Error).self) { try await pending.value }
+    }
     @Test func reacquiresSubmissionAfterSQLiteReopenAndDeduplicatesDurableRequest() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

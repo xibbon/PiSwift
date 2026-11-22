@@ -147,12 +147,19 @@ internal func removeInboxItem(tx: Transaction, conversationId: ConversationID, i
     let values = try inbox.snapshot().decode(InboxState.self).items
     if let index = values.firstIndex(where: { $0.id == id }) { try items.splice(index, deleteCount: 1) }
 }
-/// Settles and removes queued inputs for the conversation.
+/// Settles and removes queued inputs after a conversation abort, except inputs marked `keep`.
+public func withdrawAbortedInputs(tx: Transaction, conversationId: ConversationID) async throws {
+    try await withdrawInputs(tx: tx, conversationId: conversationId, reason: "aborted", keepOnAbort: true)
+}
+/// Settles and removes every queued input after a failed run.
 public func withdrawQueuedInputs(tx: Transaction, conversationId: ConversationID, reason: String = "aborted") async throws {
+    try await withdrawInputs(tx: tx, conversationId: conversationId, reason: reason, keepOnAbort: false)
+}
+private func withdrawInputs(tx: Transaction, conversationId: ConversationID, reason: String, keepOnAbort: Bool) async throws {
     let inbox = try await tx.doc(InboxDoc, conversationId: conversationId)
     let items = try inbox.child("items")!
     let values = try inbox.snapshot().decode(InboxState.self).items
-    for index in values.indices.reversed() where values[index].mode != .write {
+    for index in values.indices.reversed() where values[index].mode != .write && (!keepOnAbort || values[index].onAbort != .keep) {
         try tx.settleSubmission(values[index].id, settlement: .unanswered(reason: reason))
         try items.splice(index, deleteCount: 1)
     }

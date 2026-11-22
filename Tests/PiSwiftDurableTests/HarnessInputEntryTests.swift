@@ -135,6 +135,88 @@ private func inputPlaced(_ record: SubmissionRecord) -> EntryID? {
         try await opened.harness.close(context: .background)
     }
 
+    // v1.6.0 harness-input-entries.test.ts:258-296.
+    @Test func keepsOnAbortKeepInputsQueuedThroughConversationAbortTheNextInputPlacesThem() async throws {
+        let setup = HarnessChatSetup(), first = HarnessGatedResponse(message: chatAssistant("first"))
+        let requests = SessionTestLog<[String]>()
+        setup.models.setResponses([first.step])
+        let opened = try await openChat(setup: setup)
+        let input = try await opened.root.submit(.input(content: .text("a")), context: .background)
+        await first.reached.wait()
+        let withdrawn = try await opened.root.submit(.input(content: .text("w")), context: .background)
+        let kept = try await opened.root.submit(.input(content: .text("k"), entry: inputMention("k"),
+                                                        whenBusy: .followUp, onAbort: .keep), context: .background)
+        try await opened.root.abort(context: .background)
+        #expect(try await withdrawn.wait(context: .background).reason == "aborted")
+        #expect(try await input.wait(context: .background).reason == "aborted")
+        #expect(try await inputInbox(opened) == [InboxItem(id: kept.id, mode: .followUp, content: "k",
+                                                           inputEntry: inputMention("k"), onAbort: .keep)])
+        #expect(try await kept.status(context: .background).status == "queued")
+        #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)?.run == nil)
+
+        setup.models.setResponses([inputLog(requests, chatAssistant("second")), inputLog(requests, chatAssistant("third"))])
+        let next = try await opened.root.submit(.input(content: .text("n")), context: .background)
+        #expect(try await kept.wait(context: .background).status == "done")
+        #expect(try await next.wait(context: .background).status == "done")
+        #expect(requests.values.map(\.last) == ["user:k", "user:n"])
+
+        let busy = HarnessGatedResponse(message: chatAssistant("fourth"))
+        setup.models.setResponses([busy.step])
+        let running = try await opened.root.submit(.input(content: .text("b")), context: .background)
+        await busy.reached.wait()
+        let explicit = try await opened.root.submit(.input(content: .text("e"), onAbort: .keep), context: .background)
+        #expect(try await explicit.abort(context: .background) == .aborted)
+        busy.release()
+        #expect(try await running.wait(context: .background).status == "done")
+        try await opened.harness.close(context: .background)
+    }
+
+    // The D4 two-language runner supplies files from both the Swift and tagged TypeScript runtimes.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PISWIFT_D4_INPUT_PLAN"] != nil))
+    func crossLanguageKeptInputFiles() async throws {
+        struct Fixture: Decodable {
+            let backend: String
+            let path: String
+            let step: String
+        }
+        let planPath = try #require(ProcessInfo.processInfo.environment["PISWIFT_D4_INPUT_PLAN"])
+        let plan = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: URL(fileURLWithPath: planPath)))
+        for item in plan {
+            let storage: any DurableStorage
+            switch item.backend {
+            case "sqlite": storage = try await SqliteStorage.open(path: item.path)
+            case "jsonl": storage = try await JsonlStorage.open(directory: item.path,
+                fileSystem: LocalExecutionEnv(cwd: item.path))
+            default: throw SessionError.message("Unknown input fixture backend \(item.backend)")
+            }
+            let opened = try await openChat(storage: storage, setup: HarnessChatSetup(clock: TestClock(now: 1_000)))
+            if item.step == "prepare" {
+                _ = try await opened.root.commit({ tx in
+                    try await admitSubmission(tx: tx, conversationId: opened.root.id,
+                        draft: .input(content: .text("a")), now: 1_000, queueModes: resolveSettings())
+                }, context: .background)
+                _ = try await opened.root.commit({ tx in
+                    try await admitSubmission(tx: tx, conversationId: opened.root.id,
+                        draft: .input(content: .text("w")), now: 1_000, queueModes: resolveSettings())
+                }, context: .background)
+                _ = try await opened.root.commit({ tx in
+                    try await admitSubmission(tx: tx, conversationId: opened.root.id,
+                        draft: .input(content: .text("k"), entry: inputMention("k"),
+                                      whenBusy: .followUp, onAbort: .keep), now: 1_000, queueModes: resolveSettings())
+                }, context: .background)
+                #expect(try await inputInbox(opened).map(\.onAbort) == [nil, .keep])
+            } else if item.step == "abort" {
+                try await opened.root.abort(context: .background)
+                let inbox = try await inputInbox(opened)
+                #expect(inbox.count == 1 && inbox[0].content == "k" && inbox[0].onAbort == .keep)
+                #expect(try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)?.run == nil)
+            } else {
+                throw SessionError.message("Unknown input fixture step \(item.step)")
+            }
+            try await opened.harness.close(context: .background)
+        }
+    }
+
     @Test func displayWriteDuringToolRunSettlesInTimeOrderAndDoesNotChangeRequests() async throws {
         let setup = HarnessChatSetup(), gate = HarnessChatSignal(), requests = SessionTestLog<[String]>()
         setup.models.setResponses([inputLog(requests, try inputHold(setup, gate)), inputLog(requests, chatAssistant("done"))])
