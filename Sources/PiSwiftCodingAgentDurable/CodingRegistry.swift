@@ -20,7 +20,7 @@ public func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
                                  sandbox: JSCCodemodeSandbox = JSCCodemodeSandbox(),
                                  onReport: @Sendable (any Error, ReportInfo) -> Void = { _, _ in }) throws -> Registry {
     try codingRegistry(settingsManager: settingsManager, sandbox: sandbox, onReport: onReport,
-        prompt: createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd))
+        prompt: createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd), fitToolImages: false)
 }
 
 internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String,
@@ -30,15 +30,18 @@ internal func createCodingRegistry(settingsManager: SettingsManager, cwd: String
     try codingRegistry(settingsManager: settingsManager, sandbox: sandbox, onReport: onReport,
         prompt: createPiPrompt(settingsManager: settingsManager, fallbackCwd: cwd,
                                agentDirectory: agentDirectory),
-        additional: [try subagentExtension()])
+        additional: [try subagentExtension()], fitToolImages: true)
 }
 
 private func codingRegistry(settingsManager: SettingsManager, sandbox: JSCCodemodeSandbox,
                             onReport: @Sendable (any Error, ReportInfo) -> Void,
-                            prompt: Extension, additional: [Extension] = []) throws -> Registry {
+                            prompt: Extension, additional: [Extension] = [],
+                            fitToolImages: Bool) throws -> Registry {
     let registry = createRegistry()
-    var extensions = [try createCodingTools(images: NativeImageProcessor()), prompt,
+    let images = NativeImageProcessor()
+    var extensions = [try createCodingTools(images: images), prompt,
                       try createCodemodeExtension(options: .init(sandbox: sandbox, models: true))] + additional
+    if fitToolImages { extensions.append(createFitImagesExtension(processor: images)) }
     let deferred = settingsManager.getDurableDeferredTools()
     if !deferred.isEmpty { extensions.append(try createToolSearchExtension()) }
     let requested = Set(deferred.map { Array($0.utf16) })

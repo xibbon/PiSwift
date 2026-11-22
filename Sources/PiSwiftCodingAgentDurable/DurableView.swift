@@ -409,6 +409,12 @@ public protocol DurableController: Sendable {
 
 /// Commands for a paged host. Errors also appear in the observed notices.
 public protocol DurableHostController: DurableController {
+    /// Fits image attachments before admitting input. Returns its durable ID.
+    func submitInput(_ content: UserInput, whenBusy: SubmitWhenBusy,
+                     onAbort: InputOnAbort) async throws -> SubmissionID
+    /// Delivers a typed answer or approval to a waiting task.
+    func deliverSignal<Value: Codable & Sendable>(taskId: TaskID, token: SignalToken<Value>,
+                                                  key: String, value: Value) async throws -> SignalResult
     /// Continues an idle conversation without adding input.
     func continueRun() async
     /// Loads one page before the oldest retained row.
@@ -419,6 +425,18 @@ public protocol DurableHostController: DurableController {
     func setMaxTurns(_ value: Int?) async
     /// Sets per-conversation compaction overrides.
     func setCompactionPolicy(_ value: CompactionPolicyOverrides?) async
+}
+
+extension DurableHostController {
+    /// Older test and app controllers can adopt the new commands when ready.
+    public func submitInput(_ content: UserInput, whenBusy: SubmitWhenBusy,
+                            onAbort: InputOnAbort) async throws -> SubmissionID {
+        throw SessionError.message("This host controller does not submit image content")
+    }
+    public func deliverSignal<Value: Codable & Sendable>(taskId: TaskID, token: SignalToken<Value>,
+                                                         key: String, value: Value) async throws -> SignalResult {
+        throw SessionError.message("This host controller does not deliver signals")
+    }
 }
 
 public enum DurableOpenMode: String, Sendable, Equatable, Codable {
