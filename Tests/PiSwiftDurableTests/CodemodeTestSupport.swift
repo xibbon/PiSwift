@@ -42,10 +42,16 @@ func e10Value(_ outcome: CodemodeOutcome) -> JSONValue? {
 }
 
 func e10Run(_ sandbox: any CodemodeSandbox, code: String = "return 1", tools: [ToolRegistration] = [],
-            namespaces: [CodemodeNamespace] = [], env: (any ExecutionEnv)? = nil) async throws -> JSONValue {
+            namespace: ToolNamespace? = nil, namespacedTools: Set<String> = [], emptyNamespace: ToolNamespace? = nil,
+            env: (any ExecutionEnv)? = nil) async throws -> JSONValue {
     let setup = HarnessChatSetup(options: .init(models: [.init(id: "faux-1", contextWindow: 2_000_000)]))
-    try setup.registry.install(createCodemodeExtension(options: .init(sandbox: sandbox, namespaces: namespaces, models: false)))
-    try setup.registry.install(Extension(name: "e10-tools", tools: tools))
+    try setup.registry.install(createCodemodeExtension(options: .init(sandbox: sandbox, models: false)))
+    try setup.registry.install(Extension(name: "e10-tools", tools: tools.filter { !namespacedTools.contains($0.name) }))
+    if let namespace {
+        try setup.registry.install(Extension(name: "e10-namespaced", namespace: namespace,
+            tools: tools.filter { namespacedTools.contains($0.name) }))
+    }
+    if let emptyNamespace { try setup.registry.install(Extension(name: "e10-empty", namespace: emptyNamespace)) }
     setup.models.setResponses([.message(e10Call(code)), .message(chatAssistant("done"))])
     let opened = try await e10Open(setup: setup, env: env)
     try await e10Submit(opened)

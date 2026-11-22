@@ -29,6 +29,30 @@ private func w3EndedBridge(_ harness: Harness, root: Conversation, definition: H
 }
 
 @Suite struct HarnessW3OwnershipTests {
+    // v1.6.0 scheduler.ts:904–925: a task lives in its owner's conversation.
+    @Test(arguments: [8, 64, 256]) func ownerStepsForDeepChangeStayConstant(depth: Int) async throws {
+        let control = W3LifetimeControl(), definition = control.definition()
+        let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: control.clock)
+        let root = try await harness.root(context: .background)
+        let ids = try await root.commit({ tx in
+            var ids: [TaskID] = []
+            for n in 0..<depth {
+                let ownership: TaskOwnership = ids.last.map { .task(taskId: $0) } ?? .conversation()
+                ids.append(try await tx.createTask(definition, input: n + 1, options: .init(ownership: ownership)))
+            }
+            return ids
+        }, context: .background)
+        let before = harness.tasks.above(.task(ids.last!)).reduce(0) { count, step in
+            if case .task = step { return count + 1 }; return count
+        }
+        try await harness.tasks.loadChain(.conversation(root.id))
+        var scopes = Set<ConversationID>()
+        let after = harness.tasks.addScopesAbove(conversationId: root.id, scopes: &scopes)
+        #expect(before == depth)
+        #expect(after == 0, "owner steps: \(String(describing: after))")
+        #expect(scopes == [root.id])
+        try await harness.close(context: .background)
+    }
     // harness-ownership.test.ts:213,336,369. The one-link case also checks an ended direct child.
     @Test(arguments: [1, 2], [false, true])
     func lateWorkBelowEndedTasksHoldsLiveOwner(depth: Int, reopen: Bool) async throws {
@@ -199,6 +223,28 @@ private func w3EndedBridge(_ harness: Harness, root: Conversation, definition: H
         try await w3State(harness, ids[0], "completing")
         control.open(depth + 2)
         for id in ids.reversed() { #expect(try await w3Terminal(harness, id).outcome.status == "completed") }
+        try await harness.close(context: .background)
+    }
+
+    @Test func idlenessRemainsRightForADeepOwnershipChain() async throws {
+        let control = W3LifetimeControl(), definition = control.definition(), depth = 64
+        let harness = try await harnessOpen([AnyTaskDefinition(definition)], clock: control.clock)
+        let root = try await harness.root(context: .background)
+        let ids = try await root.commit({ tx in
+            var ids: [TaskID] = []
+            for n in 0..<depth {
+                let ownership: TaskOwnership = ids.last.map { .task(taskId: $0) } ?? .conversation()
+                ids.append(try await tx.createTask(definition, input: n + 1, options: .init(ownership: ownership)))
+            }
+            return ids
+        }, context: .background)
+        try harness.resume()
+        let idle = settled { try await root.waitForIdle(context: .background) }
+        #expect(!idle.isSettled)
+        for input in 1..<depth { control.open(input) }
+        control.open(depth)
+        for id in ids.reversed() { _ = try await w3Terminal(harness, id) }
+        try await harnessEventually { idle.isSettled }
         try await harness.close(context: .background)
     }
 

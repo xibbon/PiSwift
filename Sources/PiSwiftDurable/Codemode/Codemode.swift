@@ -20,13 +20,12 @@ public struct CodemodeGlobal: Sendable {
 /// The sandbox and host services for code mode.
 public struct CodemodeToolOptions: Sendable {
     public var sandbox: any CodemodeSandbox
-    public var namespaces: [CodemodeNamespace]
     public var inlineBudget: Int
     public var models: Bool
     public var globals: [CodemodeGlobal]
-    public init(sandbox: any CodemodeSandbox, namespaces: [CodemodeNamespace] = [], inlineBudget: Int = 3000,
+    public init(sandbox: any CodemodeSandbox, inlineBudget: Int = 3000,
                 models: Bool = true, globals: [CodemodeGlobal] = []) {
-        self.sandbox = sandbox; self.namespaces = namespaces; self.inlineBudget = inlineBudget
+        self.sandbox = sandbox; self.inlineBudget = inlineBudget
         self.models = models; self.globals = globals
     }
 }
@@ -52,7 +51,7 @@ public func createCodemodeExtension(options: CodemodeToolOptions) throws -> Exte
     try Extension(name: "codemode", tools: [createCodemodeTool(options: options)] + (options.models ? codemodeModelTools() : []),
         sections: [section("codemode") { input, _ in
             try codemodeSection(tools: input.agent.callable.filter { !codemodeHasPrefix($0.name, "pi.codemode.") && $0.deferred != true },
-                namespaces: options.namespaces, inlineBudget: options.inlineBudget)
+                extensions: input.agent.extensions, inlineBudget: options.inlineBudget)
         }])
 }
 
@@ -116,11 +115,11 @@ internal actor DurableCodemodeCall {
         }
         let globals = (discoveryNames + (options.models ? catalogNames + modelNames : [])).map { CodemodeDeclaredGlobal(name: $0, spread: true) }
             + options.globals.map { CodemodeDeclaredGlobal(name: $0.name, spread: $0.spread) }
-        var namespaces: [CodemodeStart.Namespace] = []
-        for tool in tools where tool.hidden != true {
-            guard let own = options.namespaces.filter({ codemodeHasPrefix(tool.name, $0.prefix) }).max(by: { $0.prefix.utf16.count < $1.prefix.utf16.count }) else { continue }
-            if let index = namespaces.firstIndex(where: { harnessNamesEqual($0.name, own.name) }) { namespaces[index].tools.append(tool.name) }
-            else { namespaces.append(.init(name: own.name, description: own.description, instructions: own.instructions, tools: [tool.name])) }
+        let toolNamespaces = namespacesOf(agent.extensions)
+        let callable = agent.callable.filter { !codemodeHasPrefix($0.name, "pi.codemode.") }
+        let namespaces = declaredNamespaces(agent.extensions).map { own in
+            CodemodeStart.Namespace(name: own.name, description: own.description, instructions: own.instructions,
+                tools: callable.filter { toolNamespaces[$0.name]?.name == own.name }.map(\.name))
         }
         let initialTools = tools, initialNamespaces = namespaces
         let time = Double(try api.now()), seed = UInt32.random(in: UInt32.min...UInt32.max)

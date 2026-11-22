@@ -110,26 +110,35 @@ struct CodemodeOutputTests {
     @Test func discoveryUsesTheSavedCatalog() async throws {
         let message = try await e10Run(DeterministicCodemodeSandbox { state in
             if state.seq == 0 {
-                #expect(state.options.tools.contains { $0.name == "mcp__github__list_issues" })
+                #expect(state.options.tools.contains { $0.name == "list_issues" })
                 return .init(calls: [.init(target: .global, name: "searchTools", args: ["issues"]),
+                    .init(target: .global, name: "searchTools", args: ["repository owner"]),
                     .init(target: .global, name: "searchTools", args: ["echo", ["namespace": "github"]]),
                     .init(target: .global, name: "describeTool", args: ["echo"]),
                     .init(target: .global, name: "describeTool", args: ["nope"]),
-                    .init(target: .global, name: "describeNamespace", args: ["github"])])
+                    .init(target: .global, name: "describeNamespace", args: ["github"]),
+                    .init(target: .global, name: "describeNamespace", args: ["linear"])])
             }
-            guard state.deliveries.count == 5 else { return .init() }
+            guard state.deliveries.count == 7 else { return .init() }
             let values = Dictionary(uniqueKeysWithValues: state.deliveries.map { ($0.id, e10Value($0.outcome) ?? .null) })
-            return .init(result: .init(value: ["found": .array(values[1]?.arrayValue?.compactMap { $0["name"] } ?? []),
-                "inNamespace": values[2] ?? .null, "described": .bool(values[3]?.stringValue?.contains("echo(args:") == true),
-                "missing": values[4] ?? .null, "namespace": values[5] ?? .null]))
-        }, tools: [e10Tool("echo"), e10Tool("mcp__github__list_issues")], namespaces: [.init(name: "github", prefix: "mcp__github__", description: "GitHub MCP server")])
+            let found: JSONValue = .array(values[1]?.arrayValue?.compactMap { $0["name"] } ?? [])
+            let byInstructions: JSONValue = .array(values[2]?.arrayValue?.compactMap { $0["name"] } ?? [])
+            let described: JSONValue = .bool(values[4]?.stringValue?.contains("echo(args:") == true)
+            let result: JSONObject = ["found": found, "byInstructions": byInstructions,
+                "inNamespace": values[3] ?? .null, "described": described,
+                "missing": values[5] ?? .null, "namespace": values[6] ?? .null, "empty": values[7] ?? .null]
+            return .init(result: .init(value: .object(result)))
+        }, tools: [e10Tool("echo"), e10Tool("list_issues")], namespace: .init(name: "github", description: "GitHub MCP server", instructions: "Pass the repository as owner/name."),
+            namespacedTools: ["list_issues"], emptyNamespace: .init(name: "linear", description: "Linear: sign in first."))
         let output = try #require(message["content"]?[1]?["text"]?.stringValue)
         let value = try JSONValue(jsonText: output)
-        #expect(value["found"] == ["mcp__github__list_issues"])
+        #expect(value["found"] == ["list_issues"])
+        #expect(value["byInstructions"] == ["list_issues"])
         #expect(value["inNamespace"] == [])
         #expect(value["described"] == true)
         #expect(value["missing"] == .null)
-        #expect(value["namespace"] == ["name": "github", "description": "GitHub MCP server", "tools": ["mcp__github__list_issues"]])
+        #expect(value["namespace"] == ["name": "github", "description": "GitHub MCP server", "instructions": "Pass the repository as owner/name.", "tools": ["list_issues"]])
+        #expect(value["empty"] == ["name": "linear", "description": "Linear: sign in first.", "tools": []])
     }
     @Test func fileFailuresStayVisibleAndManyTextItemsJoinLinearly() async {
         let result = CodemodeResult(output: (0..<20_000).map { .text(String($0)) } + [.image(data: e10PNG, mimeType: "image/png")])

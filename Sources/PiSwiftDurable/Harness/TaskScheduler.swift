@@ -58,6 +58,7 @@ internal final class RuntimePhase: Sendable {
 /// Every decision that changes a task runs in one callback on the Session line.
 internal final class TaskScheduler: Sendable {
     internal let toolServices = ToolServices()
+    internal let providerSessionIds = Mutex<Set<String>>([])
     let session: Session
     let storage: any DurableStorage
     let registry: any RegistryReader
@@ -332,13 +333,9 @@ internal final class TaskScheduler: Sendable {
         if changed {
             var scopes: Set<ConversationID>? = []
             for record in idleChanges {
-                for step in above(record.parent) {
-                    switch step {
-                    case .conversation(let id): scopes?.insert(id)
-                    case .unknown: scopes = nil
-                    case .task: break
-                    }
-                    if scopes == nil { break }
+                if var known = scopes {
+                    if addScopesAbove(conversationId: record.conversationId, scopes: &known) == nil { scopes = nil }
+                    else { scopes = known }
                 }
                 if scopes == nil { break }
             }
@@ -347,6 +344,20 @@ internal final class TaskScheduler: Sendable {
         } else {
             state.withLock { $0.sweep() }
         }
+    }
+    /// Returns the owner-step count, or nil when an ownership link is unknown.
+    /// A task change starts at its own conversation, so task depth does not affect this count.
+    func addScopesAbove(conversationId: ConversationID, scopes: inout Set<ConversationID>) -> Int? {
+        var ownerSteps = 0
+        for step in above(.conversation(conversationId)) {
+            switch step {
+            case .conversation(let id):
+                if !scopes.insert(id).inserted { return ownerSteps }
+            case .task: ownerSteps += 1
+            case .unknown: return nil
+            }
+        }
+        return ownerSteps
     }
     /// A Task is created under the lock. It cannot enter the pump until the lock is released.
     func kick(offerWake: Bool = true) {

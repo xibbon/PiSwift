@@ -105,8 +105,7 @@ private final class DIChat: Sendable {
          fixed: (Double, UInt32)? = nil,
          observe: @escaping @Sendable (Int, Int) async throws -> Void = { _, _ in }) throws {
         sandbox = DIObservedSandbox(forceWatchdog: forceWatchdog, change: change, fixed: fixed, observe: observe)
-        try setup.registry.install(createCodemodeExtension(options: .init(sandbox: sandbox,
-            namespaces: [.init(name: "github", prefix: "mcp__github__", description: "GitHub tools")], models: false)))
+        try setup.registry.install(createCodemodeExtension(options: .init(sandbox: sandbox, models: false)))
         try add(ToolRegistration(name: "echo", description: "echo", parameters: ["type": "object"], replay: .safe) { [state] args, _, _ in
             let text = args["text"]?.stringValue ?? ""
             state.runs.withLock { $0.append(text) }
@@ -120,7 +119,9 @@ private final class DIChat: Sendable {
         })
     }
     func add(_ tool: ToolRegistration) throws {
-        try setup.registry.install(Extension(name: "di-tool-" + tool.name, tools: [tool]))
+        try setup.registry.install(Extension(name: "di-tool-" + tool.name,
+            namespace: tool.name == "mcp__github__list_issues" ? .init(name: "github", description: "GitHub tools") : nil,
+            tools: [tool]))
     }
     func responses(_ source: String) {
         var call = chatAssistant("", reason: .toolUse)

@@ -120,9 +120,20 @@ public func wrapSection(_ key: String, transform: @escaping @Sendable (PromptSec
 }
 
 /// A named group of tools, prompt sections, task hooks, wrappers, and task definitions.
+public struct ToolNamespace: Sendable, Equatable, Codable {
+    public var name: String
+    public var description: String
+    public var instructions: String?
+    public init(name: String, description: String, instructions: String? = nil) {
+        self.name = name; self.description = description; self.instructions = instructions
+    }
+}
+
 public struct Extension: Sendable {
     /// The stable name used to resolve this definition in the registry.
     public var name: String
+    /// Code-mode namespace of tools first brought by this extension.
+    public var namespace: ToolNamespace?
     /// The tool registrations or live tool slots in this value.
     public var tools: [ToolRegistration]
     /// The ordered prompt sections selected for the agent.
@@ -134,9 +145,9 @@ public struct Extension: Sendable {
     /// The task definitions or records included in this value.
     public var tasks: [AnyTaskDefinition]
     /// Groups named tools, sections, hooks, wrappers, and task definitions for registry installation.
-    public init(name: String, tools: [ToolRegistration] = [], sections: [PromptSection] = [],
+    public init(name: String, namespace: ToolNamespace? = nil, tools: [ToolRegistration] = [], sections: [PromptSection] = [],
                 hooks: [HookRegistration] = [], wraps: [Wrap] = [], tasks: [AnyTaskDefinition] = []) {
-        self.name = name; self.tools = tools; self.sections = sections; self.hooks = hooks; self.wraps = wraps
+        self.name = name; self.namespace = namespace; self.tools = tools; self.sections = sections; self.hooks = hooks; self.wraps = wraps
         self.tasks = tasks
     }
 }
