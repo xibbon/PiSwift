@@ -27,19 +27,30 @@ public struct TaskOptions: Sendable {
     public let background: Bool
     /// Abort this task before a later Harness runs it.
     public let abandonOnRestart: Bool
+    /// A tool-local key for finding the same child after a rerun or wake.
+    public let key: String?
     internal let hasRestartPolicy: Bool
     /// Selects task ownership, conversation, and lifetime.
-    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool? = nil) {
+    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool? = nil, key: String? = nil) {
         self.ownership = ownership
         self.conversationId = conversationId
         self.background = background
         self.abandonOnRestart = abandonOnRestart ?? false
         self.hasRestartPolicy = abandonOnRestart != nil
+        self.key = key
     }
 }
 
 /// A submission before the storage assigns an ID.
 public enum SubmissionCreate: Sendable {
+    internal func notifying(_ notify: SubmissionNotify?) throws -> Self {
+        guard let notify else { return self }
+        switch self {
+        case .input(let id, let request, let state): return .input(conversationId: id, requestId: request, state: try state.notifying(notify))
+        case .write(let id, let request, let state): return .write(conversationId: id, requestId: request, state: try state.notifying(notify))
+        case .continue(let id, let request, let state): return .continue(conversationId: id, requestId: request, state: try state.notifying(notify))
+        }
+    }
     /// Stores user content and its admission policy.
     case input(conversationId: ConversationID, requestId: String? = nil, state: InputSubmissionState = .queued())
     /// Stores an entry write request.

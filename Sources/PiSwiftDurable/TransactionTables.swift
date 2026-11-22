@@ -375,6 +375,9 @@ extension Transaction {
         }
         var submissions = snapshot.submissions
         var order = snapshot.submissionOrder
+        var settling = snapshot.submissionOrder.compactMap { submissions[$0] }.filter {
+            $0.status == "done" || $0.status == "unanswered"
+        }
         for (id, change) in snapshot.submissionChanges {
             let current: SubmissionRecord
             if let candidate = submissions[id] { current = candidate }
@@ -384,11 +387,29 @@ extension Transaction {
             if next != current {
                 if submissions[id] == nil { order.append(id) }
                 submissions[id] = next
+                if next.status == "done" || next.status == "unanswered" { settling.append(next) }
+            }
+        }
+        var tasks = snapshot.tasks
+        var taskOrder = snapshot.taskOrder
+        for record in settling {
+            guard let notify = try record.notify else { continue }
+            try await session.touch(SessionKeys.taskKey(notify.taskId))
+            let target: TaskRecord?
+            if let staged = tasks[notify.taskId]?.write { target = staged }
+            else { target = try await storage.task(notify.taskId, context: context) }
+            let (_, updated) = try deliverSignal(record: target, token: SubmissionSettled,
+                                                 key: notify.key, value: SettledSubmission(record), now: Double(now()))
+            if let updated {
+                var task = tasks[notify.taskId] ?? TransactionTask()
+                task.write = updated
+                if tasks[notify.taskId] == nil { taskOrder.append(notify.taskId) }
+                tasks[notify.taskId] = task
             }
         }
         var writes = snapshot.writes
         for id in order { if let value = submissions[id] { writes.append(.submission(value: value)) } }
-        for id in snapshot.taskOrder { if let value = snapshot.tasks[id]?.write { writes.append(.task(value: value)) } }
+        for id in taskOrder { if let value = tasks[id]?.write { writes.append(.task(value: value)) } }
         return writes
     }
 }

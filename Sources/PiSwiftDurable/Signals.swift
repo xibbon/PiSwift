@@ -27,6 +27,33 @@ public struct SignalToken<Value: Codable & Sendable>: Sendable {
     }
 }
 
+/// Built-in settlement signal. Its value is the durable settled submission record.
+public let SubmissionSettled: SignalToken<SettledSubmissionRecord> = {
+    func variant(_ type: String, _ status: String, _ fields: [String: JSONValue], _ required: [String]) -> JSONValue {
+        var properties: JSONObject = [
+            "id": ["type": "integer"], "conversationId": ["type": "integer"],
+            "type": ["const": .string(type)], "status": ["const": .string(status)],
+            "requestId": ["type": "string"],
+            "notify": ["type": "object", "properties": ["taskId": ["type": "integer"], "key": ["type": "string"]],
+                       "required": ["taskId", "key"]]
+        ]
+        for (name, value) in fields { properties[name] = value }
+        return ["type": "object", "properties": .object(properties),
+                "required": .array((["id", "conversationId", "type", "status"] + required).map(JSONValue.string))]
+    }
+    let integer: JSONValue = ["type": "integer"]
+    let string: JSONValue = ["type": "string"]
+    let branches: [JSONValue] = [
+        variant("input", "done", ["entry": integer, "answer": integer], ["entry", "answer"]),
+        variant("write", "done", ["entry": integer], ["entry"]),
+        variant("continue", "done", ["answer": integer], ["answer"]),
+        variant("input", "unanswered", ["entry": integer, "reason": string], ["reason"]),
+        variant("write", "unanswered", ["reason": string], ["reason"]),
+        variant("continue", "unanswered", ["reason": string], ["reason"])
+    ]
+    return try! defineSignal(name: "pi.submission-settled", version: 1, schema: ["anyOf": .array(branches)])
+}()
+
 /// Defines a signal kind with a positive version and a JSON-only schema.
 public func defineSignal<Value: Codable & Sendable>(
     name: String, version: Int, schema: JSONValue,

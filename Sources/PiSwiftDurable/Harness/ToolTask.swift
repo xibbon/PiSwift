@@ -425,8 +425,13 @@ internal func appendToolResult(tx: Transaction, conversationId: ConversationID, 
         details: try result.details.map { AnyCodable(try foundationJSON(from: $0)) }, usage: result.usage,
         isError: result.isError ?? false, timestamp: timestamp, durationMs: durationMs)
     if let usage = result.usage { try await recordUsage(tx: tx, conversationId: conversationId, bucket: .tools, key: call.name, usage: usage) }
+    var model = try EntryRecord.encodeMessages([.toolResult(message)])
+    if result.details == nil, case .object(var object) = model[0] {
+        object.removeValue(forKey: "details")
+        model[0] = .object(object)
+    }
     return try await tx.appendEntry(conversationId, value: EntryDraft(kind: toolResultEntry.kind,
-        model: EntryRecord.encodeMessages([.toolResult(message)]), data: JSONValue(encoding: ToolResultEntryData(diagnostics: diagnostics))))
+        model: model, data: JSONValue(encoding: ToolResultEntryData(diagnostics: diagnostics))))
 }
 
 /// Use the Swift error's message without Foundation error bridging.

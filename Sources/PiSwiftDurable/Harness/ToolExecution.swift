@@ -14,7 +14,7 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: 
     let kept = wake != nil && streams ? try await currentToolSlot(runtime, context) : nil
     let reporter = ToolReporter(runtime: runtime, lifetime: lifetime, limits: limits, enabled: streams,
                                 initialDetails: kept?.details, initialDiagnostics: kept?.diagnostics ?? [], context: context)
-    let nested = NestedToolCalls(runtime: runtime, callId: call.id, resumes: tool.replay == .safe)
+    let nested = NestedToolCalls(runtime: runtime, callId: call.id, resumes: tool.replay == .safe, woken: wake != nil)
     let baseParks = ToolBaseParks()
     var returned: ToolExecutionOutcome
     var ending = ToolEnding.completed

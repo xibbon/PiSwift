@@ -34,6 +34,8 @@ public struct InputEntry: Sendable, Equatable, Codable {
 }
 /// User input or an entry write offered to a conversation.
 public enum SubmissionDraft: Sendable {
+    /// Adds a settlement notification to any submission draft.
+    indirect case notifying(SubmissionDraft, SubmissionNotify)
     /// Offers user content with an optional busy policy and request key.
     case input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil, requestId: String? = nil)
     /// Continues the current context without adding a user entry.
@@ -48,9 +50,33 @@ public enum SubmissionDraft: Sendable {
     /// Offers an entry draft with an optional request key.
     case write(entry: EntryDraft, requestId: String? = nil)
     /// An optional conversation-scoped key that makes request admission idempotent.
-    public var requestId: String? { switch self { case .input(_, _, _, let id), .inputWhenIdle(_, _, _, _, let id), .write(_, let id), .continue(let id): id } }
+    public var requestId: String? { switch self { case .input(_, _, _, let id), .inputWhenIdle(_, _, _, _, let id), .write(_, let id), .continue(let id): id; case .notifying(let draft, _): draft.requestId } }
     /// The stored input or write submission tag.
-    public var type: String { switch self { case .input, .inputWhenIdle: "input"; case .write: "write"; case .continue: "continue" } }
+    public var type: String { switch self { case .input, .inputWhenIdle: "input"; case .write: "write"; case .continue: "continue"; case .notifying(let draft, _): draft.type } }
+    /// The task and key notified when this submission settles.
+    public var notify: SubmissionNotify? { if case .notifying(_, let value) = self { return value }; return nil }
+    internal var base: SubmissionDraft { if case .notifying(let draft, _) = self { return draft.base }; return self }
+    /// Adds or replaces a settlement notification on any draft kind.
+    public func withNotify(_ value: SubmissionNotify) -> SubmissionDraft { .notifying(base, value) }
+    /// Creates an input whose settlement notifies a task.
+    public static func input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil,
+                             requestId: String? = nil, notify: SubmissionNotify) -> SubmissionDraft {
+        .notifying(.input(content: content, entry: entry, whenBusy: whenBusy, requestId: requestId), notify)
+    }
+    /// Creates a write whose settlement notifies a task.
+    public static func write(entry: EntryDraft, requestId: String? = nil, notify: SubmissionNotify) -> SubmissionDraft {
+        .notifying(.write(entry: entry, requestId: requestId), notify)
+    }
+    /// Creates a continuation whose settlement notifies a task.
+    public static func `continue`(requestId: String? = nil, notify: SubmissionNotify) -> SubmissionDraft {
+        .notifying(.continue(requestId: requestId), notify)
+    }
+    /// Creates reject-on-idle input whose settlement notifies a task.
+    public static func input(content: UserInput, entry: InputEntry? = nil, whenBusy: WhenBusy? = nil,
+                             whenIdle: WhenIdle, requestId: String? = nil, notify: SubmissionNotify) -> SubmissionDraft {
+        .notifying(.inputWhenIdle(content: content, entry: entry, whenBusy: whenBusy,
+                                  whenIdle: whenIdle, requestId: requestId), notify)
+    }
 }
 /// An input with reject-on-idle policy could not enter the conversation.
 public struct ConversationIdle: Error, Sendable, CustomStringConvertible {
@@ -79,7 +105,7 @@ public enum SubmissionAbortResult: String, Sendable {
     case notFound = "not_found"
 }
 /// The final stored submission, including its answer or unanswered reason.
-public struct SettledSubmission: Sendable, Equatable {
+public struct SettledSubmission: Sendable, Equatable, Codable {
     /// The durable record from which this typed value is derived.
     public let record: SubmissionRecord
     /// The stable identifier of this record or handle.
@@ -105,6 +131,14 @@ public struct SettledSubmission: Sendable, Equatable {
         }
     }
     internal init(_ record: SubmissionRecord) { self.record = record }
+    public init(from decoder: any Decoder) throws {
+        let record = try SubmissionRecord(from: decoder)
+        guard record.status == "done" || record.status == "unanswered" else {
+            throw SessionError.message("Submission signal value is not settled")
+        }
+        self.record = record
+    }
+    public func encode(to encoder: any Encoder) throws { try record.encode(to: encoder) }
 }
 /// The final submission receipt returned by a submission wait.
 public typealias SettledSubmissionRecord = SettledSubmission
@@ -221,6 +255,11 @@ internal final class Submissions: Sendable {
 private func isSettled(_ record: SubmissionRecord) -> Bool { record.status == "done" || record.status == "unanswered" }
 
 internal func admitSubmission(tx: Transaction, conversationId: ConversationID, draft: SubmissionDraft, now: Int64, queueModes: Settings) async throws -> SubmissionID {
+    let notify = draft.notify
+    let draft = draft.base
+    func create(_ submission: SubmissionCreate) async throws -> SubmissionRecord {
+        try await tx.createSubmission(try submission.notifying(notify))
+    }
     let inputEntry: InputEntry?
     switch draft { case .input(_, let entry, _, _), .inputWhenIdle(_, let entry, _, _, _): inputEntry = entry; default: inputEntry = nil }
     if let entry = inputEntry, entry.kind.isEmpty || entry.kind.hasPrefix("pi.") {
@@ -234,7 +273,7 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
         let inbox = try await tx.doc(InboxDoc, conversationId: conversationId)
         if !hasQueuedReset(try inbox.snapshot().decode(InboxState.self).items) {
             let appended = try await tx.appendEntry(conversationId, value: entry)
-            return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
+            return try await create(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
         }
     }
     let live = try await tx.doc(LiveDoc, conversationId: conversationId)
@@ -246,7 +285,7 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
     } else if case .inputWhenIdle = draft { throw ConversationIdle(conversationId: conversationId) }
     let boundary = busy ? nil : try await prepareBoundary(tx: tx, conversationId: conversationId, modes: queueModes)
     if case .continue(let requestId) = draft {
-        let record = try await tx.createSubmission(.continue(conversationId: conversationId, requestId: requestId, state: .placed()))
+        let record = try await create(.continue(conversationId: conversationId, requestId: requestId, state: .placed()))
         let result = try await applyBoundary(tx: tx, boundary: boundary!, at: .final, now: now)
         let failure = try live.get("runFailure")?.decode(RunFailure.self)
         try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: result.users + [record.id], first: failure?.first ?? result.first)
@@ -254,7 +293,7 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
     }
     let queued = try boundary?.inbox.child("items")?.count() ?? 0
     if boundary == nil || queued > 0 {
-        let record = try await tx.createSubmission(draft.type == "input" ? .input(conversationId: conversationId, requestId: draft.requestId) : .write(conversationId: conversationId, requestId: draft.requestId))
+        let record = try await create(draft.type == "input" ? .input(conversationId: conversationId, requestId: draft.requestId) : .write(conversationId: conversationId, requestId: draft.requestId))
         let inbox: JSONDraft
         if let boundary { inbox = boundary.inbox } else { inbox = try await tx.doc(InboxDoc, conversationId: conversationId) }
         let item: InboxItem
@@ -265,6 +304,7 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
             item = InboxItem(id: record.id, mode: whenBusy == .steer ? .steer : .followUp, content: try inputContentJSON(content), inputEntry: entry)
         case .write(let entry, _): item = InboxItem(id: record.id, mode: .write, entry: entry)
         case .continue: throw ConversationBusy(conversationId: conversationId)
+        case .notifying: throw SessionError.message("Nested notification draft")
         }
         try inbox.child("items")!.append(JSONValue(encoding: item))
         if let boundary {
@@ -275,15 +315,16 @@ internal func admitSubmission(tx: Transaction, conversationId: ConversationID, d
     }
     switch draft {
     case .continue: throw ConversationBusy(conversationId: conversationId)
+    case .notifying: throw SessionError.message("Nested notification draft")
     case .write(let entry, let requestId):
         if isStale(boundary: boundary!, entry: entry) {
-            return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .unanswered(reason: "stale"))).id
+            return try await create(.write(conversationId: conversationId, requestId: requestId, state: .unanswered(reason: "stale"))).id
         }
         let appended = try await tx.appendEntry(conversationId, value: entry)
-        return try await tx.createSubmission(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
+        return try await create(.write(conversationId: conversationId, requestId: requestId, state: .done(entry: appended.id))).id
     case .input(let content, let inputEntry, _, let requestId), .inputWhenIdle(let content, let inputEntry, _, _, let requestId):
         let entry = try await appendInput(tx: tx, conversationId: conversationId, content: inputContentJSON(content), entry: inputEntry, now: now)
-        let record = try await tx.createSubmission(.input(conversationId: conversationId, requestId: requestId, state: .placed(entry: entry.id)))
+        let record = try await create(.input(conversationId: conversationId, requestId: requestId, state: .placed(entry: entry.id)))
         try await startRun(tx: tx, conversationId: conversationId, live: live, inputs: [record.id], first: entry.id)
         return record.id
     }

@@ -41,9 +41,12 @@ public struct NestedToolExecutionResult: Sendable, Codable, Equatable {
 
 /// One call key, stored with the caller and retired when the caller settles.
 public struct NestedCallState: Sendable, Codable, Equatable {
+    public var kind: String?
     public var taskId: TaskID?
     public var result: NestedToolExecutionResult?
-    public init(taskId: TaskID? = nil, result: NestedToolExecutionResult? = nil) { self.taskId = taskId; self.result = result }
+    public init(kind: String? = nil, taskId: TaskID? = nil, result: NestedToolExecutionResult? = nil) {
+        self.kind = kind; self.taskId = taskId; self.result = result
+    }
 }
 public let NestedCallDoc = try! TaskDocFamilyToken<NestedCallState, JSONValue?>(
     kind: "pi.tool.nested-call", version: 1, initial: { _ in NestedCallState() }, checkpointWhen: { _, _, _ in false })
@@ -53,6 +56,26 @@ public struct NestedToolOptions: Sendable {
     public var key: String?
     public var progress: Bool?
     public init(key: String? = nil, progress: Bool? = nil) { self.key = key; self.progress = progress }
+}
+
+/// Options for a nested call that returns a handle before completion.
+public struct NestedToolStartOptions: Sendable {
+    public let wait: Bool
+    public let key: String?
+    public let progress: Bool?
+    public init(wait: Bool, key: String? = nil, progress: Bool? = nil) {
+        self.wait = wait; self.key = key; self.progress = progress
+    }
+}
+
+/// A started nested call. Its result method waits only when called.
+public struct NestedToolCall: Sendable {
+    public let taskId: TaskID
+    private let wait: @Sendable (ChordContext) async throws -> NestedToolExecutionResult
+    internal init(taskId: TaskID, wait: @escaping @Sendable (ChordContext) async throws -> NestedToolExecutionResult) {
+        self.taskId = taskId; self.wait = wait
+    }
+    public func result(context: ChordContext) async throws -> NestedToolExecutionResult { try await wait(context) }
 }
 
 /// The parent identity supplied to tool hooks.
@@ -109,13 +132,17 @@ internal final class NestedToolCalls: Sendable {
     let runtime: TaskRuntime
     let callId: String
     let resumes: Bool
-    init(runtime: TaskRuntime, callId: String, resumes: Bool) { self.runtime = runtime; self.callId = callId; self.resumes = resumes }
-    func execute(_ name: String, arguments: JSONObject, context: ChordContext, options: NestedToolOptions) async throws -> NestedToolExecutionResult {
+    let woken: Bool
+    init(runtime: TaskRuntime, callId: String, resumes: Bool, woken: Bool) {
+        self.runtime = runtime; self.callId = callId; self.resumes = resumes; self.woken = woken
+    }
+    func start(_ name: String, arguments: JSONObject, context: ChordContext, options: NestedToolOptions) async throws -> NestedToolCall {
         let (key, admission) = try state.withLock { state -> (String, Task<TaskID, any Error>) in
             guard !state.ended else { throw TaskDefinitionError("Tool call \(callId) has settled") }
             let key: String
             if let explicit = options.key { try checkNestedKey(explicit); key = explicit }
             else { state.sequence += 1; key = String(state.sequence) }
+            if options.key == nil && woken { throw TaskDefinitionError("Tool call \(callId) needs explicit keys after a wake") }
             if state.memo == nil {
                 state.memoSequence += 1
                 state.memo = Task { try await runtime.memo("pi.tool.madeNestedCalls", value: true, context: context) }
@@ -134,6 +161,14 @@ internal final class NestedToolCalls: Sendable {
             return (key, admission)
         }
         let id = try await admission.value
+        return NestedToolCall(taskId: id) { context in
+            try await self.result(id: id, key: key, name: name, context: context)
+        }
+    }
+    func execute(_ name: String, arguments: JSONObject, context: ChordContext, options: NestedToolOptions) async throws -> NestedToolExecutionResult {
+        try await start(name, arguments: arguments, context: context, options: options).result(context: context)
+    }
+    private func result(id: TaskID, key: String, name: String, context: ChordContext) async throws -> NestedToolExecutionResult {
         let settled = try await runtime.waitForTask(id, context: context)
         if let stored = try await runtime.snapshot(NestedCallDoc, taskId: runtime.taskId, key: key, context: context)?.result { return stored }
         let message: String
@@ -152,7 +187,7 @@ internal final class NestedToolCalls: Sendable {
     }
 }
 
-private func checkNestedKey(_ key: String) throws {
+internal func checkNestedKey(_ key: String) throws {
     let bytes = Array(key.utf8)
     let positive = bytes.first.map { (49...57).contains($0) } == true && bytes.allSatisfy { (48...57).contains($0) }
     if key.isEmpty || key.contains("/") || key == "__proto__" || positive {
@@ -166,6 +201,9 @@ private func startNestedCall(_ runtime: TaskRuntime, parentCallId: String, name:
     try await runtime.commit({ tx, _ in
         let member = try await tx.doc(NestedCallDoc, taskId: runtime.taskId, key: key, seed: nil)
         if let existing = try member.get("taskId")?.decode(TaskID.self) {
+            if try member.get("kind")?.decode(String.self) == "task" {
+                throw TaskDefinitionError("Nested call \(call.id) was already made with another tool or other arguments")
+            }
             guard let record = try await tx.task(existing),
                   case .nested(_, _, _, let old, _) = try record.input.decode(ToolTaskInput.self),
                   harnessNamesEqual(old.name, name),
@@ -178,6 +216,7 @@ private func startNestedCall(_ runtime: TaskRuntime, parentCallId: String, name:
             key: key, call: call, progress: progress == false ? false : nil),
             options: .init(ownership: .task(taskId: runtime.taskId), abandonOnRestart: abandonOnRestart))
         try member.set("taskId", JSONValue(encoding: id))
+        try member.set("kind", .string("nested"))
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         if try live.child("nestedTools") == nil { try live.set("nestedTools", []) }
         try live.child("nestedTools")!.append(JSONValue(encoding: NestedToolSlot(callId: call.id, name: name,

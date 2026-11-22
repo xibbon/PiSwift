@@ -2,6 +2,13 @@ import Foundation
 import PiSwiftChord
 import Synchronization
 
+/// A parked or not-started tool keeps its restart-marked children.
+private func keepsAbandonedChildren(_ owner: TaskRecord) -> Bool {
+    guard owner.kind == "pi.tool", let checkpoint = owner.state.checkpoint?.objectValue,
+          let phase = checkpoint["phase"]?.stringValue else { return false }
+    return phase == "call" || phase == "parked"
+}
+
 internal struct InvocationBinding: Sendable {
     let invocation: TaskInvocation
     let signal: AbortSignal
@@ -516,7 +523,12 @@ internal final class TaskScheduler: Sendable {
                 // Commit all restart marks before a descendant can reserve a run invocation.
                 if !abandoned.isEmpty {
                     for id in abandoned {
-                        if let record = current(id), !record.abortRequested { try tx.setTask(record.withAbortMark(.restart)) }
+                        if let record = current(id), !record.abortRequested {
+                            let owner = record.owner.flatMap { current($0) }
+                            if owner.map(keepsAbandonedChildren) != true {
+                                try tx.setTask(record.withAbortMark(.restart))
+                            }
+                        }
                     }
                     return
                 }
