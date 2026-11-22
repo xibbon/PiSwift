@@ -46,8 +46,7 @@ extension TaskScheduler {
             var snapshot: RegistrySnapshot?
             for record in view.live.values {
                 if record.state.status == "completing" { continue }
-                if !record.abortRequested, case .waiting(_, let on, _, _) = record.state,
-                   on.contains(where: { view.live[$0] != nil }) { continue }
+                if !record.abortRequested && !view.waitingOn(record.state, first: true).isEmpty { continue }
                 if !record.abortRequested, case .sleeping = record.state,
                    !sleepDue(record.state, memos: record.memos, now: time) { continue }
                 if record.abortRequested && view.hasOwnedLive(record.id) { continue }

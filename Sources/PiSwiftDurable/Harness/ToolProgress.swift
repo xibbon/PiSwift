@@ -16,7 +16,10 @@ private final class ToolReported: Sendable {
     }
     let state = Mutex(State())
     let output: OutputBuffer
-    init(_ limits: OutputLimits) { output = OutputBuffer(limits) }
+    init(_ limits: OutputLimits, details: JSONValue? = nil, diagnostics: [ToolDiagnostic] = []) {
+        output = OutputBuffer(limits)
+        state.withLock { $0.details = details; $0.diagnostics = diagnostics }
+    }
     func snapshot() -> ToolReportSnapshot {
         state.withLock { ToolReportSnapshot(output: output.snapshot(), details: $0.details, diagnostics: $0.diagnostics) }
     }
@@ -30,6 +33,9 @@ private actor ToolProgressWriter {
     var writtenDiagnostics = 0
     init(runtime: TaskRuntime, reported: ToolReported, context: ChordContext) {
         self.runtime = runtime; self.reported = reported; self.context = context
+        let initial = reported.snapshot()
+        self.writtenDetails = initial.details
+        self.writtenDiagnostics = initial.diagnostics.count
     }
     func write() async throws -> Int {
         let current = reported.snapshot()
@@ -68,9 +74,10 @@ internal final class ToolReporter: Sendable {
     private let lifetime: ToolInvocationLifetime
     private let events: AsyncStream<Event>.Continuation
     private let drain: Task<[ProgressWaiter], Never>
-    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, enabled: Bool = true, context: ChordContext) {
+    init(runtime: TaskRuntime, lifetime: ToolInvocationLifetime, limits: OutputLimits, enabled: Bool = true,
+         initialDetails: JSONValue? = nil, initialDiagnostics: [ToolDiagnostic] = [], context: ChordContext) {
         self.limits = limits; self.lifetime = lifetime
-        let reported = ToolReported(limits); self.reported = reported
+        let reported = ToolReported(limits, details: initialDetails, diagnostics: initialDiagnostics); self.reported = reported
         let writer = ToolProgressWriter(runtime: runtime, reported: reported, context: context)
         let progress = Progress(write: { enabled ? try await writer.write() : 0 }, onError: { error in
             if !runtime.signal.aborted { runtime.reportTaskError(error) }

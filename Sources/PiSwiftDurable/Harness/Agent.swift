@@ -396,7 +396,7 @@ public func resolveAgent(state: AgentState? = nil, snapshot: RegistrySnapshot, s
         for wrap in extensionValue.wraps {
             switch wrap {
             case let .tool(name, transform):
-                applyWrap(&tools, name: name, nameOf: { $0.name }, transform: transform, report: { report($0, extensionValue.name) })
+                applyWrap(&tools, name: name, nameOf: { $0.name }, transform: { try wrapComposite($0, wrap: transform) }, report: { report($0, extensionValue.name) })
             case let .section(key, transform):
                 applyWrap(&sections, name: key, nameOf: { $0.key }, transform: transform, report: { report($0, extensionValue.name) })
             }

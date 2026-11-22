@@ -112,10 +112,20 @@ public let toolTask = TaskDefinition<ToolTaskInput, ToolTaskCheckpoint, ToolTask
     phase: { task, runtime, context in try await runToolTask(task, runtime, context) },
     abort: { task, runtime, context in
         let call = try await readToolCall(runtime, task.input, context)
+        if task.checkpoint.phase == .parked ||
+            (task.checkpoint.phase == .execute && task.checkpoint.wake != nil) {
+            let tool = try await resolveTool(runtime, task.input, call, context)
+            if let tool, let args = task.checkpoint.arguments {
+                try await cancelTool(runtime, call, tool, args, checkpoint: task.checkpoint.checkpoint, context: context)
+            } else {
+                try runtime.report(TaskDefinitionError("Tool \(call.name) is not available: its parked call \(call.id) was not cancelled"))
+            }
+        }
         let code: String, message: String
         if case .unofferedModel = task.input { code = "tool_unavailable"; message = "Tool \(call.name) is not available" }
         else if task.record.abortReason != .restart { code = "aborted"; message = "Tool \(call.name) was aborted" }
         else if task.checkpoint.phase == .execute { code = "interrupted"; message = "Tool \(call.name) was interrupted by a restart and may have partially run" }
+        else if task.checkpoint.phase == .parked { code = "abandoned"; message = "Tool \(call.name) was parked: its caller ended with a restart" }
         else { code = "abandoned"; message = "Tool \(call.name) was not started: its caller ended with a restart" }
         let hooks = task.record.restarts < runtime.settings.restartLimit - 1
         try await settleToolFromSlot(runtime, task.input, call, .aborted, code: code, message: message, hooks: hooks, context: context)
@@ -142,6 +152,14 @@ private func readToolCall(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ cont
         throw TaskDefinitionError("Entry \(assistant.rawValue) has no tool call \(callId)")
     }
 }
+private func resolveTool(_ runtime: TaskRuntime, _ input: ToolTaskInput, _ call: ToolHookCall,
+                         _ context: ChordContext) async throws -> ToolRegistration? {
+    if case .unofferedModel = input { return nil }
+    let agent = try await runtime.agent(context: context)
+    let choices: [ToolRegistration]
+    switch input { case .model, .unofferedModel: choices = agent.tools; case .nested: choices = agent.callable }
+    return choices.first { harnessNamesEqual($0.name, call.name) }
+}
 private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ value: JSONValue,
                                   preserveCallOrder: Bool = true) throws -> JSONObject {
     guard let object = try foundationJSON(from: value) as? [String: Any] else {
@@ -163,9 +181,6 @@ private func checkedToolArguments(_ tool: ToolRegistration, _ call: ToolCall, _ 
 }
 private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>, _ runtime: TaskRuntime,
                          _ context: ChordContext) async throws {
-    if task.checkpoint.phase == .parked {
-        throw TaskDefinitionError("Tool parked phase requires v1.6.0 park handling")
-    }
     let call = try await readToolCall(runtime, task.input, context)
     if let restarts = task.record.storedRestarts, restarts >= runtime.settings.restartLimit {
         let count = restarts == 1 ? "once" : "\(Int(restarts)) times in a row"
@@ -173,13 +188,25 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
         return try await settleToolFromSlot(runtime, task.input, call, .restartLimit(message), code: "restart_limit", message: message,
                                             hooks: restarts <= runtime.settings.restartLimit, context: context)
     }
-    let tool: ToolRegistration?
-    if case .unofferedModel = task.input { tool = nil }
-    else {
-        let agent = try await runtime.agent(context: context)
-        let choices: [ToolRegistration]
-        switch task.input { case .model, .unofferedModel: choices = agent.tools; case .nested: choices = agent.callable }
-        tool = choices.first { harnessNamesEqual($0.name, call.name) }
+    let tool = try await resolveTool(runtime, task.input, call, context)
+    if task.checkpoint.phase == .parked {
+        guard let args = task.checkpoint.arguments else { throw TaskDefinitionError("Tool checkpoint is missing arguments") }
+        guard let tool else {
+            let message = "Tool \(call.name) is not available"
+            try runtime.report(TaskDefinitionError("\(message): its parked call \(call.id) cannot run again"))
+            return try await settleToolFromSlot(runtime, task.input, call, .failed(message), code: "tool_unavailable", message: message,
+                                                hooks: true, context: context)
+        }
+        let wake = try task.record.state.wakeReason()
+        try await runtime.commit({ tx, _ in
+            if let slot = try toolSlot(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId) {
+                try slot.set("status", .string("running"))
+                for key in ["output", "droppedBytes", "droppedLines"] { try slot.remove(key) }
+            }
+            return .running(checkpoint: try JSONValue(encoding: ToolTaskCheckpoint(phase: .execute, arguments: args,
+                replay: tool.replay ?? .unsafe, wake: wake, checkpoint: task.checkpoint.checkpoint)))
+        }, context: context)
+        return try await executeTool(runtime, call, tool, args, context, wake: wake, checkpoint: task.checkpoint.checkpoint)
     }
     if task.checkpoint.phase == .execute {
         guard let args = task.checkpoint.arguments, let replay = task.checkpoint.replay else {
@@ -188,11 +215,17 @@ private func runToolTask(_ task: RunningTask<ToolTaskInput, ToolTaskCheckpoint>,
         if replay == .safe, let tool, tool.replay == .safe {
             try await runtime.commit({ tx, _ in
                 if let slot = try toolSlot(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId) {
-                    try clearProgress(slot: slot)
+                    if task.checkpoint.wake == nil { try clearProgress(slot: slot) }
+                    else { for key in ["output", "droppedBytes", "droppedLines"] { try slot.remove(key) } }
+                    try slot.set("status", .string("running"))
                 }
                 return nil
             }, context: context)
-            return try await executeTool(runtime, call, tool, args, context)
+            return try await executeTool(runtime, call, tool, args, context,
+                                         wake: task.checkpoint.wake, checkpoint: task.checkpoint.checkpoint)
+        }
+        if task.checkpoint.wake != nil, let tool {
+            try await cancelTool(runtime, call, tool, args, checkpoint: task.checkpoint.checkpoint, context: context)
         }
         let message = "Tool \(call.name) was interrupted and may have partially run"
         return try await settleToolFromSlot(runtime, task.input, call, .failed(message), code: "interrupted", message: message,
@@ -265,7 +298,7 @@ internal func toolResultFromSlot(_ slot: ToolSlot?, code: String, message: Strin
     return ToolExecutionResult(output: slot?.output.flatMap { $0.isEmpty ? nil : [.text(TextContent(text: $0))] } ?? [],
                                isError: true, details: slot?.details, diagnostics: diagnostics)
 }
-private func currentToolSlot(_ runtime: TaskRuntime, _ context: ChordContext) async throws -> ToolSlot? {
+internal func currentToolSlot(_ runtime: TaskRuntime, _ context: ChordContext) async throws -> ToolSlot? {
     guard let live = try await runtime.snapshot(LiveDoc, conversationId: runtime.conversationId, context: context) else { return nil }
     if let slot = live.tools?.first(where: { $0.taskId == runtime.taskId }) { return slot }
     guard let nested = live.nestedTools?.first(where: { $0.taskId == runtime.taskId }) else { return nil }
@@ -336,7 +369,7 @@ private func settleToolFromSlot(_ runtime: TaskRuntime, _ input: ToolTaskInput, 
 }
 
 internal func settleTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ ending: ToolEnding,
-                         result: ToolExecutionResult, durationMs: Int? = nil, context: ChordContext) async throws {
+                         result: ToolExecutionResult, durationMs measured: Int? = nil, context: ChordContext) async throws {
     let children = try await runtime.ownedTasks(context: context).filter { $0.kind == "pi.tool" && $0.input["kind"] == "nested" }
     let madeNested = try await runtime.memo("pi.tool.madeNestedCalls", context: context) == true
     try await withThrowingTaskGroup(of: Void.self) { group in
@@ -344,6 +377,12 @@ internal func settleTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ ending:
         try await group.waitForAll()
     }
     try await runtime.commit({ tx, current in
+        let durationMs: Int?
+        if let startedAt = current.startedAt {
+            durationMs = Int(exactly: (Double(try runtime.now()) - startedAt).rounded())
+        } else {
+            durationMs = measured
+        }
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         let slot = try toolSlot(live: live, taskId: runtime.taskId)
         let settled: ToolTaskResult

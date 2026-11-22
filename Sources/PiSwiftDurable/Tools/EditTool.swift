@@ -66,13 +66,13 @@ public func createEditTool() throws -> ToolRegistration {
         "required": ["path", "edits"]]
     return try defineTool(name: "edit",
         description: "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
-        parameters: parameters, args: EditToolInput.self, prepareArguments: prepareEditArguments) { args, api, context in
+        parameters: parameters, args: EditToolInput.self, prepareArguments: prepareEditArguments) { args, api, context -> ToolExecutionOutcome in
             guard !args.edits.isEmpty else {
                 throw DurableToolError(message: "Edit tool input is invalid. edits must contain at least one replacement.")
             }
             let env = try requireEnv(api)
             let absolutePath = try await resolveToolPath(env: env, path: args.path, context: context)
-            return try await withFileMutationQueue(env: env, path: absolutePath, context: context) {
+            return .result(try await withFileMutationQueue(env: env, path: absolutePath, context: context) {
                 try checkToolAbort(context)
                 let info: FileInfo
                 switch await env.fileInfo(absolutePath, context: context) {
@@ -101,6 +101,6 @@ public func createEditTool() throws -> ToolRegistration {
                     "patch": .string(generateUnifiedPatch(args.path, oldContent: applied.baseContent, newContent: applied.newContent))]
                 if let first = diff.firstChangedLine { details["firstChangedLine"] = .number(Double(first)) }
                 return ToolExecutionResult(output: [.text(TextContent(text: "Successfully replaced \(args.edits.count) block(s) in \(args.path)."))], details: .object(details))
-            }
+            })
         }
 }

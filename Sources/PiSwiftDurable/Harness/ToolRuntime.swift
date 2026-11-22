@@ -12,13 +12,16 @@ extension ToolExecutionApi {
         try await withTaskCancellationContext(context) { context in
             let runtime = try taskRuntime()
             return try await runtime.scheduler.gated(runtime.invocation, context: context, persistence: persistence) { tx, _ in
-                return try await change(tx)
+                let result = try await change(tx)
+                if cancelOnly && !tx.createdTaskIDs().isEmpty { try checkCancelChildren() }
+                return result
             }
         }
     }
     /// Creates a typed task and stores its encoded input and initial checkpoint.
     public func createTask<Input, Checkpoint>(_ task: TaskKind<Input, Checkpoint>, input: Input,
                                              options: TaskOptions, context: ChordContext) async throws -> TaskID {
+        try checkCancelChildren()
         let selected = childOptions(options)
         return try await commit({ tx in try await tx.createTask(task, input: input, options: selected) }, context: context)
     }
@@ -27,6 +30,7 @@ extension ToolExecutionApi {
         _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input,
         options: TaskOptions, context: ChordContext
     ) async throws -> TaskID {
+        try checkCancelChildren()
         let selected = childOptions(options)
         return try await commit({ tx in try await tx.createTask(task, input: input, options: selected) }, context: context)
     }
@@ -38,10 +42,14 @@ extension ToolExecutionApi {
     /// Calls a tool by key and waits for its program result. Cancelling this wait leaves the child running.
     public func executeTool(_ name: String, arguments: JSONObject, context: ChordContext,
                             options: NestedToolOptions = .init()) async throws -> NestedToolExecutionResult {
+        try checkCancelChildren()
         guard let nestedCalls else { throw TaskDefinitionError("Tool execution API has no nested call service") }
         return try await withTaskCancellationContext(context) { context in
             try await nestedCalls.execute(name, arguments: arguments, context: context, options: options)
         }
+    }
+    private func checkCancelChildren() throws {
+        if cancelOnly { throw TaskDefinitionError("Tool \(cancelToolName ?? callId) cannot start nested calls or tasks in cancel") }
     }
     /// Returns the current durable task record, or nil when it is absent.
     public func getTask(id: TaskID, context: ChordContext) async throws -> TaskRecord? {

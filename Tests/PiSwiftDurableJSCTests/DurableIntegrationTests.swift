@@ -236,6 +236,39 @@ private func diRestart(_ chat: DIChat, source: String,
 
 @Suite("PiSwiftDurableJSC Codemode durable integration", .timeLimit(.minutes(1)))
 struct CodemodeDurableIntegrationTests {
+    // v1.6.0 codemode.ts:833 awaits a nested tool through its park.
+    @Test func scriptWaitsForParkedNestedToolResult() async throws {
+        let chat = try DIChat(forceWatchdog: false)
+        let done = try defineSignal(name: "test.codemode-park", version: 1, schema: [
+            "type": "object", "properties": ["text": ["type": "string"]], "required": ["text"],
+        ]) as SignalToken<JSONValue>
+        let key = try done.key("done")
+        let runs = Mutex(0)
+        try chat.add(ToolRegistration(name: "ci", description: "Wait for CI", parameters: ["type": "object"],
+            execute: { _, api, context in
+                runs.withLock { $0 += 1 }
+                if case .value(let value) = try await api.readSignal(done, key: "done", context: context) {
+                    return .result(.init(output: [.text(.init(text: value["text"]?.stringValue ?? ""))]))
+                }
+                return .park(.sleep(signals: [key], checkpoint: "waiting"))
+            }))
+        chat.responses("return await tools.ci({});")
+        let opened = try await openChat(setup: chat.setup)
+        let submission = try await opened.root.submit(.input(content: .text("go")), context: .background)
+        try await eventually(timeout: .seconds(15)) {
+            try await diNested(opened).contains { $0.input["call"]?["name"] == "ci" && $0.state.status == "sleeping" }
+        }
+        let nested = try #require(try await diNested(opened).first { $0.state.status == "sleeping" })
+        #expect(try await opened.harness.signal(taskId: nested.id, token: done, key: "done",
+            value: ["text": "passed"], context: .background) == .delivered)
+        try await diWait(opened, submission.id)
+        let result = try await diMessage(opened)
+        #expect(result["isError"] == false)
+        #expect(diOutput(result) == "passed")
+        #expect(runs.withLock { $0 } == 2)
+        try await opened.harness.close(context: .background)
+        await chat.sandbox.close()
+    }
     // Upstream v1.3.0 codemode.test.ts:193. Check the journal at the delivery boundary.
     @Test(arguments: [false, true]) func journalCommitsBeforeRealJavaScriptReceivesResults(_ watchdog: Bool) async throws {
         let current = Mutex<OpenChatResult?>(nil)

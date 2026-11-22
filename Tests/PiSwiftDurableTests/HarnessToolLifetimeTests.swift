@@ -7,26 +7,33 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 
 struct HarnessToolLifetimeTests {
-    // harness-tools.test.ts:432. Hook time must not be part of execute time.
-    @Test func executeDurationExcludesBlockedCalls() async throws {
-        let setup = HarnessChatSetup(settings: .init(toolExecution: .sequential)), time = Mutex<Duration>(.zero)
+    // v1.6.0 harness-tools.test.ts:461–491. The span includes hooks, also when they block execution.
+    @Test func recordsEachResultsSpanFromTheCallsFirstRun() async throws {
+        let clock = TestClock(now: 1_000)
+        let setup = HarnessChatSetup(settings: .init(toolExecution: .sequential), clock: clock)
         try installHarnessTool(harnessTestTool(execute: { _, _, _ in
-            time.withLock { $0 += .milliseconds(30) }; return .init(output: [])
+            clock.advance(by: 30)
+            return .init(output: [])
         }), setup: setup)
         try installHarnessTool(harnessTestTool("thrower", execute: { _, _, _ in
-            time.withLock { $0 += .milliseconds(45) }; throw TaskDefinitionError("boom")
+            clock.advance(by: 45)
+            throw TaskDefinitionError("boom")
         }), setup: setup)
         try setup.registry.install(Extension(name: "audit", hooks: [hook(ToolHooks(beforeTool: { call, _, _ in
-            time.withLock { $0 += .milliseconds(100) }; return call.id == "blocked" ? .init(block: "no") : nil
-        }, afterTool: { _, _, _, _ in time.withLock { $0 += .milliseconds(200) }; return nil }))]))
+            clock.advance(by: 100)
+            return call.id == "blocked" ? .init(block: "no") : nil
+        }, afterTool: { _, _, _, _ in
+            clock.advance(by: 200)
+            return nil
+        }))]))
         setup.models.setResponses([.message(try toolCalls([("echo", [:], "run"), ("thrower", [:], "thrower"), ("echo", [:], "blocked")])), .message(chatAssistant("done"))])
         let opened = try await openChat(setup: setup)
-        opened.harness.tasks.toolServices.setExecutionTime { time.withLock { $0 } }
         _ = try await opened.root.submit(.input(content: .text("go")), context: .background).wait(context: .background)
         let results = try harnessToolResults(await allEntries(opened.root))
-        #expect(results.first { $0.toolCallId == "run" }?.durationMs == 30)
-        #expect(results.first { $0.toolCallId == "thrower" }?.durationMs == 45)
-        #expect(results.first { $0.toolCallId == "blocked" }?.durationMs == nil)
+        #expect(results.first { $0.toolCallId == "run" }?.durationMs == 330)
+        #expect(results.first { $0.toolCallId == "thrower" }?.durationMs == 345)
+        #expect(results.first { $0.toolCallId == "blocked" }?.durationMs == 300)
+        #expect(results.first { $0.toolCallId == "blocked" }?.isError == true)
         #expect(results.first { $0.toolCallId == "thrower" }?.isError == true)
         try await opened.harness.close(context: .background)
     }

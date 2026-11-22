@@ -92,21 +92,6 @@ struct D6ResumeFixtureTests {
         }
         return "\(path): \(actual) != \(expected)"
     }
-    private func withLegacyDuration(_ saved: JSONValue) throws -> JSONValue {
-        var expected = try #require(saved["post"]?.objectValue)
-        var entries = try #require(expected["entries"]?.arrayValue)
-        guard entries.indices.contains(1), var entry = entries[1].objectValue,
-              var model = entry["model"]?.arrayValue, !model.isEmpty,
-              var assistant = model[0].objectValue else { return .object(expected) }
-        // v1.6.0 D1: tool.ts:1156-1200 changes durationMs. D3a/D13 owns
-        // that behavior. The v1.5.2 and v1.6.0 tagged oracles use one frozen pre.
-        assistant["durationMs"] = saved["legacyPost"]?["entries"]?[1]?["model"]?[0]?["durationMs"]
-        model[0] = .object(assistant)
-        entry["model"] = .array(model)
-        entries[1] = .object(entry)
-        expected["entries"] = .array(entries)
-        return .object(expected)
-    }
     private func registry(_ scenario: String) throws -> Registry {
         let registry = createRegistry()
         if scenario == "nested-restart" {
@@ -177,9 +162,8 @@ struct D6ResumeFixtureTests {
         try opened.resume()
         _ = try await opened.waitForTask(id: taskId, context: .background)
         let actual = try await snapshot(storage, root: root)
-        #expect(actual["entries"]?[1]?["model"]?[0]?["durationMs"] ==
-            saved["legacyPost"]?["entries"]?[1]?["model"]?[0]?["durationMs"])
-        if let mismatch = difference(actual, try withLegacyDuration(saved)) { Issue.record("\(name): \(mismatch)") }
+        // v1.6.0 tool.ts:1178 now applies to the Swift continuation too.
+        if let mismatch = difference(actual, try #require(saved["post"])) { Issue.record("\(name): \(mismatch)") }
         try await opened.close(context: .background)
     }
 

@@ -242,9 +242,7 @@ internal struct TaskBlockedSubject: Sendable {
     let status: String
     let input: JSONValue
     let checkpoint: JSONValue?
-    let policy: JoinPolicy?
     let signals: JSONValue?
-    let wake: JSONValue?
 
     init(record: TaskRecord) {
         id = record.id; kind = record.kind; version = record.version
@@ -252,16 +250,8 @@ internal struct TaskBlockedSubject: Sendable {
         restarts = record.restarts; status = record.state.status
         input = record.input; checkpoint = record.state.checkpoint
         switch record.state {
-        case .waiting(_, _, let policyValue, _): policy = policyValue
-        default: policy = nil
-        }
-        switch record.state {
         case .sleeping(_, _, let fields): signals = fields["signals"]
         default: signals = nil
-        }
-        switch record.state {
-        case .pending(_, let fields), .running(_, let fields): wake = fields["wake"]
-        default: wake = nil
         }
     }
 }

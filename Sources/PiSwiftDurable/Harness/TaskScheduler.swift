@@ -473,24 +473,13 @@ internal final class TaskScheduler: Sendable {
         return (nil, nil, true)
     }
     func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> (shape: String, order: String)? {
-        if record.status == "sleeping", record.kind == "pi.tool",
-           record.checkpoint?["phase"]?.stringValue == "parked" { return ("signal sleep", "D3a") }
-        if record.status == "waiting", record.policy == .any { return ("any wait", "D3") }
-        if let wake = record.wake?.objectValue, let reason = wake["reason"]?.stringValue {
-            if reason != "signal" && reason != "time" && reason != "expired" { return ("\(reason) wake", "D3") }
-        }
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
             if let phase, ["afterTools", "yield"].contains(phase) { return ("phase \(phase)", "D5") }
             if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return ("phase \(phase)", "D5b") }
         }
         if record.kind == "pi.tool" {
-            if phase == "parked" { return ("phase parked", "D3a") }
-            if phase == "execute", let checkpoint = record.checkpoint?.objectValue,
-               checkpoint["wake"] != nil || checkpoint["checkpoint"] != nil {
-                return ("execute park recovery", "D3a")
-            }
-            if let phase, !["call", "execute"].contains(phase) { return ("phase \(phase)", "D6") }
+            if let phase, !["call", "execute", "parked"].contains(phase) { return ("phase \(phase)", "D6") }
         }
         return nil
     }
@@ -617,8 +606,7 @@ internal final class TaskScheduler: Sendable {
                         continue
                     }
                     guard let definition, let checkpoint = record.state.checkpoint else { continue }
-                    if !record.abortRequested, case .sleeping = original.state,
-                       let (wake, memos) = try sleepWake(original.state, memos: record.memos, now: Double(now())) {
+                    if let (wake, memos) = try woke(original) {
                         record = signalWithMemos(record, memos)
                         record = record.replacing(state: .running(checkpoint: checkpoint,
                             extensions: ["wake": try JSONValue(encoding: wake)]))
@@ -653,6 +641,18 @@ internal final class TaskScheduler: Sendable {
             throw error
         }
     }
+
+    /// Records why a reservation ends a wait or sleep.
+    private func woke(_ record: TaskRecord) throws -> (WakeReason, JSONObject)? {
+        guard !record.abortRequested else { return nil }
+        if case .waiting(_, let on, let policy, _) = record.state {
+            let ended = policy == .any ? state.withLock { state in on.filter { state.live[$0] == nil } } : on
+            return (.tasks(ended: ended), [:])
+        }
+        guard case .sleeping = record.state else { return nil }
+        return try sleepWake(record.state, memos: record.memos, now: Double(now()))
+    }
+
     private func start(_ reservation: Reservation) {
         let work = Task {
             await run(reservation)

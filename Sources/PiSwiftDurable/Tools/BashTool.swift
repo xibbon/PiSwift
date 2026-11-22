@@ -64,7 +64,7 @@ public func createBashTool(options: BashToolOptions = .init()) throws -> ToolReg
             "type": "object", "properties": [
                 "output": ["type": "string"], "truncated": ["type": "boolean"],
                 "fullOutputPath": ["type": "string"], "exitCode": ["type": "number"]
-            ], "required": ["output", "truncated", "exitCode"]]) { args, api, context in
+            ], "required": ["output", "truncated", "exitCode"]]) { args, api, context -> ToolExecutionOutcome in
             let timeout = try bashTimeout(args.timeout)
             let env = try requireEnv(api)
             let prefix = options.commandPrefix.flatMap { $0.isEmpty ? nil : $0 }
@@ -96,9 +96,9 @@ public func createBashTool(options: BashToolOptions = .init()) throws -> ToolReg
                 var structured: JSONObject = ["output": .string(retained.text), "truncated": .bool(retained.truncated),
                                               "exitCode": .number(Double(value.exitCode))]
                 if let spillPath { structured["fullOutputPath"] = .string(spillPath) }
-                if value.exitCode == 0 { return ToolExecutionResult(structuredOutput: .object(structured)) }
-                return ToolExecutionResult(structuredOutput: .object(structured), isError: true,
-                    diagnostics: [.init(severity: .error, message: "Command exited with code \(value.exitCode)", code: "exit_code")])
+                if value.exitCode == 0 { return .result(ToolExecutionResult(structuredOutput: .object(structured))) }
+                return .result(ToolExecutionResult(structuredOutput: .object(structured), isError: true,
+                    diagnostics: [.init(severity: .error, message: "Command exited with code \(value.exitCode)", code: "exit_code")]))
             }
         }
 }

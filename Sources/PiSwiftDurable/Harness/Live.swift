@@ -78,6 +78,10 @@ public struct ToolSlot: Sendable, Equatable, Codable {
         case pending
         /// The tool call is executing.
         case running
+        /// The tool call waits for a time or a signal.
+        case sleeping
+        /// The tool call waits for other tasks to finish.
+        case waiting
         /// The tool call has finished.
         case done
     }
@@ -125,7 +129,8 @@ public struct ToolSlot: Sendable, Equatable, Codable {
 public struct NestedToolSummary: Sendable, Equatable, Codable {
     /// Whether the call failed.
     public var isError: Bool
-    /// The execution time of this attempt, in milliseconds.
+    /// The time from the call's first run to settlement, in milliseconds.
+    /// For older records without a start time, uses the last execution attempt's time, if available.
     public var durationMs: Int?
     /// The usage reported by the tool.
     public var usage: Usage?

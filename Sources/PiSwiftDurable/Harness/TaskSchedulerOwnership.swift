@@ -133,6 +133,14 @@ extension TaskScheduler.State {
         }
         dropQueue.removeAll()
     }
+
+    /// Returns live dependencies while the join policy still holds the task.
+    func waitingOn(_ taskState: TaskState, first: Bool = false) -> [TaskID] {
+        guard case .waiting(_, let on, let policy, _) = taskState else { return [] }
+        if policy == .any && on.contains(where: { live[$0] == nil }) { return [] }
+        if first { return on.first(where: { live[$0] != nil }).map { [$0] } ?? [] }
+        return on.filter { live[$0] != nil }
+    }
 }
 
 extension TaskScheduler {
@@ -360,10 +368,6 @@ extension TaskScheduler {
     }
     func waitingOn(_ record: TaskRecord, first: Bool = false) -> [TaskID] {
         if record.abortRequested { return ownedLive(record.id, first: first) }
-        if case .waiting(_, let on, _, _) = record.state {
-            if first { return on.first(where: { current($0) != nil }).map { [$0] } ?? [] }
-            return on.filter { current($0) != nil }
-        }
-        return []
+        return state.withLock { $0.waitingOn(record.state, first: first) }
     }
 }

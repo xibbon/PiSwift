@@ -80,6 +80,8 @@ const rows = [
   ['B4 batch and torn cut', 'FILE', 'D2', 'D2', 'D2', 'D2', 'D2', 'D2'],
   ['v1.6.0 signal sleep, delivery, and expiry', 'FILE', 'D2 parked, early delivery, expiry',
     'D2 parked', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D2 parked, early delivery, expiry', 'D2 parked'],
+  ['v1.6.0 tool parks, any wait, cancel, and duration across reopen', 'FILE', 'D3a all four cases',
+    'D3a all four cases', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D3a all four cases', 'D3a all four cases'],
   ['B5 live read-only refresh', 'FILE', 'D12', 'D12', 'D12', 'D12', 'D9', 'D9'],
   ['watches and views', 'N/A', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4'],
   ['Session writer/group commit', 'SCRIPT', 'D7', 'D7', 'GAP', 'GAP', 'D7', 'D7'],

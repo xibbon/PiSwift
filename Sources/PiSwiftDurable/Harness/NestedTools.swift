@@ -11,6 +11,8 @@ public struct NestedToolExecutionResult: Sendable, Codable, Equatable {
     public var details: JSONValue?
     public var diagnostics: [ToolDiagnostic]
     public var usage: Usage?
+    /// The time from the call's first run to settlement, in milliseconds.
+    /// For older records without a start time, uses the last execution attempt's time, if available.
     public var durationMs: Int?
     public init(taskId: TaskID, structuredOutput: JSONValue? = nil, isError: Bool = false,
                 details: JSONValue? = nil, diagnostics: [ToolDiagnostic] = [], usage: Usage? = nil, durationMs: Int? = nil) {

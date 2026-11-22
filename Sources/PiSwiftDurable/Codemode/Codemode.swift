@@ -40,8 +40,8 @@ public func createCodemodeTool(options: CodemodeToolOptions) throws -> ToolRegis
     var tool = try defineTool(name: CODEMODE_TOOL_NAME, description: codemodeDescription(models: options.models),
         parameters: ["type": "object", "properties": ["code": ["type": "string", "description": "Raw JavaScript source."]], "required": ["code"]],
         args: CodemodeToolInput.self, replay: .safe, callers: [.model],
-        outputLimits: .init(maxBytes: 4 * 1024 * 1024, maxLines: 100_000)) { args, api, context in
-            try await DurableCodemodeCall(options: options, api: api, context: context).execute(args.code)
+        outputLimits: .init(maxBytes: 4 * 1024 * 1024, maxLines: 100_000)) { args, api, context -> ToolExecutionOutcome in
+            .result(try await DurableCodemodeCall(options: options, api: api, context: context).execute(args.code))
         }
     tool.declaration.constrainedSampling = codemodeConstrainedSampling
     tool.orderedDeclaration["constrainedSampling"] = ["type": "grammar", "variants": ["openai_lark": .string(codemodeSourceGrammar)]]

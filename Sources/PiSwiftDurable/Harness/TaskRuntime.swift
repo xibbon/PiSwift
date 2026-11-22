@@ -151,6 +151,12 @@ public final class TaskRuntime: Sendable {
         }
         try await commit({ _, _ in try .sleeping(checkpoint: checkpoint, until: until, signals: signals) }, context: context)
     }
+    /// Commits a wait on tasks and resumes at the checkpoint when the join policy permits it.
+    /// Return from the phase handler after this call.
+    public func wait(on tasks: [TaskID], policy: JoinPolicy,
+                     checkpoint: JSONValue, context: ChordContext) async throws {
+        try await commit({ _, _ in .waiting(checkpoint: checkpoint, on: tasks, policy: policy) }, context: context)
+    }
     /// Arms a timer that is disarmed when this invocation ends.
     public func setTimer(_ callback: @escaping @Sendable () -> Void, delay: Double) -> HarnessDisarm {
         setInvocationTimer(callback) { scheduler.timers.setTimer($0, delay: delay) }

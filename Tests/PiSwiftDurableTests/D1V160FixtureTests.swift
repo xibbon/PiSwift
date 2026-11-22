@@ -60,9 +60,7 @@ struct D1V160FixtureTests {
     }
 
     private var blockedOrders: [String: String] {
-        ["parkedTool": "D3a",
-         "anyWait": "D3", "afterTools": "D5", "yield": "D5",
-         "executeTool": "D3a", "wakeTasks": "D3"]
+        ["afterTools": "D5", "yield": "D5"]
     }
 
     @Test func taggedWritesAndRecordsRoundTrip() throws {

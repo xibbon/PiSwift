@@ -53,7 +53,7 @@ public func createReadTool(images: (any ImageProcessor)? = nil) throws -> ToolRe
             ]), "required": .array(["type", "data", "mimeType"])])
         ])
     ], execute: { args, api, context in
-        try await executeReadTool(args, api, context, images: images)
+        .result(try await executeReadTool(args, api, context, images: images))
     })
 }
 
