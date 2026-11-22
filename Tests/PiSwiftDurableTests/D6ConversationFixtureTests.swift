@@ -134,7 +134,7 @@ struct D6ConversationFixtureTests {
                         })
                     try setup.registry.install(Extension(name: "d6-after-run", hooks: [
                         hook(GenerationHooks(afterRun: { _, _, _ in
-                            AfterRunResult(tasks: [try runEndTask(child, input: .init(label: "child-\(seed)"))])
+                            AfterRunResult(tasks: [try hookTask(child, input: .init(label: "child-\(seed)"))])
                         }))
                     ], tasks: [AnyTaskDefinition(child)]))
                 }

@@ -78,12 +78,15 @@ public struct ProviderRequestReplacement: Sendable {
 /// Additional user content that continues the current generation.
 public struct GenerationYield: Sendable {
     /// The user content that continues the current generation.
-    public var `continue`: UserContent
+    public var `continue`: UserContent?
+    /// Child tasks that decide whether the answer stands.
+    public var tasks: [HookTask]?
     /// Supplies user content to continue the current generation.
-    public init(continue input: UserContent) { self.continue = input }
+    public init(continue input: UserContent) { self.continue = input; tasks = nil }
+    public init(tasks: [HookTask]) { self.continue = nil; self.tasks = tasks }
 }
-/// A child task requested by an afterRun hook.
-public struct RunEndTask: Sendable {
+/// A child task requested by an afterRun, afterTools, or onYield hook.
+public struct HookTask: Sendable {
     public let task: AnyTaskDefinition
     public let input: JSONValue
     public init<Input, Checkpoint, Result, Hooks>(_ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input) throws {
@@ -91,14 +94,47 @@ public struct RunEndTask: Sendable {
         self.input = try JSONValue(encoding: input)
     }
 }
-/// Binds a typed task and input to an afterRun request.
+/// Binds a typed task and input to a hook task request.
+public func hookTask<Input, Checkpoint, Result, Hooks>(
+    _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input
+) throws -> HookTask { try HookTask(task, input: input) }
+@available(*, deprecated, renamed: "HookTask")
+public typealias RunEndTask = HookTask
+@available(*, deprecated, renamed: "hookTask(_:input:)")
 public func runEndTask<Input, Checkpoint, Result, Hooks>(
     _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input
-) throws -> RunEndTask { try RunEndTask(task, input: input) }
+) throws -> HookTask { try hookTask(task, input: input) }
+/// A result that an afterTools hook returns to start child tasks.
+public struct AfterToolsResult: Sendable {
+    public var tasks: [HookTask]
+    public init(tasks: [HookTask]) { self.tasks = tasks }
+}
+/// A completed afterTools task can end the current run.
+public struct AfterToolsDecision: Codable, Sendable {
+    public var terminate: Bool?
+    public init(terminate: Bool? = nil) { self.terminate = terminate }
+}
+/// A completed onYield task can continue the current run.
+public struct YieldDecision: Codable, Sendable {
+    public var `continue`: UserContent?
+    public init(continue input: UserContent? = nil) { self.continue = input }
+    public init(from decoder: any Decoder) throws {
+        let value = try JSONValue(from: decoder)
+        self.continue = value.objectValue?["continue"].flatMap(validYieldInput)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        let value: JSONValue
+        if let input = self.continue {
+            let content = try EntryRecord.encodeMessages([.user(UserMessage(content: input, timestamp: 0))])[0].objectValue!["content"]!
+            value = .object(["continue": content])
+        } else { value = .object([:]) }
+        try value.encode(to: encoder)
+    }
+}
 /// Child tasks to start after a run answers.
 public struct AfterRunResult: Sendable {
-    public var tasks: [RunEndTask]
-    public init(tasks: [RunEndTask]) { self.tasks = tasks }
+    public var tasks: [HookTask]
+    public init(tasks: [HookTask]) { self.tasks = tasks }
 }
 /// Callbacks at request, response, yield, and tool completion boundaries.
 public struct GenerationHooks: Sendable {
@@ -111,7 +147,7 @@ public struct GenerationHooks: Sendable {
     /// Can supply additional user content after the assistant yields.
     public var onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)?
     /// Runs after all tool-result entries are committed.
-    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)?
+    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> AfterToolsResult?)?
     /// Requests children after an answer and settled inputs.
     public var afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)?
     /// Selects optional request, response, yield, and after-tools callbacks.
@@ -120,12 +156,21 @@ public struct GenerationHooks: Sendable {
         beforeProviderRequest: (@Sendable (ProviderRequest, HookApi, ChordContext) async throws -> ProviderRequestReplacement?)? = nil,
         afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)? = nil,
         onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)? = nil,
-        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil,
+        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> AfterToolsResult?)? = nil,
         afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)? = nil
     ) {
         self.beforeRequest = beforeRequest; self.beforeProviderRequest = beforeProviderRequest
         self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
         self.afterRun = afterRun
+    }
+
+    /// Accepts existing observation-only afterTools hooks.
+    @_disfavoredOverload
+    public init(afterTools: @escaping @Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void) {
+        self.init(afterTools: { assistant, results, api, context in
+            try await afterTools(assistant, results, api, context)
+            return nil
+        })
     }
 }
 

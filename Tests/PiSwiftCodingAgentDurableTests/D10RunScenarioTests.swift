@@ -61,7 +61,7 @@ private struct ScenarioCheckpoint: TaskCheckpoint {
                 return changed
             })),
             hook(GenerationHooks(afterRun: { _, _, _ in
-                AfterRunResult(tasks: [try runEndTask(after, input: .init(label: "after complete"))])
+                AfterRunResult(tasks: [try hookTask(after, input: .init(label: "after complete"))])
             }))
         ], tasks: [AnyTaskDefinition(after)]))
         let host = try await ScenarioHost.open(setup: setup)

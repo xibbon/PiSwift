@@ -60,7 +60,7 @@ struct D1V160FixtureTests {
     }
 
     private var blockedOrders: [String: String] {
-        ["afterTools": "D5", "yield": "D5"]
+        [:]
     }
 
     @Test func taggedWritesAndRecordsRoundTrip() throws {
@@ -170,16 +170,11 @@ struct D1V160FixtureTests {
     }
 
     @Test(.timeLimit(.minutes(1)), arguments: ["sqlite", "jsonl"])
-    func taggedBlockedPhasesStayByteIdentical(backend: String) async throws {
+    func taggedHookPhasesAreNotBlocked(backend: String) async throws {
         let copied = try copiedFile(backend)
         defer { try? FileManager.default.removeItem(at: copied.directory) }
         let source = try fixture()
         let cases = try #require(source["cases"]?.objectValue)
-        var hashes: [String: [UInt8]] = [:]
-        for name in blockedOrders.keys {
-            let id = try #require(cases[name]).decode(TaskID.self)
-            hashes[name] = try physicalTaskHash(id, backend: backend, path: copied.path)
-        }
         let storage: any DurableStorage
         if backend == "sqlite" { storage = try await SqliteStorage.open(path: copied.path.path) }
         else { storage = try await JsonlStorage.open(directory: copied.path.path,
@@ -189,13 +184,10 @@ struct D1V160FixtureTests {
                 now: { 1_700_000_000_000 }), context: .background)
         do {
             func verify(_ inspection: HarnessInspection) throws {
-                for (name, order) in blockedOrders {
+                for name in ["afterTools", "yield"] {
                     let id = try #require(cases[name]).decode(TaskID.self)
                     let task = try #require(inspection.tasks.first { $0.record.id == id })
-                    if case .blocked(let reason, let error) = task.state {
-                        #expect(reason == .migrationFailed)
-                        #expect(String(describing: error).contains(order), "\(name) must name \(order)")
-                    } else { Issue.record("\(name) was not blocked") }
+                    if case .blocked(let reason, _) = task.state { #expect(reason != .migrationFailed) }
                 }
             }
             try verify(await harness.inspect(context: .background))
@@ -205,9 +197,5 @@ struct D1V160FixtureTests {
             try verify(await harness.inspect(context: .background))
         } catch { try? await harness.close(context: .background); throw error }
         try await harness.close(context: .background)
-        for (name, hash) in hashes {
-            let id = try #require(cases[name]).decode(TaskID.self)
-            #expect(try physicalTaskHash(id, backend: backend, path: copied.path) == hash)
-        }
     }
 }

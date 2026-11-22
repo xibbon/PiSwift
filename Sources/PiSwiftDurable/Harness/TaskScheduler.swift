@@ -502,8 +502,7 @@ internal final class TaskScheduler: Sendable {
     func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> (shape: String, order: String)? {
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
-            if let phase, ["afterTools", "yield"].contains(phase) { return ("phase \(phase)", "D5") }
-            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return ("phase \(phase)", "D5b") }
+            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain", "afterTools", "yield"].contains(phase) { return ("phase \(phase)", "D5b") }
         }
         if record.kind == "pi.tool" {
             if let phase, !["call", "execute", "parked"].contains(phase) { return ("phase \(phase)", "D6") }

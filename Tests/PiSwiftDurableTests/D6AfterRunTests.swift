@@ -19,7 +19,7 @@ struct D6AfterRunTests {
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { run, _, _ in
                 seen.append(run)
-                return AfterRunResult(tasks: [try runEndTask(child, input: 7)])
+                return AfterRunResult(tasks: [try hookTask(child, input: 7)])
             }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let chat = try await openChat(setup: setup)
@@ -47,7 +47,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-                mode == "nil" ? nil : AfterRunResult(tasks: mode == "empty" ? [] : [try runEndTask(child, input: 0)])
+                mode == "nil" ? nil : AfterRunResult(tasks: mode == "empty" ? [] : [try hookTask(child, input: 0)])
             }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let chat = try await openChat(setup: setup)
@@ -82,10 +82,10 @@ struct D6AfterRunTests {
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [
             hook(GenerationHooks(afterRun: { _, _, _ in
-                AfterRunResult(tasks: [try runEndTask(unknown, input: 0),
-                                       try runEndTask(generationTask, input: GenerationInput()),
-                                       try runEndTask(throwing, input: 0),
-                                       try runEndTask(stale, input: 9)])
+                AfterRunResult(tasks: [try hookTask(unknown, input: 0),
+                                       try hookTask(generationTask, input: GenerationInput()),
+                                       try hookTask(throwing, input: 0),
+                                       try hookTask(stale, input: 9)])
             }))
         ], tasks: [AnyTaskDefinition(installed), AnyTaskDefinition(throwing)]))
         try setup.registry.install(Extension(name: "broken", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
@@ -98,9 +98,9 @@ struct D6AfterRunTests {
         #expect(starts.withLock { $0 } == 1)
         #expect(ran.withLock { $0 } == 1)
         #expect(setup.reports.infos.filter { $0.kind == "extension_error" }.count == 2)
-        let rejected = try #require(setup.reports.values.first as? RunEndTaskRequestErrors)
+        let rejected = try #require(setup.reports.values.first as? HookTaskRequestErrors)
         #expect(rejected.errors == ["Task test.after-run-unknown is not installed",
-                                    "An afterRun hook cannot start the built-in task pi.generation",
+                                    "A hook cannot start the built-in task pi.generation",
                                     "initial failed"])
         try await chat.harness.close(context: .background)
     }
@@ -134,7 +134,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("first")), .message(chatAssistant("second"))])
         let chat = try await openChat(setup: setup)
@@ -192,7 +192,7 @@ struct D6AfterRunTests {
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
             asked.withLock { $0 += 1 }
-            return AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            return AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let first = try await openChat(storage: SqliteStorage.open(path: path), setup: setup)
@@ -310,7 +310,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let chat = try await openChat(setup: setup)
@@ -337,7 +337,7 @@ struct D6AfterRunTests {
         })
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let chat = try await openChat(setup: setup)
@@ -416,7 +416,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer")), .message(chatAssistant("later"))])
         let chat = try await openChat(setup: setup)
@@ -519,7 +519,7 @@ struct D6AfterRunTests {
             summaries.append(run)
             let count = summaries.count
             if count == 2 { secondSummary.release() }
-            return count == 1 ? AfterRunResult(tasks: [try runEndTask(child, input: 0)]) : nil
+            return count == 1 ? AfterRunResult(tasks: [try hookTask(child, input: 0)]) : nil
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("first")), .message(chatAssistant("fixed"))])
         let chat = try await openChat(setup: setup)
@@ -575,7 +575,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup(settings: .init(restartLimit: 1))
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let first = try await openChat(storage: SqliteStorage.open(path: path), setup: setup)
@@ -650,7 +650,7 @@ struct D6AfterRunTests {
         }
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
-            AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+            AfterRunResult(tasks: [try hookTask(child, input: 0)])
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("answer"))])
         let first = try await openChat(storage: SqliteStorage.open(path: path), setup: setup)
@@ -720,7 +720,7 @@ struct D6AfterRunTests {
             hook(CompactionHooks(beforeCompact: { _, _, _ in .summary("earlier work") })),
             hook(GenerationHooks(afterRun: { run, _, _ in
                 summaries.append(run)
-                return AfterRunResult(tasks: [try runEndTask(child, input: 0)])
+                return AfterRunResult(tasks: [try hookTask(child, input: 0)])
             }))
         ], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(try toolCalls([("handoff", [:], "c1")]))])
@@ -793,7 +793,7 @@ struct D6AfterRunTests {
         let setup = HarnessChatSetup()
         try setup.registry.install(Extension(name: "after-run", hooks: [hook(GenerationHooks(afterRun: { _, _, _ in
             let count = asked.withLock { value in value += 1; return value }
-            return count == 1 ? AfterRunResult(tasks: [try runEndTask(child, input: 0)]) : nil
+            return count == 1 ? AfterRunResult(tasks: [try hookTask(child, input: 0)]) : nil
         }))], tasks: [AnyTaskDefinition(child)]))
         setup.models.setResponses([.message(chatAssistant("first")), .message(chatAssistant("second")),
                                    .message(chatAssistant("third"))])

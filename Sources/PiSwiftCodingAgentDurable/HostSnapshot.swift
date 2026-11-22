@@ -97,6 +97,8 @@ public struct DurableHostView: Sendable {
     public let transcript: TranscriptView
     public let rows: [DurableTranscriptRow]
     public let live: LiveState
+    /// An appended answer still under review; the run's inputs remain open.
+    public let pendingReview: LiveYield?
     public let inbox: InboxState
     public let agent: PiSwiftDurable.AgentState
     public let usage: UsageState
@@ -126,6 +128,7 @@ public struct DurableHostView: Sendable {
         self.transcript = transcript
         rows = transcript.items.map { DurableTranscriptRow(conversationId: transcript.conversation.id, item: $0) }
         self.live = live
+        pendingReview = live.run?.yield
         do { agent = try decodeAgentOf(view) }
         catch { agent = PiSwiftDurable.AgentState(); errors.append("Agent: \(error)") }
         if let document = transcript.docs["pi.usage"] {

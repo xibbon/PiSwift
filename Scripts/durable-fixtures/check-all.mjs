@@ -120,6 +120,7 @@ const phaseRows = [
   ...['unoffered', 'missing', 'invalid', 'blocked', 'safe-replay', 'unsafe-replay',
     'restart-limit', 'afterRun-cutoff', 'nested-restart']
     .map(phase => [phase, 'D6ResumeFixtures']),
+  ...['afterTools', 'yield'].map(phase => [phase, 'D5HookFixtureTests']),
 ];
 rows.splice(rows.findIndex(row => row[0] === 'all restart phases') + 1, 0,
   ...phaseRows.map(([phase, proof]) => [`phase: ${phase}`, 'FILE', proof, proof,
