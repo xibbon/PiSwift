@@ -26,6 +26,9 @@ for (const name of names) {
     : ['--experimental-strip-types', path, '--check'];
   run(name, process.execPath, args);
 }
+run('generate-read-fixtures.mjs --v160', process.execPath,
+  ['--experimental-strip-types', fileURLToPath(new URL('generate-read-fixtures.mjs', import.meta.url)),
+    '--v160', '--check']);
 // v1.6.0 continuations reuse the checked-in older inputs and keep their old modes.
 for (const name of ['generate-v152-fixtures.mjs', 'generate-d5b-phase-v152.mjs',
   'generate-d5b-endings-v152.mjs', 'generate-d5b-reverse-v152.mjs',

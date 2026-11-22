@@ -107,17 +107,29 @@ import PiSwiftChord
 
 
 extension ToolReadDifferentialTests {
-    @Test("matches the v1.3.0 image read results and processor calls")
+    @Test("matches v1.6.0 read results for frozen v1.3.0 image inputs and processor calls")
     func imageReference() async throws {
         let url = try #require(Bundle.module.url(forResource: "read-differential-v130", withExtension: "json", subdirectory: "Fixtures"))
         let fixture = try unpack(JSONValue(jsonData: Data(contentsOf: url)))
         #expect(fixture["tag"] == "v1.3.0")
         let cases = try #require(fixture["imageCases"]?.arrayValue)
         #expect(cases.count == 25)
+        let expectationURL = try #require(Bundle.module.url(forResource: "read-differential-v160", withExtension: "json", subdirectory: "Fixtures"))
+        let expectations = try JSONValue(jsonData: Data(contentsOf: expectationURL))
+        #expect(expectations["tag"] == "v1.6.0")
+        #expect(expectations["input"] == "read-differential-v130.json")
+        #expect(expectations["changed"] == ["text-only-model", "processor-conversion-resize-placeholder"])
+        let results = try #require(expectations["imageCases"]?.arrayValue)
+        #expect(results.count == cases.count)
         let directory = try toolTestDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        for item in cases {
+        for (index, item) in cases.enumerated() {
             let name = try #require(item["name"]?.stringValue)
+            let expectation = results[index]
+            #expect(expectation["name"] == .string(name))
+            if !["text-only-model", "processor-conversion-resize-placeholder"].contains(name) {
+                #expect(expectation["actual"] == item["actual"], "unchanged v1.3.0 result for \(name)")
+            }
             let path = try #require(item["path"]?.stringValue)
             let base64 = try #require(item["base64"]?.stringValue)
             try #require(Data(base64Encoded: base64)).write(to: directory.appendingPathComponent(path))
@@ -130,7 +142,7 @@ extension ToolReadDifferentialTests {
             let actual = try await outcome {
                 try await createReadTool(images: processor).execute(["path": .string(path)], api, context)
             }
-            #expect(actual == item["actual"], "image case \(name)")
+            #expect(actual == expectation["actual"], "v1.6.0 image case \(name)")
             if let expected = item["expected"] { #expect(actual == expected, "whole-file image reference for \(name)") }
             #expect(.array(processor?.calls.withLock { $0 } ?? []) == item["calls"], "processor calls for \(name)")
         }

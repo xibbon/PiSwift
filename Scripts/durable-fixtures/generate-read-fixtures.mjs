@@ -7,11 +7,76 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mirror, upstreamRepository, upstreamTag } from './mirror.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
     const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
     process.exit(run.status ?? 1);
 }
+if (process.argv.includes('--v160')) {
+    await generateV160ImageExpectations();
+    process.exit(0);
+}
+
+async function generateV160ImageExpectations() {
+    // Keep v1.3.0 image bytes, model settings and scripted processor results unchanged.
+    const oldPath = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v130.json', import.meta.url));
+    const unpack = value => {
+        if (value && typeof value === 'object' && Array.isArray(value.$text)) {
+            return value.$text.map(part => typeof part === 'string' ? part : part[1].repeat(part[0])).join('');
+        }
+        if (Array.isArray(value)) return value.map(unpack);
+        if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unpack(item)]));
+        return value;
+    };
+    const input = unpack(JSON.parse(await readFile(oldPath, 'utf8')));
+    const source = await mirrorV160({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+    const cwd = await mkdtemp(join(tmpdir(), 'piswift-read-v160-oracle-'));
+    try {
+        const { NodeExecutionEnv } = await source.import('packages/durable/src/env/node.ts');
+        const { createReadTool } = await source.import('packages/durable/src/tools/read.ts');
+        const { BACKGROUND_CONTEXT } = await source.import('packages/chord/src/context/index.ts');
+        const env = new NodeExecutionEnv({ cwd });
+        const baseApi = { env, output() {}, diagnostic() {}, async details() {}, async agent() { return {}; } };
+        const imageCases = [];
+        for (const item of input.imageCases) {
+            await writeFile(join(cwd, item.path), Buffer.from(item.base64, 'base64'));
+            const images = item.processor === undefined ? undefined : { async prepare() {
+                if (item.processor.error) throw new Error(item.processor.error);
+                return item.processor.result ?? undefined;
+            } };
+            const api = { ...baseApi,
+                async agent() { return item.model === undefined ? {} : { model: { provider: 'test', modelId: 'test' } }; },
+                models: { getModel() { return item.model === null ? undefined : {
+                    id: 'test', input: item.model?.input ?? ['text', 'image'],
+                    inputLimits: { images: { resize: item.model?.resize } },
+                }; } },
+            };
+            let actual;
+            try {
+                const result = await createReadTool({ images }).execute({ path: item.path }, api, BACKGROUND_CONTEXT);
+                // Match the existing Swift differential envelope; its direct tests cover structuredOutput.
+                actual = JSON.parse(JSON.stringify({ output: result.output, isError: result.isError,
+                    details: result.details, diagnostics: result.diagnostics }));
+            } catch (error) { actual = { error: error.message }; }
+            imageCases.push({ name: item.name, actual });
+        }
+        const changed = imageCases.filter((item, index) => JSON.stringify(item.actual) !== JSON.stringify(input.imageCases[index].actual))
+            .map(item => item.name);
+        const expectedChanges = ['text-only-model', 'processor-conversion-resize-placeholder'];
+        if (JSON.stringify(changed) !== JSON.stringify(expectedChanges)) {
+            throw new Error(`Unexpected v1.6.0 image read changes: ${JSON.stringify(changed)}`);
+        }
+        const fixture = JSON.stringify({ tag: 'v1.6.0', input: 'read-differential-v130.json',
+            source: 'unmodified v1.6.0 packages/durable/src/tools/read.ts', changed, imageCases }) + '\n';
+        const path = fileURLToPath(new URL('../../Tests/PiSwiftDurableTests/Fixtures/read-differential-v160.json', import.meta.url));
+        if (process.argv.includes('--check')) {
+            if (await readFile(path, 'utf8') !== fixture) throw new Error('v1.6.0 read expectations differ. Run without --check.');
+        } else { await writeFile(path, fixture); }
+        console.log(`Read v1.6.0 expectations: ${imageCases.length} unchanged inputs, ${changed.length} changed outputs.`);
+    } finally { await rm(cwd, { recursive: true, force: true }); await source.close(); }
+}
+
 const source = await mirror({ dependencies: ['typebox@1.3.27'], mutable: true });
 const cwd = await mkdtemp(join(tmpdir(), 'piswift-read-oracle-'));
 try {
