@@ -89,6 +89,13 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     process.arguments = ["python3", "-c", "import fcntl,sys; f=open(sys.argv[1],'a'); fcntl.flock(f,fcntl.LOCK_EX); print('R',flush=True); sys.stdin.read(1)", lockPath]
     process.standardInput = input
     process.standardOutput = output
+    // `waitUntilExit()` can wait forever in an async test (it hung the serial suite twice);
+    // the termination handler is set before `run()`, so the exit is never missed.
+    let (exits, exited) = AsyncStream.makeStream(of: Int32.self, bufferingPolicy: .bufferingNewest(1))
+    process.terminationHandler = { finished in
+        exited.yield(finished.terminationStatus)
+        exited.finish()
+    }
     try process.run()
     defer {
         // A child can inherit the pipe's write end, so end-of-file cannot release the lock.
@@ -96,7 +103,6 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
             try? input.fileHandleForWriting.write(contentsOf: Data("Q".utf8))
             process.terminate()
         }
-        process.waitUntilExit()
     }
     try #require(output.fileHandleForReading.read(upToCount: 1) == Data("R".utf8))
     let http = M3DiskTokenHTTP()
@@ -111,6 +117,7 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     #expect(await http.count() == 0)
     #expect(try store.tokens(name: "busy-work", url: m3DiskServer)?.refreshToken == "old-refresh")
     try input.fileHandleForWriting.write(contentsOf: Data("Q".utf8))
-    process.waitUntilExit()
-    #expect(process.terminationStatus == 0)
+    var status: Int32?
+    for await value in exits { status = value }
+    #expect(status == 0)
 }
