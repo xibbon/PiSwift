@@ -1,5 +1,5 @@
 {
-  "tag": "v1.5.2",
+  "tag": "v1.6.0",
   "source": "packages/coding-agent/src/core/model-resolver.ts",
   "entries": [
     [
@@ -16,15 +16,15 @@
     ],
     [
       "openai",
-      "gpt-6.1-sol"
+      "gpt-6.2-sol"
     ],
     [
       "azure",
-      "gpt-6.1-sol"
+      "gpt-6.2-sol"
     ],
     [
       "openai-codex",
-      "gpt-6.1-sol"
+      "gpt-6.2-sol"
     ],
     [
       "radius",

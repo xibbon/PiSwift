@@ -5,14 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
     ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
-const output = fileURLToPath(new URL('./d5b-conversations-v152.json', import.meta.url));
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const v160 = process.argv.includes('--v160');
+const output = fileURLToPath(new URL(v160 ? './d5b-conversations-v160.json' : './d5b-conversations-v152.json', import.meta.url));
+const source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-conversations-'));
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
@@ -176,7 +178,7 @@ async function run(kind, script) {
   return { first, second, queued, records };
 }
 try {
-  const fixture = { tag: upstreamTag, clock, normalization: 'pi.provider.sessionId only: UUID randomness differs by runtime', scripts: [] };
+  const fixture = { tag: v160 ? 'v1.6.0' : upstreamTag, clock, normalization: 'pi.provider.sessionId only: UUID randomness differs by runtime', scripts: [] };
   for (const script of scripts) {
     const sqlite = await run('sqlite', script);
     const jsonl = await run('jsonl', script);

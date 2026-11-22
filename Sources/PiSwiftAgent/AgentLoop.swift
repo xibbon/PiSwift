@@ -798,6 +798,10 @@ private func prepareToolCall(
     tools: [AgentTool]? = nil,
     argumentsPrepared: Bool = false
 ) async -> ToolCallPreparation {
+    // An aborted batch still emits one result for each call, before lookup or hooks.
+    if signal?.isCancelled == true {
+        return .immediate(result: createErrorToolResult("Operation aborted"), isError: true)
+    }
     let tool = (tools ?? context.tools ?? []).first { $0.name == toolCall.name }
     guard let tool else {
         return .immediate(

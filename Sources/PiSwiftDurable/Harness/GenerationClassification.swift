@@ -66,9 +66,28 @@ func classifyGeneration(_ runtime: TaskRuntime, request: GenerationCheckpoint, m
 }
 private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, context: ChordContext) async throws {
     var continuation: UserContent?
+    var decided = false
+    var prepared: [PreparedHookTask] = []
     try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in
-        guard continuation == nil, let hook = hooks.onYield else { return }
-        continuation = try await hook(message, runtime.hookApi, context)?.continue
+        guard !decided, let hook = hooks.onYield,
+              let decision = try await hook(message, runtime.hookApi, context) else { return }
+        decided = true
+        if let tasks = decision.tasks { try prepareHookTasks(tasks, runtime: runtime, prepared: &prepared) }
+        else { continuation = decision.continue }
+    }
+    if !prepared.isEmpty {
+        try await runtime.commit({ tx, _ in
+            let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
+            let entry = try await appendGenerationAssistant(tx: tx, conversationId: runtime.conversationId, message: message)
+            let ids = try await createHookTasks(tx: tx, runtime: runtime, prepared: prepared)
+            try live.remove("generation")
+            if let run = try live.child("run"), try run.get("taskId")?.decode(TaskID.self) == runtime.taskId {
+                try run.set("yield", JSONValue(encoding: LiveYield(answer: entry.id, tasks: ids)))
+            }
+            return try generationTask.waiting(GenerationCheckpoint(phase: .yield, answer: entry.id, tasks: ids),
+                                              on: ids, policy: .allSettled)
+        }, context: context)
+        return
     }
     let agent = try await runtime.agent(context: context)
     let asksAfterRun = agentHooks(agent, taskName: generationTask.name, as: GenerationHooks.self)
@@ -77,13 +96,38 @@ private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, c
         let boundary = try await prepareBoundary(tx: tx, conversationId: runtime.conversationId, modes: runtime.settings)
         let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
         let entry = try await appendGenerationAssistant(tx: tx, conversationId: runtime.conversationId, message: message)
-        let result = try generationTask.completed(GenerationResult(entryId: entry.id))
+        return try await concludeAnswer(tx: tx, runtime: runtime, live: live, boundary: boundary,
+                                        answer: entry.id, continuation: continuation, asksAfterRun: asksAfterRun)
+    }, context: context)
+}
+
+/// Reads a task's untrusted result and accepts only a valid user input.
+func validYieldInput(_ value: JSONValue) -> UserContent? {
+    if case .string(let text) = value { return .text(text) }
+    guard case .array(let values) = value, !values.isEmpty else { return nil }
+    var blocks: [ContentBlock] = []
+    for value in values {
+        guard case .object(let item) = value else { return nil }
+        if item["type"] == .string("text"), case .string(let text)? = item["text"] {
+            blocks.append(.text(TextContent(text: text)))
+        } else if item["type"] == .string("image"), case .string(let data)? = item["data"],
+                  case .string(let mime)? = item["mimeType"] {
+            blocks.append(.image(ImageContent(data: data, mimeType: mime)))
+        } else { return nil }
+    }
+    return .blocks(blocks)
+}
+
+/// Settles an answer or appends a continuation at the final boundary.
+private func concludeAnswer(tx: Transaction, runtime: TaskRuntime, live: JSONDraft, boundary: Boundary,
+                            answer: EntryID, continuation: UserContent?, asksAfterRun: Bool) async throws -> TaskState {
+        let result = try generationTask.completed(GenerationResult(entryId: answer))
         let queued = try boundary.inbox.snapshot().decode(InboxState.self).items
         let takesContinuation = continuation != nil && !hasQueuedReset(queued) &&
             !queued.contains { $0.mode == .steer || $0.mode == .followUp }
         if !takesContinuation && asksAfterRun,
            let held = try holdRun(tx: tx, live: live, runtime: runtime, reason: .answer,
-                                  answer: entry.id, last: entry.id) {
+                                  answer: answer, last: answer) {
             return held
         }
         let applied = try await applyBoundary(tx: tx, boundary: boundary, at: .final, now: runtime.now())
@@ -97,8 +141,28 @@ private func answerGeneration(runtime: TaskRuntime, message: AssistantMessage, c
             try live.remove("generation")
             return result
         }
-        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .done(answer: entry.id))
+        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .done(answer: answer))
         if !applied.users.isEmpty { try await startRun(tx: tx, conversationId: runtime.conversationId, live: live, inputs: applied.users, first: applied.first) }
         return result
+}
+
+/// The first valid continuation in task creation order wins after all tasks are terminal.
+func finishYield(runtime: TaskRuntime, answer: EntryID, tasks: [TaskID], context: ChordContext) async throws {
+    let outcomes = try await runtime.outcomes(tasks, context: context)
+    let continuation = outcomes.compactMap { outcome -> UserContent? in
+        guard case .completed(let result, _) = outcome else { return nil }
+        return result.objectValue?["continue"].flatMap(validYieldInput)
+    }.first
+    let agent = try await runtime.agent(context: context)
+    let asksAfterRun = agentHooks(agent, taskName: generationTask.name, as: GenerationHooks.self)
+        .contains { $0.handlers.afterRun != nil }
+    try await runtime.commit({ tx, _ in
+        let boundary = try await prepareBoundary(tx: tx, conversationId: runtime.conversationId, modes: runtime.settings)
+        let live = try await tx.doc(LiveDoc, conversationId: runtime.conversationId)
+        if let run = try live.child("run"), try run.get("taskId")?.decode(TaskID.self) == runtime.taskId {
+            try run.remove("yield")
+        }
+        return try await concludeAnswer(tx: tx, runtime: runtime, live: live, boundary: boundary,
+                                        answer: answer, continuation: continuation, asksAfterRun: asksAfterRun)
     }, context: context)
 }

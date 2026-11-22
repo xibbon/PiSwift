@@ -240,7 +240,7 @@ struct HarnessToolTests {
         }, afterTool: { _, result, _, _ in var next = result; next.output = [.text(TextContent(text: "first"))]; return next }))]))
         try setup.registry.install(Extension(name: "second", hooks: [hook(ToolHooks(afterTool: { _, result, _, _ in
             var next = result; next.details = ["replaced": "first"]; #expect(result.output?.count == 1); return next
-        })), hook(GenerationHooks(afterTools: { assistant, ids, _, _ in assistantId.withLock { $0 = assistant }; observed.withLock { $0 = ids } }))]))
+        })), hook(GenerationHooks(afterTools: { assistant, ids, _, _ in assistantId.withLock { $0 = assistant }; observed.withLock { $0 = ids }; return nil }))]))
         let (opened, entries) = try await runHarnessTools(setup), result = try #require(harnessToolResults(entries).first)
         #expect(harnessToolText(result) == "first" && harnessToolDetails(result) == ["replaced": "first"])
         #expect(observed.withLock { $0 } == entries.filter { $0.kind == toolResultEntry.kind }.map(\.id))

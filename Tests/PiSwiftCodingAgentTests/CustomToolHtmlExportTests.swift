@@ -21,8 +21,9 @@ import PiSwiftAgent
     ("\u{1b}[31ma\u{1b}[999mb", "<span style=\"color:#800000\">a</span><span style=\"color:#800000\">b</span>"),
     ("\u{1b}[38;2;1mx", "<span style=\"font-weight:bold;opacity:0.6\">x</span>"),
     ("\u{1b}[31m", "<span style=\"color:#800000\"></span>"),
-    ("\u{1b}[2K<", "\u{1b}[2K&lt;"),
-    ("\u{1b}[38:5:1m<", "\u{1b}[38:5:1m&lt;"),
+    // v1.6.0 (ansi-to-html.ts:190-201, 0e1e3fc81): other control sequences are removed, not kept.
+    ("\u{1b}[2K<", "&lt;"),
+    ("\u{1b}[38:5:1m<", "&lt;"),
     ("\u{1b}[38;5;300mx", "<span style=\"color:#2b02b02b0\">x</span>"),
     ("\u{1b}[38;2;999;0;255mx", "<span style=\"color:rgb(999,0,255)\">x</span>"),
     ("\u{1b}[38;2;1000000000000000100;0;0mx", "<span style=\"color:rgb(1000000000000000100,0,0)\">x</span>"),

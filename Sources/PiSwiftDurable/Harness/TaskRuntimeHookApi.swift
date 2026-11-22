@@ -6,7 +6,7 @@ extension TaskRuntime {
         HookApi(taskId: taskId, conversationId: conversationId, models: self.models,
                 read: invocationDocumentReader(), memo: { name, candidate, context in
                     try await self.memo(name, value: candidate, context: context.withAbortSignal(self.signal))
-                }, entries: { query, limit, cursor, context in
+                }, now: { try self.now() }, entries: { query, limit, cursor, context in
                     try await self.entries(query, limit: limit, cursor: cursor, context: context)
                 }, entry: { id, context in
                     try await self.entry(id, context: context)

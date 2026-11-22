@@ -435,7 +435,7 @@ private func detectCompat(model: Model) -> ResolvedOpenAICompat {
 
     return ResolvedOpenAICompat(
         supportsStore: !isNonStandard,
-        supportsDeveloperRole: !isNonStandard,
+        supportsDeveloperRole: provider == "openai" || baseUrl.contains("api.openai.com"),
         supportsReasoningEffort: !isGrok && !isZai,
         supportsUsageInStreaming: true,
         supportsFinishReason: true,
@@ -938,6 +938,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
     let cachedTokens: Int?
     let promptTokensDetails: PromptTokensDetails?
     let completionTokensDetails: CompletionTokensDetails?
+    let reasoningTokens: Int?
     let cost: Double?
     let isBYOK: Bool?
     let costDetails: OpenRouterUsageAccounting.CostDetails?
@@ -972,6 +973,7 @@ private struct OpenAICompletionsRawUsage: Decodable {
         case cachedTokens = "cached_tokens"
         case promptTokensDetails = "prompt_tokens_details"
         case completionTokensDetails = "completion_tokens_details"
+        case reasoningTokens = "reasoning_tokens"
         case cost
         case isBYOK = "is_byok"
         case costDetails = "cost_details"
@@ -989,7 +991,8 @@ private func parseCompletionsUsage(_ rawUsage: OpenAICompletionsRawUsage) -> Usa
         output: outputTokens,
         cacheRead: cacheReadTokens,
         cacheWrite: cacheWriteTokens,
-        reasoning: rawUsage.completionTokensDetails?.reasoningTokens,
+        reasoning: (rawUsage.completionTokensDetails?.reasoningTokens).flatMap { $0 == 0 ? nil : $0 }
+            ?? rawUsage.reasoningTokens ?? 0,
         totalTokens: input + outputTokens + cacheReadTokens + cacheWriteTokens
     )
 }
@@ -1008,6 +1011,7 @@ private func parseCompletionsUsage(_ usage: ChatResult.CompletionUsage) -> Usage
             )
         },
         completionTokensDetails: nil,
+        reasoningTokens: nil,
         cost: nil,
         isBYOK: nil,
         costDetails: nil

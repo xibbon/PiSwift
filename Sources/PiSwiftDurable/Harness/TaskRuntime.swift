@@ -101,13 +101,25 @@ public final class TaskRuntime: Sendable {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
             try context.abortSignal?.throwIfAborted()
-            guard let value else { return scheduler.current(taskId)?.memos?[name] }
+            guard let value else {
+                return try await scheduler.session.readOnLine {
+                    try await scheduler.storage.task(taskId, context: context)?.memos?[name]
+                }
+            }
             return try await scheduler.gated(invocation, context: context) { tx, current in
                 if let winner = current.memos?[name] { return winner }
                 var memos = current.memos ?? [:]; memos[name] = value
                 try tx.setTask(current.replacing(memos: memos)); return value
             }
         }
+    }
+    /// Reads a signal key in this task's committed memos.
+    public func readSignal<Value: Codable & Sendable>(
+        _ token: SignalToken<Value>, key: String, context: ChordContext
+    ) async throws -> SignalState<Value>? {
+        let name = signalMemoName(token.name, key)
+        let stored = try await memo(name, context: context)
+        return try PiSwiftDurable.readSignal(token, key: key, memos: stored.map { [name: $0] })
     }
     /// Returns the resolved agent configuration for the conversation.
     public func agent(context: ChordContext) async throws -> Agent {
@@ -130,6 +142,20 @@ public final class TaskRuntime: Sendable {
     /// Return from the phase handler after this call.
     public func sleepUntil(_ until: Double, checkpoint: JSONValue, context: ChordContext) async throws {
         try await commit({ _, _ in .sleeping(checkpoint: checkpoint, until: until) }, context: context)
+    }
+    /// Commits a signal sleep, with an optional deadline.
+    public func sleep(signals: [SignalKey], until: Double? = nil,
+                      checkpoint: JSONValue, context: ChordContext) async throws {
+        if signals.isEmpty && until == nil {
+            throw SessionError.message("Task \(taskId.rawValue) cannot sleep without until or signals")
+        }
+        try await commit({ _, _ in try .sleeping(checkpoint: checkpoint, until: until, signals: signals) }, context: context)
+    }
+    /// Commits a wait on tasks and resumes at the checkpoint when the join policy permits it.
+    /// Return from the phase handler after this call.
+    public func wait(on tasks: [TaskID], policy: JoinPolicy,
+                     checkpoint: JSONValue, context: ChordContext) async throws {
+        try await commit({ _, _ in .waiting(checkpoint: checkpoint, on: tasks, policy: policy) }, context: context)
     }
     /// Arms a timer that is disarmed when this invocation ends.
     public func setTimer(_ callback: @escaping @Sendable () -> Void, delay: Double) -> HarnessDisarm {
@@ -221,7 +247,8 @@ public final class TaskRuntime: Sendable {
     public func conversation(_ id: ConversationID, context: ChordContext) async throws -> ConversationHandle? {
         try await withTaskCancellationContext(context) { context in
             try invocation.check()
-            return try await scheduler.conversation(id, .init(signal: signal, check: { [invocation] in try invocation.check() }), context)
+            return try await scheduler.conversation(id, .init(invocation: invocation, signal: signal,
+                check: { [invocation] in try invocation.check() }), context)
         }
     }
     /// v1.5.2 util.ts raw history reader: pages entries within this task's

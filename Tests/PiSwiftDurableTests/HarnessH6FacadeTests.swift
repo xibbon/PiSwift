@@ -54,13 +54,20 @@ private func h6FacadeTree(_ harness: Harness, _ root: Conversation, _ owner: Har
         let opened = try await openChat(storage: storage, setup: HarnessChatSetup())
         let done = try await opened.root.submit(.write(entry: EntryDraft(kind: "note")), context: .background)
         let root = opened.root
+        // The queued line job must be this wait, not unfinished scheduling.
+        #expect(try await done.wait(context: .background).status == "done")
+        try await opened.harness.waitForIdle(context: .background)
         // v1.5.2 D3a harness-tasks.test.ts:87–101: hold the callback on the line.
         let held = holdSessionLine(opened.harness.session) { tx in
             _ = try await tx.appendEntry(root.id, value: EntryDraft(kind: "blocker"))
         }
         await held.waitUntilEntered()
+        #expect(opened.harness.session.line.queuedCount == 0)
+        // Reserve one known scheduler pass, then observe this wait as ticket two.
+        try opened.harness.resume()
+        try await eventually { opened.harness.session.line.queuedCount == 1 }
         let wait = Task { try await done.wait(context: .background) }
-        try await eventually { opened.harness.session.line.queuedCount >= 1 }
+        try await eventually { opened.harness.session.line.queuedCount == 2 }
         let closing = Task { try await opened.harness.close(context: .background) }
         try await eventually { opened.harness.tasks.closing }
         held.release(); try await held.finish()

@@ -1253,7 +1253,7 @@
 
               if (rendered.resultHtmlCollapsed && rendered.resultHtmlExpanded && rendered.resultHtmlCollapsed !== rendered.resultHtmlExpanded) {
                 // Both collapsed and expanded differ - render expandable section
-                html += `<div class="tool-output expandable ansi-rendered" onclick="toggleExpandableFromClick(event, this)">
+                html += `<div class="tool-output expandable ansi-rendered" onclick="if(event.target.closest('a'))return;toggleExpandableFromClick(event, this)">
                   <div class="output-preview">${rendered.resultHtmlCollapsed}</div>
                   <div class="output-full">${rendered.resultHtmlExpanded}</div>
                 </div>`;

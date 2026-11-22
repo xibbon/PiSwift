@@ -5,7 +5,7 @@ import PiSwiftChord
 import PiSwiftDurableTesting
 @testable import PiSwiftDurable
 
-// Port of durable/test/tools-images.test.ts at v1.3.0.
+// Port of durable/test/tools-images.test.ts, updated for v1.6.0.
 @Suite struct ToolImageReadTests {
     private let context = ChordContext.background
 
@@ -78,11 +78,15 @@ import PiSwiftDurableTesting
         #expect(result.diagnostics?.first?.message.hasSuffix("whose size cannot be read") == true)
     }
 
-    @Test("Reports a placeholder for a text model")
-    func placeholder() async throws {
+    @Test("Records the text-only model ID in details")
+    func textOnlyModelDetails() async throws {
         let result = try await read(imageReadPNG, input: [.text])
         try expectImage(result, data: toBase64(imageReadPNG), mimeType: "image/png")
-        #expect(result.diagnostics?.first?.message == "Read image file [image/png]. The current model does not support images; it sees a placeholder instead.")
+        #expect(result.structuredOutput == .object([
+            "type": "image", "data": .string(toBase64(imageReadPNG)), "mimeType": "image/png"
+        ]))
+        #expect(result.diagnostics == [.init(severity: .info, message: "Read image file [image/png].", code: "image")])
+        #expect(result.details == .object(["imageUnsupportedByModel": "image-test"]))
     }
 
     @Test("Uses each model limit and preserves the other defaults", arguments: [0, 1, 2])
@@ -155,7 +159,8 @@ import PiSwiftDurableTesting
         try expectImage(result, data: "prepared", mimeType: "image/jpeg")
         #expect(await processor.bytes == [imageReadPNG])
         #expect(await processor.mimeTypes == ["image/png"])
-        #expect(result.diagnostics?.first?.message == "Read image file [image/jpeg]. Converted from image/png to image/jpeg. Resized from 8x6 to 4x3. Multiply coordinates by 2.00 to map them to the original. The current model does not support images; it sees a placeholder instead.")
+        #expect(result.diagnostics?.first?.message == "Read image file [image/jpeg]. Converted from image/png to image/jpeg. Resized from 8x6 to 4x3. Multiply coordinates by 2.00 to map them to the original.")
+        #expect(result.details == .object(["imageUnsupportedByModel": "image-test"]))
     }
 
     @Test("Reports a processor decode failure")

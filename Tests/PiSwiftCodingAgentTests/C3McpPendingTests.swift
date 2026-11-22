@@ -149,6 +149,28 @@ private func c3PendingRemovals(_ session: AgentSession) -> [String] {
         .flatMap { $0.toolsRemoved?.map(\.name) ?? [] }
 }
 
+private func c2DropLoader(_ loaderWasActive: LockedState<[Bool]>) -> InlineExtension {
+    InlineExtension(name: "drop-loader") { api in
+        try api.registerTool(CustomTool(name: "loader", label: "loader",
+            description: "Loads the extension's tools.",
+            parameters: ["type": AnyCodable("object")],
+            execute: { _, _, _, _, _ in AgentToolResult(content: []) })).get()
+        _ = api.on("session_start") { (_: SessionStartEvent, _: HookContext) -> Any? in
+            let active = api.getActiveTools()
+            loaderWasActive.withLock { $0.append(active.contains("loader")) }
+            api.setActiveTools(active.filter { $0 != "loader" })
+            return nil
+        }
+    }
+}
+
+private func c2WaitForDocs(_ session: AgentSession) async {
+    // The MCP tool-call hook waits for server registration before tool_search runs.
+    let event = ToolCallEvent(toolName: TOOL_SEARCH_TOOL_NAME, toolCallId: UUID().uuidString, input: [:])
+    _ = await session.hookRunner?.emitToolCall(event)
+    #expect(session.getAllToolNames().contains("mcp__docs__search"))
+}
+
 @Suite("C3 MCP loaded tools after resume and reload")
 struct C3McpPendingTests {
     @Test(.timeLimit(.minutes(1)))
@@ -320,6 +342,60 @@ struct C3McpPendingTests {
         #expect(result.errors.isEmpty)
         #expect(session.hookRunner?.getMcpServers().map(\.name) == ["my_docs"])
         #expect(try await c3PendingEventually { pool.connected.withLock { $0.contains("my_docs") } })
+        _ = await session.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
+        await pool.close()
+    }
+
+    // v1.6.0 agent-session-mcp.test.ts:1261-1270.
+    @Test("keeps restored tools when an extension deactivates only its own tool before they register",
+          .timeLimit(.minutes(1)))
+    func keepsRestoredMcpToolsWhenExtensionHidesLoader() async throws {
+        let loaderWasActive = LockedState<[Bool]>([])
+        let loader = c2DropLoader(loaderWasActive)
+        let firstPool = try C3PendingMcpPool()
+        let first = try await c3PendingSession(firstPool, extensions: [loader])
+        defer { first.dispose() }
+        await c2WaitForDocs(first)
+        try await c3PendingLoadDocs(first)
+
+        let secondPool = try C3PendingMcpPool(ready: false)
+        let second = try await c3PendingSession(secondPool, manager: first.sessionManager,
+            extensions: [loader], noTools: nil)
+        defer { second.dispose() }
+        #expect(loaderWasActive.withLock { $0 } == [true, true])
+        #expect(!second.getAllToolNames().contains("mcp__docs__search"))
+        secondPool.gate.withLock { $0 = true }
+        await c2WaitForDocs(second)
+        #expect(second.getActiveToolNames().contains("mcp__docs__search"))
+        #expect(!second.getActiveToolNames().contains("loader"))
+        _ = await second.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
+        _ = await first.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
+        await secondPool.close()
+        await firstPool.close()
+    }
+
+    // v1.6.0 agent-session-mcp.test.ts:1272-1279.
+    @Test("keeps tools tool_search loaded after /reload when an extension deactivates only its own tool",
+          .timeLimit(.minutes(1)))
+    func keepsReloadedMcpToolsWhenExtensionHidesLoader() async throws {
+        let loaderWasActive = LockedState<[Bool]>([])
+        let pool = try C3PendingMcpPool()
+        let session = try await c3PendingSession(pool, extensions: [c2DropLoader(loaderWasActive)])
+        defer { session.dispose() }
+        await c2WaitForDocs(session)
+        try await c3PendingLoadDocs(session)
+
+        pool.gate.withLock { $0 = false }
+        await session.reload()
+        let result = await session.reloadExtensions()
+        #expect(result.errors.isEmpty)
+        #expect(loaderWasActive.withLock { $0 } == [true, true])
+        #expect(!session.getAllToolNames().contains("mcp__docs__search"))
+        pool.gate.withLock { $0 = true }
+        await c2WaitForDocs(session)
+        #expect(pool.connected.withLock { $0 } == ["docs", "docs"])
+        #expect(session.getActiveToolNames().contains("mcp__docs__search"))
+        #expect(!session.getActiveToolNames().contains("loader"))
         _ = await session.hookRunner?.emit(SessionShutdownEvent(reason: .quit))
         await pool.close()
     }

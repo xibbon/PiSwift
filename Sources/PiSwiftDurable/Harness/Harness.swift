@@ -1,3 +1,4 @@
+import PiSwiftAI
 import PiSwiftChord
 import Synchronization
 
@@ -6,7 +7,11 @@ private struct WeakHarness: Sendable { weak var value: Harness? }
 private final class HarnessSessionHooks: SessionHooks {
     let scheduler = Mutex<TaskScheduler?>(nil)
     let app: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?
-    init(app: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?) { self.app = app }
+    let report: @Sendable (any Error, ReportInfo) -> Void
+    init(app: (@Sendable (Transaction, ConversationRecord) async throws -> Void)?,
+         report: @escaping @Sendable (any Error, ReportInfo) -> Void) {
+        self.app = app; self.report = report
+    }
     func conversationCreated(_ tx: Transaction, record: ConversationRecord) async throws {
         _ = try await tx.doc(LiveDoc, conversationId: record.id)
         _ = try await tx.doc(InboxDoc, conversationId: record.id)
@@ -18,6 +23,13 @@ private final class HarnessSessionHooks: SessionHooks {
     func beforeClose() async {
         let tasks = scheduler.withLock { state in let tasks = state; state = nil; return tasks }
         await tasks?.join()
+        if let tasks {
+            let ids = tasks.providerSessionIds.withLock { state in let ids = state; state.removeAll(); return ids }
+            for id in ids {
+                do { try cleanupSessionResources(id) }
+                catch { report(error, .hostError(callback: .models)) }
+            }
+        }
     }
 }
 
@@ -48,10 +60,10 @@ public final class Harness: Sendable {
             let snapshot = options.registry.snapshot()
             let missing = ["pi.generation", "pi.tool", "pi.compaction"].filter { snapshot.task(name: $0) == nil }
             if !missing.isEmpty { throw HarnessOpenError.missingBuiltins(missing) }
-            let hooks = HarnessSessionHooks(app: options.conversationCreated)
             let report: @Sendable (any Error, ReportInfo) -> Void = { error, info in
                 options.onReport?(Report(info, error: error))
             }
+            let hooks = HarnessSessionHooks(app: options.conversationCreated, report: report)
             let timers = HarnessTimers(clock: options.clock, now: options.now, setTimer: options.setTimer,
                 report: report)
             let now = timers.now
@@ -79,7 +91,7 @@ public final class Harness: Sendable {
                     return ConversationHandle(Conversation(id: id, harness: harness, binding: binding))
                 }, report: report, context: context.withoutAbortSignal(),
                 settleOutcome: { tx, record, outcome in try await settleSchedulerOutcome(tx: tx, record: record, outcome: outcome) },
-                withdrawInputs: { tx, id in try await withdrawQueuedInputs(tx: tx, conversationId: id) })
+                withdrawInputs: { tx, id in try await withdrawAbortedInputs(tx: tx, conversationId: id) })
             hooks.scheduler.withLock { $0 = scheduler }
             let submissions = try Submissions(session: session, storage: storage, now: now, settings: settings, readOnly: options.readOnly, resume: { try scheduler.resume() })
             let harness = try Harness(session: session, storage: storage, options: options, tasks: scheduler, submissions: submissions)
@@ -114,6 +126,14 @@ public final class Harness: Sendable {
         try await withTaskCancellationContext(context) { context in
             try assertOpen(); return try await session.commit(change, context: context, persistence: persistence)
         }
+    }
+    /// Delivers one typed signal and enables task scheduling.
+    public func signal<Value: Codable & Sendable>(
+        taskId: TaskID, token: SignalToken<Value>, key: String, value: Value, context: ChordContext
+    ) async throws -> SignalResult {
+        try assertOpen()
+        try tasks.resume()
+        return try await commit({ tx in try await tx.signal(taskId, token: token, key: key, value: value) }, context: context)
     }
     /// Attaches a synchronous observer of committed changes.
     public func observeCommits(_ observer: CommitObserver) throws -> CommitObservation {

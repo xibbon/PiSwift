@@ -14,6 +14,11 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(run.status ?? 1);
 }
+// --v160 applies the v1.6.0 definitions to these exact frozen v1.5.2 migration inputs.
+if (process.argv.includes('--v160')) {
+  await import('./generate-v160-migration-oracle.mjs');
+  process.exit(0);
+}
 
 const check = process.argv.includes('--check');
 const outputIndex = process.argv.indexOf('--output-dir');

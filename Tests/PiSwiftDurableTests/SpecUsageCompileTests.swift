@@ -260,4 +260,32 @@ private func specDocumentSequences(_ app: SpecDependencies, context: ChordContex
         #expect(type(of: documents) == type(of: specDocumentSequences))
         #expect(type(of: settings) == type(of: specLiveSettings))
     }
+
+    // v1.6.0 spec-usage.test.ts:191–369,443–474: execute the new public
+    // constructors and their JSON boundaries, including a saved review.
+    @Test func v160SuspendableSpecAPIsCompileAndRun() throws {
+        let signal: SignalToken<SpecPlan> = try defineSignal(name: "app.review", version: 1,
+            schema: ["type": "object", "properties": ["enabled": ["type": "boolean"]]])
+        let key = try signal.key("decision")
+        #expect(key.signal == "app.review")
+        let task = TaskDefinition<JSONValue, SpecHold, JSONValue, NoTaskHooks>(name: "app.review-task", version: 1,
+            initial: { _ in SpecHold() }, phase: { _, _, _ in }, abort: { _, _, _ in })
+        let request = try hookTask(task, input: JSONValue.null)
+        #expect(request.task.name == "app.review-task")
+        #expect(AfterRunResult(tasks: [request]).tasks.count == 1)
+        #expect(AfterToolsResult(tasks: [request]).tasks.count == 1)
+        #expect(GenerationYield(tasks: [request]).tasks?.count == 1)
+        #expect(try JSONValue(encoding: AfterToolsDecision(terminate: true)) == ["terminate": true])
+        #expect(try JSONValue(encoding: YieldDecision(continue: .text("revise"))) == ["continue": "revise"])
+        let sleeping = try task.sleeping(SpecHold(), signals: [key])
+        #expect(sleeping.status == "sleeping")
+        let joined = try task.waiting(SpecHold(), on: [try TaskID(2)], policy: .any)
+        #expect(joined.status == "waiting")
+        #expect(GateSleep(signals: [key]).signals == [key])
+        let notify = SubmissionNotify(taskId: try TaskID(1), key: "settled")
+        let kept = SubmissionDraft.input(content: .text("question"), whenBusy: .followUp, onAbort: .keep)
+            .withNotify(notify)
+        #expect(kept.onAbort == .keep)
+        #expect(kept.notify == notify)
+    }
 }

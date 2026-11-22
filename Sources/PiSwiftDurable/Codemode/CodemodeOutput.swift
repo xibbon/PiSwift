@@ -62,7 +62,7 @@ public func codemodeFormatResult(_ result: CodemodeResult, generatedImages: Int,
     maxOutputTokens: Int, calls: [CodemodeNestedCall],
     limits: OutputLimits = .init(maxBytes: 200_000, maxLines: 5_000, retain: .tail),
     write: @escaping @Sendable (String, Data) async -> CodemodeOutputFileResult
-) async -> CodemodeFormattedResult {
+) async throws -> CodemodeFormattedResult {
     var output = result.output
     if result.ok, let value = result.value {
         output.append(.text(value.stringValue ?? ((try? value.jsonText()) ?? "undefined")))
@@ -120,7 +120,8 @@ public func codemodeFormatResult(_ result: CodemodeResult, generatedImages: Int,
             let label: String
             if let existing = labels[image.data] { label = existing }
             else {
-                let bytes = Data(base64Encoded: image.data) ?? Data()
+                // v1.6.0 output.ts:130: the shared `fromBase64` (atob rules); a malformed image fails the result.
+                let bytes = Data(try fromBase64(image.data))
                 let kind = "\(image.mimeType), \(bytes.count) bytes"
                 switch await write("image-\(labels.count + 1)\(extensions[image.mimeType] ?? ".bin")", bytes) {
                 case .path(let path): label = "[Image saved to \(path) (\(kind))]"

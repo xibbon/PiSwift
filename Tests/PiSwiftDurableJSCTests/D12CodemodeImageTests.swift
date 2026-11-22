@@ -11,7 +11,7 @@ import PiSwiftDurableTesting
 struct D12CodemodeImageTests {
     private var fixture: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Scripts/durable-fixtures/d12-codemode-image-v152.json")
+            .deletingLastPathComponent().appendingPathComponent("Scripts/durable-fixtures/d12-codemode-image-v160.json")
     }
     private func normalize(_ value: JSONValue, cwd: String) -> JSONValue {
         switch value {
@@ -49,7 +49,10 @@ struct D12CodemodeImageTests {
     }
     @Test(arguments: ["sqlite", "jsonl"])
     func persistedReadImageConversationMatchesTag(backend: String) async throws {
+        // v1.6.0 D1: generate-d12-codemode-image-v152.mjs --v160 runs this
+        // scripted operation under the tag, whose tool.ts:159 writes tool v4.
         let fixture = try JSONValue(jsonData: Data(contentsOf: fixture))
+        #expect(fixture["tag"] == "v1.6.0")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("d12-image-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

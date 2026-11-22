@@ -1,3 +1,4 @@
+import Foundation
 import PiSwiftAI
 import PiSwiftChord
 
@@ -17,15 +18,27 @@ public struct HookApi: Sendable {
     public var read: HarnessDocumentReader
     /// Reads a saved task memo or installs a candidate when absent.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    private let clock: @Sendable () throws -> Int64
+    /// Returns the Harness clock time in milliseconds.
+    public func now() throws -> Int64 { try clock() }
+    /// Reads a committed signal key in this hook's task.
+    public func readSignal<Value: Codable & Sendable>(
+        _ token: SignalToken<Value>, key: String, context: ChordContext
+    ) async throws -> SignalState<Value>? {
+        let name = signalMemoName(token.name, key)
+        let stored = try await memo(name, nil, context)
+        return try PiSwiftDurable.readSignal(token, key: key, memos: stored.map { [name: $0] })
+    }
     private let readEntries: @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor>
     private let readEntry: @Sendable (EntryID, ChordContext) async throws -> EntryRecord?
     /// Binds read services, models, and durable memos to a task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, models: @autoclosure @escaping @Sendable () -> any DurableModels,
                 read: HarnessDocumentReader = .init(),
                 memo: @escaping @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue? = { _, _, _ in nil },
+                now: @escaping @Sendable () throws -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                 entries: @escaping @Sendable (ConversationEntryQuery, Int, Cursor?, ChordContext) async throws -> Page<EntryRecord, Cursor> = { _, _, _, _ in throw SessionError.message("Hook entry reads unavailable") },
                 entry: @escaping @Sendable (EntryID, ChordContext) async throws -> EntryRecord? = { _, _ in throw SessionError.message("Hook entry reads unavailable") }) {
-        self.taskId = taskId; self.conversationId = conversationId; self.modelsProvider = models; self.read = read; self.memo = memo
+        self.taskId = taskId; self.conversationId = conversationId; self.modelsProvider = models; self.read = read; self.memo = memo; clock = now
         readEntries = entries; readEntry = entry
     }
     /// Reads a page of raw entries in this task's visible conversation history.
@@ -65,12 +78,15 @@ public struct ProviderRequestReplacement: Sendable {
 /// Additional user content that continues the current generation.
 public struct GenerationYield: Sendable {
     /// The user content that continues the current generation.
-    public var `continue`: UserContent
+    public var `continue`: UserContent?
+    /// Child tasks that decide whether the answer stands.
+    public var tasks: [HookTask]?
     /// Supplies user content to continue the current generation.
-    public init(continue input: UserContent) { self.continue = input }
+    public init(continue input: UserContent) { self.continue = input; tasks = nil }
+    public init(tasks: [HookTask]) { self.continue = nil; self.tasks = tasks }
 }
-/// A child task requested by an afterRun hook.
-public struct RunEndTask: Sendable {
+/// A child task requested by an afterRun, afterTools, or onYield hook.
+public struct HookTask: Sendable {
     public let task: AnyTaskDefinition
     public let input: JSONValue
     public init<Input, Checkpoint, Result, Hooks>(_ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input) throws {
@@ -78,14 +94,47 @@ public struct RunEndTask: Sendable {
         self.input = try JSONValue(encoding: input)
     }
 }
-/// Binds a typed task and input to an afterRun request.
+/// Binds a typed task and input to a hook task request.
+public func hookTask<Input, Checkpoint, Result, Hooks>(
+    _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input
+) throws -> HookTask { try HookTask(task, input: input) }
+@available(*, deprecated, renamed: "HookTask")
+public typealias RunEndTask = HookTask
+@available(*, deprecated, renamed: "hookTask(_:input:)")
 public func runEndTask<Input, Checkpoint, Result, Hooks>(
     _ task: TaskDefinition<Input, Checkpoint, Result, Hooks>, input: Input
-) throws -> RunEndTask { try RunEndTask(task, input: input) }
+) throws -> HookTask { try hookTask(task, input: input) }
+/// A result that an afterTools hook returns to start child tasks.
+public struct AfterToolsResult: Sendable {
+    public var tasks: [HookTask]
+    public init(tasks: [HookTask]) { self.tasks = tasks }
+}
+/// A completed afterTools task can end the current run.
+public struct AfterToolsDecision: Codable, Sendable {
+    public var terminate: Bool?
+    public init(terminate: Bool? = nil) { self.terminate = terminate }
+}
+/// A completed onYield task can continue the current run.
+public struct YieldDecision: Codable, Sendable {
+    public var `continue`: UserContent?
+    public init(continue input: UserContent? = nil) { self.continue = input }
+    public init(from decoder: any Decoder) throws {
+        let value = try JSONValue(from: decoder)
+        self.continue = value.objectValue?["continue"].flatMap(validYieldInput)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        let value: JSONValue
+        if let input = self.continue {
+            let content = try EntryRecord.encodeMessages([.user(UserMessage(content: input, timestamp: 0))])[0].objectValue!["content"]!
+            value = .object(["continue": content])
+        } else { value = .object([:]) }
+        try value.encode(to: encoder)
+    }
+}
 /// Child tasks to start after a run answers.
 public struct AfterRunResult: Sendable {
-    public var tasks: [RunEndTask]
-    public init(tasks: [RunEndTask]) { self.tasks = tasks }
+    public var tasks: [HookTask]
+    public init(tasks: [HookTask]) { self.tasks = tasks }
 }
 /// Callbacks at request, response, yield, and tool completion boundaries.
 public struct GenerationHooks: Sendable {
@@ -98,7 +147,7 @@ public struct GenerationHooks: Sendable {
     /// Can supply additional user content after the assistant yields.
     public var onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)?
     /// Runs after all tool-result entries are committed.
-    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)?
+    public var afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> AfterToolsResult?)?
     /// Requests children after an answer and settled inputs.
     public var afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)?
     /// Selects optional request, response, yield, and after-tools callbacks.
@@ -107,23 +156,47 @@ public struct GenerationHooks: Sendable {
         beforeProviderRequest: (@Sendable (ProviderRequest, HookApi, ChordContext) async throws -> ProviderRequestReplacement?)? = nil,
         afterResponse: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> Void)? = nil,
         onYield: (@Sendable (AssistantMessage, HookApi, ChordContext) async throws -> GenerationYield?)? = nil,
-        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void)? = nil,
+        afterTools: (@Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> AfterToolsResult?)? = nil,
         afterRun: (@Sendable (GenerationRunSummary, HookApi, ChordContext) async throws -> AfterRunResult?)? = nil
     ) {
         self.beforeRequest = beforeRequest; self.beforeProviderRequest = beforeProviderRequest
         self.afterResponse = afterResponse; self.onYield = onYield; self.afterTools = afterTools
         self.afterRun = afterRun
     }
+
+    /// Accepts existing observation-only afterTools hooks.
+    @_disfavoredOverload
+    public init(afterTools: @escaping @Sendable (EntryID, [EntryID], HookApi, ChordContext) async throws -> Void) {
+        self.init(afterTools: { assistant, results, api, context in
+            try await afterTools(assistant, results, api, context)
+            return nil
+        })
+    }
 }
 
-/// A tool hook decision that can replace arguments or block execution.
+/// A request to suspend a tool before execution.
+public struct GateSleep: Sendable {
+    /// Deadline in Harness clock milliseconds, if present.
+    public var until: Double?
+    /// Signal keys that can wake this gate.
+    public var signals: [SignalKey]?
+    /// Selects the deadline and signal keys for this gate.
+    public init(until: Double? = nil, signals: [SignalKey]? = nil) {
+        self.until = until; self.signals = signals
+    }
+}
+/// A tool hook decision that can replace arguments, block, or suspend execution.
 public struct BeforeToolResult: Sendable {
     /// Replacement JSON arguments for the tool call.
     public var arguments: JSONObject?
     /// The reason to reject execution of the tool call.
     public var block: String?
-    /// Selects replacement arguments or a reason to block the tool.
-    public init(arguments: JSONObject? = nil, block: String? = nil) { self.arguments = arguments; self.block = block }
+    /// Waits before the call is allowed to execute.
+    public var sleep: GateSleep?
+    /// Selects replacement arguments, a reason to block, or a gate sleep.
+    public init(arguments: JSONObject? = nil, block: String? = nil, sleep: GateSleep? = nil) {
+        self.arguments = arguments; self.block = block; self.sleep = sleep
+    }
 }
 /// Callbacks that can block a tool or replace its arguments and result.
 public struct ToolHooks: Sendable {

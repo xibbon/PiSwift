@@ -144,15 +144,29 @@ private struct D10FailureDirectory: Sendable {
 
     // Reuse the unmodified tag's persisted phase files. This exercises host startup,
     // durable recovery, watch delivery, and typed ending presentation together.
-    @Test(arguments: ["model_error", "no_model", "aborted", "reset", "faulted", "orphaned", "interrupted", "restart_limit", "nothing_to_answer", "turn_limit"])
-    func tagWrittenPhaseResumesToHostEnding(reason: String) async throws {
+    @Test(arguments: ["model_error", "no_model", "aborted", "reset", "faulted", "orphaned-old", "orphaned-future", "interrupted", "restart_limit", "nothing_to_answer", "turn_limit"])
+    func tagWrittenPhaseResumesToHostEnding(scenario: String) async throws {
         let directory = try D10FailureDirectory()
         defer { directory.remove() }
-        let fixtureRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Scripts/durable-fixtures/d5b-endings-v152")
+        let caseName = scenario == "orphaned-old" ? "orphaned"
+            : scenario == "orphaned-future" ? "orphaned-future" : scenario
+        let fixtureRoot = repository.appendingPathComponent("Scripts/durable-fixtures/" +
+            (scenario == "orphaned-future" ? "d5b-endings-v160" : "d5b-endings-v152"))
+        // v1.6.0 D1: generation.ts:184-194 makes the frozen v3 orphaned seed runnable.
+        // The v1.6.0 Node oracle records its aborted ending and a new future-v4 orphaned case.
+        let oracleURL = repository.appendingPathComponent("Scripts/durable-fixtures/d5b-endings-v160/manifest.json")
+        let oracle = try JSONValue(jsonData: Data(contentsOf: oracleURL))
+        let expectedCase = try #require(oracle["cases"]?[caseName + "-sqlite"])
+        let expectedLive = try #require(expectedCase["post"]?["values"]?.arrayValue?.first {
+            $0["record"]?["kind"] == "pi.live"
+        }?["value"])
+        let expectedFailure = try #require(expectedLive["runFailure"])
+        let reason = try #require(expectedFailure["reason"]?.stringValue)
+        #expect(reason == (scenario == "orphaned-old" ? "aborted" : scenario == "orphaned-future" ? "orphaned" : scenario))
         let copy = directory.base.appendingPathComponent("tag-session")
-        try FileManager.default.copyItem(at: fixtureRoot.appendingPathComponent(reason + "-jsonl/pre"), to: copy)
+        try FileManager.default.copyItem(at: fixtureRoot.appendingPathComponent(caseName + "-jsonl/pre"), to: copy)
         let models = FakeDurableModels()
         let clock = TestClock(now: 1_700_000_000_000)
         let opened = try await openDurable(.init(cwd: directory.cwd, transcriptMode: .paged), dependencies: .init(
@@ -160,7 +174,7 @@ private struct D10FailureDirectory: Sendable {
                 .init(models: models, available: models.models, initial: { _ in .init(model: nil) })
             }, makeStorage: { _ in try await JsonlStorage.open(directory: copy.path, context: .background) }, clock: clock,
             modelsProvider: {
-                if reason == "faulted" { throw TaskDefinitionError("Fixture model provider failed") }
+                if scenario == "faulted" { throw TaskDefinitionError("Fixture model provider failed") }
                 return models
             }))
         try await eventually { opened.hostView.hostCurrent().ending?.reason.rawValue == reason }
@@ -169,6 +183,11 @@ private struct D10FailureDirectory: Sendable {
         #expect(view.ending?.reason.rawValue == reason)
         let ending = try #require(view.ending)
         let snapshot = "\(reason) | task=\(ending.taskId.rawValue) | inputs=\(ending.inputs.map { String($0.rawValue) }.joined(separator: ",")) | first=\(ending.first.map { String($0.rawValue) } ?? "none") | detail=\(ending.detail ?? "none")"
+        let expectedTask = try #require(expectedFailure["taskId"]).decode(TaskID.self)
+        let expectedInputs = try #require(expectedFailure["inputs"]).decode([SubmissionID].self)
+        let expectedFirst = try expectedFailure["first"]?.decode(EntryID.self)
+        let oracleSnapshot = "\(reason) | task=\(expectedTask.rawValue) | inputs=\(expectedInputs.map { String($0.rawValue) }.joined(separator: ",")) | first=\(expectedFirst.map { String($0.rawValue) } ?? "none") | detail=\(expectedFailure["detail"]?.stringValue ?? "none")"
+        #expect(snapshot == oracleSnapshot)
         let expectedURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/D10-failure-scenarios-recovery.txt")
         let expected = try String(contentsOf: expectedURL, encoding: .utf8)

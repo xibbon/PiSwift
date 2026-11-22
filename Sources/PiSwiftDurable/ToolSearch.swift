@@ -46,7 +46,7 @@ public func createToolSearchTool() throws -> ToolRegistration {
             "limit": ["type": "number", "description": "Maximum number of tools to return. Defaults to 8."]
         ],
         "required": ["query"]
-    ], args: ToolSearchArguments.self, replay: .safe, callers: [.model]) { arguments, api, context in
+    ], args: ToolSearchArguments.self, replay: .safe, callers: [.model]) { arguments, api, context -> ToolExecutionOutcome in
         guard !trimSearchText(arguments.query).isEmpty else { throw ToolSearchError.emptyQuery }
         let maximum = arguments.limit ?? Double(DEFAULT_TOOL_SEARCH_LIMIT)
         guard maximum.isFinite, maximum.rounded(.towardZero) == maximum, maximum > 0 else {
@@ -68,9 +68,9 @@ public func createToolSearchTool() throws -> ToolRegistration {
             }
             text = "Loaded \(loaded.count) tool\(loaded.count == 1 ? "" : "s"). They are available from your next call:\n" + lines.joined(separator: "\n")
         }
-        return ToolExecutionResult(output: [.text(TextContent(text: text))],
+        return .result(ToolExecutionResult(output: [.text(TextContent(text: text))],
             details: try JSONValue(encoding: ToolSearchToolDetails(loaded: loaded)),
-            control: loaded.isEmpty ? nil : ToolControl(addTools: loaded))
+            control: loaded.isEmpty ? nil : ToolControl(addTools: loaded)))
     }
 }
 

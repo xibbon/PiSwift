@@ -77,7 +77,7 @@ internal func codemodeModelTools() throws -> [ToolRegistration] {
     let parameters: JSONObject = ["type": "object", "properties": ["model": [:], "context": [:]], "required": ["model", "context"]]
     return try [codemodeClassifyTool, codemodeGenerateImagesTool].map { name in
         try ToolRegistration(name: name, description: name == codemodeClassifyTool ? "models.classify() of code mode scripts." : "models.generateImages() of code mode scripts.",
-            parameters: parameters, callers: [.tools], structuredOutputSchema: [:]) { args, api, context in
+            parameters: parameters, callers: [.tools], structuredOutputSchema: [:]) { args, api, context -> ToolExecutionOutcome in
             guard let models = api.models as? any CodemodeModels else {
                 throw TaskDefinitionError("The host must supply CodemodeModels for models.* calls")
             }
@@ -99,8 +99,8 @@ internal func codemodeModelTools() throws -> [ToolRegistration] {
             case .classifier(let classifier):
                 let checked = try codemodeClassifierContext(input)
                 let result = try await models.classify(model: classifier, context: checked, operation: context)
-                return codemodeModelResult(label: "classify \(provider)/\(id)", value: codemodeClassifierValue(result),
-                    stopReason: result.stopReason.rawValue, error: result.errorMessage, usage: result.usage)
+                return .result(codemodeModelResult(label: "classify \(provider)/\(id)", value: codemodeClassifierValue(result),
+                    stopReason: result.stopReason.rawValue, error: result.errorMessage, usage: result.usage))
             case .image(let image):
                 let checked = try codemodeImagesContext(input)
                 let result = try await models.generateImages(model: image, context: checked, operation: context)
@@ -110,8 +110,8 @@ internal func codemodeModelTools() throws -> [ToolRegistration] {
                 value["responseId"] = result.responseId.map(JSONValue.string)
                 value["errorMessage"] = result.errorMessage.map(JSONValue.string)
                 value["usage"] = result.usage.map(usageValue)
-                return codemodeModelResult(label: "generateImages \(provider)/\(id)", value: .object(value),
-                    stopReason: result.stopReason.rawValue, error: result.errorMessage, usage: result.usage)
+                return .result(codemodeModelResult(label: "generateImages \(provider)/\(id)", value: .object(value),
+                    stopReason: result.stopReason.rawValue, error: result.errorMessage, usage: result.usage))
             default: throw TaskDefinitionError("The host returned the wrong model type")
             }
         }

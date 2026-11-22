@@ -138,7 +138,7 @@ private func loadHook(_ hookPath: String, cwd: String, eventBus: EventBus) -> (h
             setUnregisterOwnedToolHandler: api.setUnregisterOwnedToolHandler,
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners
-        )
+        ).withTrackedEventBus(api.trackedEventBus)
         return (loaded, nil)
     }
 

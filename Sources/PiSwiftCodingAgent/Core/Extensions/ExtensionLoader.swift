@@ -87,7 +87,7 @@ public struct ExtensionLoader {
             isExtension: true,
             replaceable: inlineExtension.replaceable,
             hidden: inlineExtension.builtin
-        ))
+        ).withTrackedEventBus(api.trackedEventBus))
     }
 
     /// Load a single extension from a path.

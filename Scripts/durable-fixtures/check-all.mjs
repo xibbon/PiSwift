@@ -19,7 +19,29 @@ names.push('run-w5-examples.mjs');
 for (const name of names) {
   const path = fileURLToPath(new URL(name, import.meta.url));
   if (!(await readFile(path, 'utf8')).includes("'--check'")) throw new Error(`${name} has no check mode`);
-  run(name, process.execPath, ['--experimental-strip-types', path, '--check']);
+  // This two-language chain must use the current tag after Swift's built-ins advance.
+  // Its original v1.5.2 mode remains available on the generator itself.
+  const args = name === 'generate-d12-migration-chains-v152.mjs'
+    ? ['--experimental-strip-types', path, '--v160', '--check']
+    : ['--experimental-strip-types', path, '--check'];
+  run(name, process.execPath, args);
+}
+run('generate-read-fixtures.mjs --v160', process.execPath,
+  ['--experimental-strip-types', fileURLToPath(new URL('generate-read-fixtures.mjs', import.meta.url)),
+    '--v160', '--check']);
+// v1.6.0 continuations reuse the checked-in older inputs and keep their old modes.
+for (const name of ['generate-v152-fixtures.mjs', 'generate-d5b-phase-v152.mjs',
+  'generate-d5b-endings-v152.mjs', 'generate-d5b-reverse-v152.mjs',
+  'generate-d5b-restart-round1-v152.mjs',
+  'generate-d6-resume-v152.mjs', 'generate-d5b-conversations-v152.mjs',
+  'generate-d6-conversations-v152.mjs', 'generate-d12-codemode-image-v152.mjs']) {
+  run(`${name} --v160`, process.execPath, ['--experimental-strip-types',
+    fileURLToPath(new URL(name, import.meta.url)), '--v160', '--check']);
+}
+for (const name of ['retrySleep', 'pollSleep', 'legacyRunningRetry']) {
+  run(`generate-v152-resume-oracle.mjs --v160 --case ${name}`, process.execPath,
+    ['--experimental-strip-types', fileURLToPath(new URL('generate-v152-resume-oracle.mjs', import.meta.url)),
+      '--v160', '--case', name, '--check']);
 }
 // The default search check is pinned to v1.4.0. Check the second tagged output too.
 run('generate-search-fixtures.mjs --v152', process.execPath,
@@ -42,7 +64,8 @@ for (const name of chordNames) {
 // run separately by the release proof command.
 const suites = [
   'SharedFileCloseoutTests', 'D4SharedFileCloseoutTests', 'D4SharedFileResumeTests',
-  'D1V152FixtureTests', 'D2TaggedBatchFixtureTests', 'D5aRestartFixtureTests',
+  'D1V152FixtureTests', 'D1V160FixtureTests', 'D2TaggedBatchFixtureTests',
+  'HarnessSignalsTests', 'UpstreamSignalExamplesTests', 'D5aRestartFixtureTests',
   'D5bConversationFixtureTests', 'D5bEndingFixtureTests', 'D5bRestartMatrixTests',
   'D5bReverseFixtureTests', 'D5bTaggedPhaseFixtureTests', 'D6ConversationFixtureTests',
   'D6ResumeFixtureTests', 'D7CrossLanguageFixtureTests', 'D8SchemaVectorsTests',
@@ -53,11 +76,20 @@ const suites = [
   'SessionCacheReadCountsD3bTests', 'SessionCacheMeasurementsD3bTests',
   'D6ToolHookTests', 'D6HookReadsTests', 'SearchFixtureTests',
   'StructuredToolSchemaFixtureTests', 'ToolReadDifferentialTests',
+  'HarnessToolGateTests', 'HarnessInputEntryTests',
 ];
 run('two-language Swift matrix', 'swift', ['test', '--skip-build', '--filter', suites.join('|')]);
 const rows = [
   ['B1–B3 record reads', 'FILE', 'D1', 'D12', 'D12', 'D12', 'D1', 'D12'],
   ['B4 batch and torn cut', 'FILE', 'D2', 'D2', 'D2', 'D2', 'D2', 'D2'],
+  ['v1.6.0 signal sleep, delivery, and expiry', 'FILE', 'D2 parked, early delivery, expiry',
+    'D2 parked', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D2 parked, early delivery, expiry', 'D2 parked'],
+  ['v1.6.0 tool parks, any wait, cancel, and duration across reopen', 'FILE', 'D3a all four cases',
+    'D3a all four cases', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D3a all four cases', 'D3a all four cases'],
+  ['v1.6.0 keyed nested calls, notify settlement, and parked-child restart', 'FILE', 'D3b three cases',
+    'D3b three cases', 'N/A (file-only proof)', 'N/A (file-only proof)', 'D3b three cases', 'D3b three cases'],
+  ['v1.6.0 beforeTool gated call', 'FILE', 'D4 gate', 'D4 gate', 'GAP', 'GAP', 'D4 gate', 'D4 gate'],
+  ['v1.6.0 kept input after abort', 'FILE', 'D4 kept input', 'D4 kept input', 'GAP', 'GAP', 'D4 kept input', 'D4 kept input'],
   ['B5 live read-only refresh', 'FILE', 'D12', 'D12', 'D12', 'D12', 'D9', 'D9'],
   ['watches and views', 'N/A', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4', 'HarnessStateWatch/HarnessViewMeasurementsD4'],
   ['Session writer/group commit', 'SCRIPT', 'D7', 'D7', 'GAP', 'GAP', 'D7', 'D7'],
@@ -91,6 +123,7 @@ const phaseRows = [
   ...['unoffered', 'missing', 'invalid', 'blocked', 'safe-replay', 'unsafe-replay',
     'restart-limit', 'afterRun-cutoff', 'nested-restart']
     .map(phase => [phase, 'D6ResumeFixtures']),
+  ...['afterTools', 'yield'].map(phase => [phase, 'D5HookFixtureTests']),
 ];
 rows.splice(rows.findIndex(row => row[0] === 'all restart phases') + 1, 0,
   ...phaseRows.map(([phase, proof]) => [`phase: ${phase}`, 'FILE', proof, proof,

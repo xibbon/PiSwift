@@ -73,7 +73,7 @@ func m3DiskRefreshSharesRequestAndSavesRotationBeforeSecondRead() async throws {
     #expect(!disk.contains("old-refresh"))
 }
 
-@Test(.timeLimit(.minutes(1)))
+@Test
 func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     let directory = try m3DiskDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -86,16 +86,23 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     let input = Pipe()
     let output = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["python3", "-c", "import fcntl,sys; f=open(sys.argv[1],'a'); fcntl.flock(f,fcntl.LOCK_EX); print('R',flush=True); sys.stdin.read()", lockPath]
+    process.arguments = ["python3", "-c", "import fcntl,sys; f=open(sys.argv[1],'a'); fcntl.flock(f,fcntl.LOCK_EX); print('R',flush=True); sys.stdin.read(1)", lockPath]
     process.standardInput = input
     process.standardOutput = output
+    // `waitUntilExit()` can wait forever in an async test (it hung the serial suite twice);
+    // the termination handler is set before `run()`, so the exit is never missed.
+    let (exits, exited) = AsyncStream.makeStream(of: Int32.self, bufferingPolicy: .bufferingNewest(1))
+    process.terminationHandler = { finished in
+        exited.yield(finished.terminationStatus)
+        exited.finish()
+    }
     try process.run()
     defer {
-        try? input.fileHandleForWriting.close()
-        // Another child process of the test run can inherit the pipe's write end, and then
-        // the lock holder never sees end-of-file. Do not depend on it: terminate the holder.
-        process.terminate()
-        process.waitUntilExit()
+        // A child can inherit the pipe's write end, so end-of-file cannot release the lock.
+        if process.isRunning {
+            try? input.fileHandleForWriting.write(contentsOf: Data("Q".utf8))
+            process.terminate()
+        }
     }
     try #require(output.fileHandleForReading.read(upToCount: 1) == Data("R".utf8))
     let http = M3DiskTokenHTTP()
@@ -109,4 +116,8 @@ func m3DiskCrossProcessBusyLockSkipsSignInRefresh() async throws {
     #expect(authorization.authorizationURL.host == "auth.example.com")
     #expect(await http.count() == 0)
     #expect(try store.tokens(name: "busy-work", url: m3DiskServer)?.refreshToken == "old-refresh")
+    try input.fileHandleForWriting.write(contentsOf: Data("Q".utf8))
+    var status: Int32?
+    for await value in exits { status = value }
+    #expect(status == 0)
 }

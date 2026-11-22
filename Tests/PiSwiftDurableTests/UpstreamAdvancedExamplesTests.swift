@@ -424,14 +424,25 @@ extension UpstreamAdvancedExamplesTests {
         #expect(saved.reporters.count == 2)
         _ = try await first.root.submit(.input(content: .text("Ask reader for the whale's name.")), context: .background)
         await whaleAnswer.reached.wait()
+        // The reporter can reach the child before the main tool result is stored.
+        // Closing sooner interrupts this unsafe-replay tool on reopen.
+        try await eventually(timeout: .seconds(30)) {
+            try await advancedTexts(first.root, role: "toolResult").last == "Sent to reader."
+        }
         try await first.harness.close(context: .background)
         holdWhale.withLock { $0 = false }
         let reopened = try await openChat(storage: SqliteStorage.open(path: path), setup: setup)
         try await settle(reopened)
+        // The background reporter can post a follow-up before its root turn answers it.
+        try await eventually(timeout: .seconds(30)) {
+            try await advancedTexts(reopened.root, role: "assistant").last == "Noted."
+        }
         let reports = try await advancedTexts(reopened.root, role: "user").filter { $0.hasPrefix("[subagent") }
         #expect(reports == ["[subagent reader answered, no reply needed] A whale, a captain, an obsession.", "[subagent reader answered, no reply needed] Moby Dick."])
-        #expect(try await advancedTexts(reopened.root, role: "assistant") == ["OK. Started reader.", "Noted.", "OK. Sent to reader.", "OK. Stopped reader.", "OK. reader: idle", "OK. Sent to reader.", "Noted."])
-        #expect(try await advancedTexts(reopened.root, role: "toolResult") == ["Started reader.", "Sent to reader.", "Stopped reader.", "reader: idle", "Sent to reader."])
+        let assistantTexts = try await advancedTexts(reopened.root, role: "assistant")
+        let toolResultTexts = try await advancedTexts(reopened.root, role: "toolResult")
+        #expect(assistantTexts == ["OK. Started reader.", "Noted.", "OK. Sent to reader.", "OK. Stopped reader.", "OK. reader: idle", "OK. Sent to reader.", "Noted."])
+        #expect(toolResultTexts == ["Started reader.", "Sent to reader.", "Stopped reader.", "reader: idle", "Sent to reader."])
         let restored = try #require(try await reopened.harness.snapshot(token, conversationId: reopened.root.id, context: .background))
         #expect(restored.agents["reader"]?.conversationId == saved.agents["reader"]?.conversationId)
         #expect(restored.agents["reader"]?.reported.count == 2)

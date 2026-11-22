@@ -59,8 +59,8 @@ struct ToolTaskRecordFixtureTests {
     @Test func modelInputsAndCheckpointsMatchUpstreamMigration() throws {
         let value = try fixture()
         #expect(value["tag"] == "v1.3.0")
-        // v1.5.2 D1: tool.ts:136-147 registers pi.tool version 3.
-        #expect(toolTask.version == 3)
+        // v1.6.0 D1: tool.ts:159 registers pi.tool version 4.
+        #expect(toolTask.version == 4)
         let migrate = try #require(toolTask.eraseToAnyTaskDefinition().migrate)
         let migrations = try #require(value["migrations"]?.arrayValue)
         #expect(migrations.count == 2)

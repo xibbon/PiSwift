@@ -336,6 +336,7 @@ private final class RecoveryBlockingTool: Sendable {
         try setup.registry.install(Extension(name: "recovery-generation-hook", hooks: [hook(GenerationHooks(afterTools: { _, _, _, context in
             let observed = observations.withLock { $0 += 1; return $0 }
             if observed == 1 { reached.signal(); try await recoveryAborted(context) }
+            return nil
         }))]))
         setup.models.setResponses([.message(recoveryCall("work")), .message(chatAssistant("done"))])
         let first = try await recoveryOpen(SqliteStorage.open(path: path), setup: setup)

@@ -192,6 +192,29 @@ private struct StopReasonStreamCapture: Sendable {
     let emittedError: Bool
 }
 
+private struct StopReasonHTTPClient: ProviderHTTPClient {
+    let body: Data
+
+    func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
+        ProviderHTTPResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"], body: body)
+    }
+}
+
+private struct CompletionsFixtureHTTPClient: ProviderHTTPClient {
+    let respond: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+
+    func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
+        let (response, body) = try respond(request)
+        var headers: [String: String] = [:]
+        for (name, value) in response.allHeaderFields {
+            if let name = name.base as? String, let value = value as? String {
+                headers[name] = value
+            }
+        }
+        return ProviderHTTPResponse(statusCode: response.statusCode, headers: headers, body: body)
+    }
+}
+
 private func runOpenAICompletionsStopReasonStream(
     payloads: [[String: Any]],
     compat: OpenAICompat? = nil
@@ -199,23 +222,6 @@ private func runOpenAICompletionsStopReasonStream(
     let sseData = try! openAITestSseData(payloads)
     return await codexRequestLock.withLock {
         let host = "stop-reason.example"
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [host] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "text/event-stream"]
-            )!
-            return (response, sseData)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
-        }
-
         let model = Model(
             id: "stop-reason-test",
             name: "Stop Reason Test",
@@ -232,7 +238,7 @@ private func runOpenAICompletionsStopReasonStream(
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(apiKey: "test-key", httpClient: StopReasonHTTPClient(body: sseData))
         )
         var emittedDone = false
         var emittedError = false
@@ -1395,8 +1401,7 @@ private func runCodexSessionRequest(
 
 @Test(.timeLimit(.minutes(1))) func openAICompletionsUsagePreservesCacheWriteTokens() async throws {
     await codexRequestLock.withLock {
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["api.openai.com"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             #expect(request.url?.absoluteString == "https://api.openai.com/v1/chat/completions")
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
             let data = try openAITestSseData([
@@ -1449,12 +1454,6 @@ private func runCodexSessionRequest(
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -1472,7 +1471,7 @@ private func runCodexSessionRequest(
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(apiKey: "test-key", httpClient: client)
         )
         let message = await stream.result()
 
@@ -1635,8 +1634,7 @@ private func runCodexSessionRequest(
 
 @Test(.timeLimit(.minutes(1))) func openAICompletionsUsageFallsBackToChoiceUsage() async throws {
     await codexRequestLock.withLock {
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["moonshot.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-choice-usage",
@@ -1664,12 +1662,6 @@ private func runCodexSessionRequest(
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -1687,7 +1679,7 @@ private func runCodexSessionRequest(
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(apiKey: "test-key", httpClient: client)
         )
         let message = await stream.result()
 
@@ -1702,8 +1694,7 @@ private func runCodexSessionRequest(
 
 @Test(.timeLimit(.minutes(1))) func openAICompletionsIgnoresNullSSEChunks() async throws {
     await codexRequestLock.withLock {
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["null-chunk.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             let validChunk = try JSONSerialization.data(withJSONObject: [
                 "id": "chatcmpl-null",
                 "object": "chat.completion.chunk",
@@ -1726,12 +1717,6 @@ private func runCodexSessionRequest(
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -1749,7 +1734,7 @@ private func runCodexSessionRequest(
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(apiKey: "test-key", httpClient: client)
         )
         let message = await stream.result()
 
@@ -1765,8 +1750,7 @@ private func runCodexSessionRequest(
 @Test(.timeLimit(.minutes(1))) func openAICompletionsRequiresThinkingAsTextUsesAssistantContentParts() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["thinking-as-text.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-thinking-text",
@@ -1789,12 +1773,6 @@ private func runCodexSessionRequest(
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -1829,6 +1807,7 @@ private func runCodexSessionRequest(
             ])),
             options: OpenAICompletionsOptions(
                 apiKey: "test-key",
+                httpClient: client,
                 onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json }; return nil }
             )
         )
@@ -3240,17 +3219,10 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 @Test(.timeLimit(.minutes(1))) func openAICompletionsToolChoiceAndStrictPayload() async {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["zai.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             guard let url = request.url else { throw URLError(.badURL) }
             let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
             return (response, Data("error".utf8))
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -3288,6 +3260,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
             context: normalizeContext(context),
             options: OpenAICompletionsOptions(
                 apiKey: "test-key",
+                httpClient: client,
                 toolChoice: .required,
                 onPayload: { snapshot in
                     capturedPayloadJson.withLock { $0 = snapshot.json }
@@ -3317,12 +3290,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 @Test(.timeLimit(.minutes(1))) func openAICompletionsOpenRouterReasoningUsesNestedNoneEffort() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter-chat.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
-            if let body = readRequestBody(request),
-               let json = String(data: body, encoding: .utf8) {
-                capturedPayloadJson.withLock { $0 = json }
-            }
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-openrouter-reasoning",
@@ -3345,12 +3313,6 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -3369,7 +3331,14 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(
+                apiKey: "test-key",
+                httpClient: client,
+                onPayload: { snapshot in
+                    capturedPayloadJson.withLock { $0 = snapshot.json }
+                    return nil
+                }
+            )
         )
         for await _ in stream {}
 
@@ -3378,6 +3347,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             return object
         }
+        #expect(payload != nil)
         let reasoning = payload?["reasoning"] as? [String: Any]
         let provider = payload?["provider"] as? [String: Any]
         #expect(reasoning?["effort"] as? String == "none")
@@ -3389,8 +3359,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 /// `reasoning_content` on prior assistant turns, even when no thinking block exists.
 @Test(.timeLimit(.minutes(1))) func openAICompletionsDeepSeekV4ReplayPayloadsInjectReasoningContent() async throws {
     await codexRequestLock.withLock {
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["deepseek-replay.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-deepseek-replay",
@@ -3413,12 +3382,6 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         for modelId in ["deepseek-v4-flash", "deepseek-v4-pro"] {
@@ -3457,6 +3420,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 ])),
                 options: OpenAICompletionsOptions(
                     apiKey: "test-key",
+                    httpClient: client,
                     reasoningEffort: .xhigh,
                     onPayload: { snapshot in capturedPayloadJson.withLock { $0 = snapshot.json }; return nil }
                 )
@@ -3484,12 +3448,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 @Test(.timeLimit(.minutes(1))) func openAICompletionsOpenRouterRoutingPayload() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["openrouter.ai"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
-            if let body = readRequestBody(request),
-               let json = String(data: body, encoding: .utf8) {
-                capturedPayloadJson.withLock { $0 = json }
-            }
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-openrouter-routing",
@@ -3512,12 +3471,6 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -3550,7 +3503,14 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key")
+            options: OpenAICompletionsOptions(
+                apiKey: "test-key",
+                httpClient: client,
+                onPayload: { snapshot in
+                    capturedPayloadJson.withLock { $0 = snapshot.json }
+                    return nil
+                }
+            )
         )
         for await _ in stream {}
 
@@ -3559,6 +3519,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             return object
         }
+        #expect(payload != nil)
         let provider = payload?["provider"] as? [String: Any]
         #expect(provider?["allow_fallbacks"] as? Bool == false)
         #expect(provider?["require_parameters"] as? Bool == true)
@@ -3591,12 +3552,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
 @Test(.timeLimit(.minutes(1))) func openAICompletionsQwenChatTemplatePreservesThinking() async throws {
     await codexRequestLock.withLock {
         let capturedPayloadJson = LockedState<String?>(nil)
-        OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = ["qwen-template.example"] }
-        OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = { request in
-            if let body = readRequestBody(request),
-               let json = String(data: body, encoding: .utf8) {
-                capturedPayloadJson.withLock { $0 = json }
-            }
+        let client = CompletionsFixtureHTTPClient { request in
             let data = try openAITestSseData([
                 [
                     "id": "chatcmpl-qwen-template",
@@ -3619,12 +3575,6 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                 headerFields: ["Content-Type": "text/event-stream"]
             )!
             return (response, data)
-        } }
-        URLProtocol.registerClass(OpenAICompletionsMockURLProtocol.self)
-        defer {
-            OpenAICompletionsMockURLProtocol.requestHandler.withLock { $0 = nil }
-            OpenAICompletionsMockURLProtocol.allowedHosts.withLock { $0 = [] }
-            URLProtocol.unregisterClass(OpenAICompletionsMockURLProtocol.self)
         }
 
         let model = Model(
@@ -3643,7 +3593,15 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
         let stream = streamOpenAICompletions(
             model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
-            options: OpenAICompletionsOptions(apiKey: "test-key", reasoningEffort: .high)
+            options: OpenAICompletionsOptions(
+                apiKey: "test-key",
+                httpClient: client,
+                reasoningEffort: .high,
+                onPayload: { snapshot in
+                    capturedPayloadJson.withLock { $0 = snapshot.json }
+                    return nil
+                }
+            )
         )
         for await _ in stream {}
 
@@ -3652,6 +3610,7 @@ private func withCleanBedrockEnv(_ work: @Sendable () async -> Void) async {
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             return object
         }
+        #expect(payload != nil)
         let kwargs = payload?["chat_template_kwargs"] as? [String: Any]
         #expect(kwargs?["enable_thinking"] as? Bool == true)
         #expect(kwargs?["preserve_thinking"] as? Bool == true)
@@ -6512,8 +6471,8 @@ struct ApiRegistryTests {
     #expect(getProviders().count == 41)
     #expect(!getProviders().contains(.typesafe))
     #expect(getBuiltinProviders().contains(.typesafe))
-    #expect(allModels.count == 1612) // 2026-11-10 hydration
-    #expect(compared == 1612) // 2026-11-10 hydration
+    #expect(allModels.count == 1660) // 2026-11-20 hydration, excluding Radius
+    #expect(compared == 1660) // 2026-11-20 hydration, excluding Radius
     #expect(getProviders().contains(.antLing))
     #expect(getProviders().contains(.nvidia))
     #expect(getProviders().contains(.moonshotai))
@@ -6570,8 +6529,8 @@ struct ApiRegistryTests {
     let providers = getImageProviders()
     let models = getImageModels(provider: .openrouter)
     #expect(providers == [.openrouter])
-    #expect(models.count == 66) // 2026-11-10 hydration
-    #expect(compared == 66) // 2026-11-10 hydration
+    #expect(models.count == 74) // 2026-11-20 hydration
+    #expect(compared == 74) // 2026-11-20 hydration
 
     let model = getImageModel(provider: .openrouter, modelId: "google/gemini-3-pro-image-preview")
     #expect(model.api == .openrouterImages)
@@ -6586,7 +6545,7 @@ struct ApiRegistryTests {
     #expect(Set(ClassifierModelsData.keys) == Set(upstream.keys))
     #expect(ClassifierModelsData.mapValues(\.count) == [
         "cloudflare-workers-ai": 5, "github-copilot": 1, "openai": 1, "opencode": 2,
-        "openrouter": 36, "typesafe": 1, "vercel-ai-gateway": 18,
+        "openrouter": 43, "typesafe": 1, "vercel-ai-gateway": 27,
     ])
     #expect(Set(ClassifierModelsData["cloudflare-workers-ai"]?.keys.map { $0 } ?? []) == Set([
         "@cf/cloudflare/clef", "@cf/cloudflare/clef-flash", "@cf/cloudflare/clef-omni",
@@ -6625,7 +6584,7 @@ struct ApiRegistryTests {
             compared += 1
         }
     }
-    #expect(compared == 64) // 2026-11-10 hydration
+    #expect(compared == 80) // 2026-11-20 hydration
     #expect(getClassifierModel(provider: "typesafe", modelId: "jev-latest")?.api == .typesafeSystemOne)
     #expect(getClassifierModel(provider: "cloudflare-workers-ai", modelId: "typesafe/jev")?.contextWindow == 32000)
 }

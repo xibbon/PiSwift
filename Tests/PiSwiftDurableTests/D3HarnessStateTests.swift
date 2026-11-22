@@ -124,9 +124,14 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
             .task(value: d3StateRecord(id, state: .pending(checkpoint: checkpoint)))], context: .background)
         let definition = harnessOneStep("test.state") { _, _, _ in Issue.record("Close started a handler") }
         let harness = try await harnessOpen([AnyTaskDefinition(definition)], storage: storage)
-        try await harnessEventually {
-            harness.tasks.state.withLock { !$0.cascadePending && $0.reconcilingWork == 0 && !$0.reconcileScheduled }
+        // A reconcile task clears reconcileScheduled before it increments reconcilingWork.
+        // Join the registered tasks so neither can restore the ownership cache after eviction.
+        while true {
+            let pending = harness.tasks.state.withLock { Array($0.reconciles.values) }
+            if pending.isEmpty { break }
+            for task in pending { await task.value }
         }
+        #expect(harness.tasks.state.withLock { !$0.cascadePending && $0.reconcilingWork == 0 && !$0.reconcileScheduled })
         let entered = SessionTestGate(), release = SessionTestGate()
         storage.holdConversations(entered: entered, release: release)
         // Evict the ownership cache so this reservation must read the chain again.
@@ -138,6 +143,10 @@ private func d3StateRecord(_ id: TaskID, state: TaskState, owner: TaskID? = nil,
         // conversation too, so this test's backend read gate is reached.
         harness.session.evictCachedConversation(rootConversationID)
         try harness.resume(); await entered.wait()
+        let held = harness.tasks.state.withLock { state in
+            (pumping: state.pumping, reconciling: !state.reconciles.isEmpty, invoked: state.invocations[id] != nil)
+        }
+        #expect(held.pumping && !held.reconciling && !held.invoked)
         let closing = Task { try await harness.close(context: .background) }
         try await harnessEventually { harness.tasks.closing }
         release.release(); try await closing.value

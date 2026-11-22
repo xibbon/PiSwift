@@ -29,7 +29,8 @@ private func requestTestModel(
 
 private func captureCompletionsPayload(
     model: Model,
-    options: OpenAICompletionsOptions
+    options: OpenAICompletionsOptions,
+    systemPrompt: String? = nil
 ) async -> [String: Any]? {
     let captured = LockedState<String?>(nil)
     let host = model.baseUrl.components(separatedBy: "/")[2]
@@ -55,7 +56,7 @@ private func captureCompletionsPayload(
     resolvedOptions.maxRetries = 0
     let stream = streamOpenAICompletions(
         model: model,
-        context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("hello")))])),
+        context: normalizeContext(Context(systemPrompt: systemPrompt, messages: [.user(UserMessage(content: .text("hello")))])),
         options: resolvedOptions
     )
     _ = await stream.result()
@@ -385,10 +386,14 @@ private func captureAzureResponsesPayload(
 }
 
 @Test(arguments: ["qwen-token-plan", "qwen-token-plan-cn", "qwen-token-plan-individual", "qwen-token-plan-individual-cn"])
-func qwenTokenPlanReasoningCompat(_ provider: String) throws {
+func qwenTokenPlanReasoningCompat(_ provider: String) async throws {
     let model = try #require(getModel(provider: provider, modelId: "qwen3.7-max"))
     #expect(model.compat?.thinkingFormat == .qwen)
     #expect(model.compat?.requiresReasoningContentOnAssistantMessages == nil)
-    #expect(model.compat?.supportsDeveloperRole == false)
+    #expect(model.compat?.supportsDeveloperRole == nil)
     #expect(model.compat?.supportsStore == false)
+    let payload = try #require(await captureCompletionsPayload(
+        model: model, options: OpenAICompletionsOptions(apiKey: "test-key"), systemPrompt: "Follow instructions."))
+    let messages = try #require(payload["messages"] as? [[String: Any]])
+    #expect(messages.first?["role"] as? String == "system")
 }

@@ -173,8 +173,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0),
-        contextWindow: 65536,
+        cost: ModelCost(input: 0.192, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65537,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "cloudflare/clef-flash": ClassifierModel(
@@ -184,7 +184,7 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0),
+        cost: ModelCost(input: 0.019, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 24576,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -199,6 +199,39 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "google/gemini-decision-1": ClassifierModel(
+        id: "google/gemini-decision-1",
+        name: "Google: Gemini Decision 1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "heygen/heygen-decision-1": ClassifierModel(
+        id: "heygen/heygen-decision-1",
+        name: "HeyGen: HeyGen Decision",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.14, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "heygen/heygen-decision-1-turbo": ClassifierModel(
+        id: "heygen/heygen-decision-1-turbo",
+        name: "HeyGen: HeyGen Decision Turbo",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "jaredpalmer/kev-4b": ClassifierModel(
         id: "jaredpalmer/kev-4b",
         name: "Jared Palmer: Kev 4B",
@@ -208,17 +241,6 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 8192,
-        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
-    ),
-    "liquid/d1": ClassifierModel(
-        id: "liquid/d1",
-        name: "LiquidAI: d1",
-        api: .typesafeSystemOne,
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        input: [.text, .image],
-        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
-        contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "liquid/d1-ultra": ClassifierModel(
@@ -243,6 +265,28 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "liquid/d1.2": ClassifierModel(
+        id: "liquid/d1.2",
+        name: "LiquidAI: d1.2",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "liquid/d1.2-ultra": ClassifierModel(
+        id: "liquid/d1.2-ultra",
+        name: "LiquidAI: d1.2-ultra",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "microsoft/microsoft-decision-1": ClassifierModel(
         id: "microsoft/microsoft-decision-1",
         name: "Microsoft: Microsoft-Decision-1",
@@ -250,6 +294,17 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 32768,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "microsoft/microsoft-decision-1.1": ClassifierModel(
+        id: "microsoft/microsoft-decision-1.1",
+        name: "Microsoft: Microsoft-Decision-1.1",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32768,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
@@ -320,9 +375,9 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 1050000,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
-    "parallel/decisions-fast:free": ClassifierModel(
-        id: "parallel/decisions-fast:free",
-        name: "Parallel: Decisions Fast (free)",
+    "parallel/decisions-fast": ClassifierModel(
+        id: "parallel/decisions-fast",
+        name: "Parallel: Decisions Fast",
         api: .typesafeSystemOne,
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
@@ -342,6 +397,17 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         contextWindow: 262144,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
+    "perplexity/pplx-decider-flash-v1.3:free": ClassifierModel(
+        id: "perplexity/pplx-decider-flash-v1.3:free",
+        name: "Perplexity: Decider Flash V1.3 (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
     "perplexity/pplx-decider-v1.2": ClassifierModel(
         id: "perplexity/pplx-decider-v1.2",
         name: "Perplexity: Decider V1.2",
@@ -350,6 +416,17 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
         cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144,
+        compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
+    ),
+    "perplexity/pplx-decider-v1.3:free": ClassifierModel(
+        id: "perplexity/pplx-decider-v1.3:free",
+        name: "Perplexity: Decider V1.3 (free)",
+        api: .typesafeSystemOne,
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        input: [.text, .image],
+        cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -470,7 +547,7 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0.02, cacheWrite: 0),
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
@@ -481,8 +558,8 @@ private let providerModels_classifier_openrouter: [String: ClassifierModel] = [
         provider: "openrouter",
         baseUrl: "https://openrouter.ai/api/v1",
         input: [.text, .image],
-        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0.042, cacheWrite: 0),
-        contextWindow: 32768,
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536,
         compat: SystemOneCompat(imageInput: .stateImageURLs, sendImageOptInHeader: false)
     ),
     "~perplexity/pplx-decider-flash-latest": ClassifierModel(
@@ -575,6 +652,36 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         cost: ModelCost(input: 0.0105, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 8192
     ),
+    "google/gemini-decision-1": ClassifierModel(
+        id: "google/gemini-decision-1",
+        name: "Gemini Decision 1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.1, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "heygen/heygen-decision-1": ClassifierModel(
+        id: "heygen/heygen-decision-1",
+        name: "HeyGen Decision 1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.14, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 131072
+    ),
+    "heygen/heygen-decision-1-turbo": ClassifierModel(
+        id: "heygen/heygen-decision-1-turbo",
+        name: "HeyGen Decision 1 Turbo",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
     "liquid/d1": ClassifierModel(
         id: "liquid/d1",
         name: "Liquid d1",
@@ -595,6 +702,36 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32768
     ),
+    "liquid/d1.2": ClassifierModel(
+        id: "liquid/d1.2",
+        name: "Liquid d1.2",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
+    "liquid/d1.2-ultra": ClassifierModel(
+        id: "liquid/d1.2-ultra",
+        name: "Liquid d1.2 Ultra",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 65536
+    ),
+    "microsoft/decision-1.1": ClassifierModel(
+        id: "microsoft/decision-1.1",
+        name: "Decision-1.1",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 4096
+    ),
     "microsoft/microsoft-decision-1": ClassifierModel(
         id: "microsoft/microsoft-decision-1",
         name: "Decision-1",
@@ -604,6 +741,16 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         input: [.text],
         cost: ModelCost(input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 32768
+    ),
+    "modaic/mo": ClassifierModel(
+        id: "modaic/mo",
+        name: "Mo",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
     ),
     "nace-ai/drex-max-finance": ClassifierModel(
         id: "nace-ai/drex-max-finance",
@@ -665,9 +812,29 @@ private let providerModels_classifier_vercel_ai_gateway: [String: ClassifierMode
         cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
         contextWindow: 262144
     ),
+    "perplexity/pplx-decider-flash-v1.3": ClassifierModel(
+        id: "perplexity/pplx-decider-flash-v1.3",
+        name: "Decider Flash V1.3",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
     "perplexity/pplx-decider-v1.2": ClassifierModel(
         id: "perplexity/pplx-decider-v1.2",
         name: "Decider V1.2 27B",
+        api: .typesafeSystemOne,
+        provider: "vercel-ai-gateway",
+        baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",
+        input: [.text],
+        cost: ModelCost(input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0),
+        contextWindow: 262144
+    ),
+    "perplexity/pplx-decider-v1.3": ClassifierModel(
+        id: "perplexity/pplx-decider-v1.3",
+        name: "Decider V1.3",
         api: .typesafeSystemOne,
         provider: "vercel-ai-gateway",
         baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1",

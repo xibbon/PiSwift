@@ -162,6 +162,7 @@ import PiSwiftChord
         control.open("rejected")
         try await harnessEventually { control.rejections.count > 0 }
         try await harnessEventually { retentionSizes(harness)["dropQueue"] == 0 }
+        try await harnessEventually { retentionSizes(harness) == baseline }
         #expect(retentionSizes(harness) == baseline)
         try await harness.close(context: .background)
     }

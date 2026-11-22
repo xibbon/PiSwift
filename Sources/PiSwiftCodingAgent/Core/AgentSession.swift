@@ -98,6 +98,8 @@ public struct AgentSessionConfig: Sendable {
     /// Runs user `!` commands when `executeBash` gets no operations. When nil, they use
     /// `BashExecutorRegistry`. Wired by `createAgentSession()` from its `bashOperations`.
     public var bashOperations: BashOperations?
+    /// Additional diagnostics collected while constructing this session.
+    public var diagnostics: [ResourceDiagnostic]
 
     public init(
         agent: Agent,
@@ -128,7 +130,8 @@ public struct AgentSessionConfig: Sendable {
         reloadExtensionsHook: (@Sendable () async -> LoadExtensionsResult)? = nil,
         wrapExtensionTools: (@Sendable ([CustomTool]) -> [AgentTool])? = nil,
         bashOperations: BashOperations? = nil,
-        clientIdentityProvider: ClientIdentityProvider? = nil
+        clientIdentityProvider: ClientIdentityProvider? = nil,
+        diagnostics: [ResourceDiagnostic] = []
     ) {
         self.agent = agent
         self.sessionManager = sessionManager
@@ -158,6 +161,7 @@ public struct AgentSessionConfig: Sendable {
         self.rebuildSystemPrompt = rebuildSystemPrompt
         self.reloadExtensionsHook = reloadExtensionsHook
         self.wrapExtensionTools = wrapExtensionTools
+        self.diagnostics = diagnostics
         self.bashOperations = bashOperations
     }
 }
@@ -413,6 +417,8 @@ public final class AgentSession: Sendable {
 
     private let bashOperations: BashOperations?
     private let state: LockedState<State>
+    private let configuredCreationDiagnostics: [ResourceDiagnostic]
+    private let replacementDiagnosticState = LockedState(ReplacementDiagnosticState())
 
     /// Serial queue for agent event processing.
     /// Ensures tool call/result interception from extensions happens in order.
@@ -472,6 +478,13 @@ public final class AgentSession: Sendable {
         var errorDescription: String? { message }
     }
 
+    private struct ReplacementDiagnosticState: Sendable {
+        var diagnostics: [ResourceDiagnostic] = []
+        var resolvesModelScope = false
+        var modelPatterns: [String]?
+        var readSettings: (@Sendable () async -> SettingsManager)?
+    }
+
     private struct State: Sendable {
         var hookRunner: HookRunner?
         var hookEventObservers: [UUID: @Sendable (any HookEvent) -> Void] = [:]
@@ -522,6 +535,8 @@ public final class AgentSession: Sendable {
         var runSystemPromptAppend: String?
         var systemPromptOptions: BuildSystemPromptOptions
         var pendingToolNames: Set<String> = []
+        /// The restored or reloaded tools to which the pending names belong.
+        var restoredToolNames: Set<String> = []
         var addedDefaultToolNames: [String] = []
         var usesDefaultTools: Bool
         var defaultToolModifiers: [String]
@@ -655,6 +670,28 @@ public final class AgentSession: Sendable {
 
     public var resourceLoader: ResourceLoader {
         state.withLock { $0.resourceLoader }
+    }
+
+    /// Diagnostics for the current session's creation, including resources added at start.
+    var creationDiagnostics: [ResourceDiagnostic] {
+        let loader = resourceLoader
+        return deduplicateDiagnostics(
+            replacementDiagnosticState.withLock { $0.diagnostics } + configuredCreationDiagnostics
+                + loader.getExtensions().diagnostics + loader.getSkills().diagnostics
+                + loader.getPrompts().diagnostics + loader.getThemes().diagnostics
+        )
+    }
+
+    func configureReplacementDiagnostics(
+        _ diagnostics: [ResourceDiagnostic],
+        resolvesModelScope: Bool,
+        modelPatterns: [String]?,
+        readSettings: (@Sendable () async -> SettingsManager)?
+    ) {
+        replacementDiagnosticState.withLock {
+            $0 = ReplacementDiagnosticState(diagnostics: diagnostics, resolvesModelScope: resolvesModelScope,
+                                            modelPatterns: modelPatterns, readSettings: readSettings)
+        }
     }
 
     private var unsubscribeAgent: (@Sendable () -> Void)? {
@@ -928,6 +965,7 @@ public final class AgentSession: Sendable {
         self.eventBus = config.eventBus ?? createEventBus()
         self.projectTrusted = config.projectTrusted
         self.bashOperations = config.bashOperations
+        self.configuredCreationDiagnostics = config.diagnostics
         self.agent.sessionId = config.sessionManager.getSessionId()
         self.state = LockedState(State(
             hookRunner: config.hookRunner,
@@ -1141,7 +1179,7 @@ public final class AgentSession: Sendable {
             isProjectTrusted: { config.projectTrusted },
             sendMessageHandler: { [weak self] message, options in self?.enqueueHookMessage(message, options: options) },
             appendEntryHandler: { [weak self] customType, data in
-                self?.sessionManager.appendCustomEntry(customType, data)
+                _ = self?.appendExtensionEntry(customType, data)
             },
             setSessionNameHandler: { [weak self] name in
                 self?.sessionManager.appendSessionInfo(name)
@@ -1238,6 +1276,11 @@ public final class AgentSession: Sendable {
             abort: { [weak self] in Task { await self?.abort() } },
             hasUI: false
         )
+        self._hookRunner?.markExtensionsUnbound()
+        self._hookRunner?.setAfterSessionStart { [weak self] event in
+            guard let self else { return }
+            await self.extendResourcesFromExtensions(reason: event.reason == .reload ? .reload : .startup)
+        }
 
         self.unsubscribeAgent = agent.subscribe { [weak self] event, _ in
             self?.handleAgentEvent(event)
@@ -1251,6 +1294,22 @@ public final class AgentSession: Sendable {
         } else {
             setActiveToolsByName(agent.tools.map(\.name))
         }
+    }
+
+    /// Start bound extensions after the host subscribes to session events.
+    /// Resource discovery runs after the session_start handlers finish.
+    public func startExtensions(_ event: SessionStartEvent = SessionStartEvent()) async {
+        guard let hookRunner = _hookRunner else { return }
+        _ = await hookRunner.emit(event)
+    }
+
+    /// Persist an extension entry and notify subscribers in the same operation.
+    /// Hosts that override the runner's appendEntryHandler should call this method.
+    @discardableResult
+    public func appendExtensionEntry(_ customType: String, _ data: [String: Any]) -> String {
+        let id = sessionManager.appendCustomEntry(customType, data)
+        if let entry = sessionManager.getEntry(id) { emit(.entryAppended(entry)) }
+        return id
     }
 
     public func dispose() {
@@ -2377,8 +2436,10 @@ public final class AgentSession: Sendable {
         let previous = getActiveToolNames()
         setActiveTools(toolNames)
         let active = Set(getActiveToolNames())
-        if previous.contains(where: { !active.contains($0) }) {
-            state.withLock { $0.pendingToolNames.removeAll() }
+        state.withLock { current in
+            if previous.contains(where: { !active.contains($0) && current.restoredToolNames.contains($0) }) {
+                current.pendingToolNames.removeAll()
+            }
         }
     }
 
@@ -2390,14 +2451,11 @@ public final class AgentSession: Sendable {
         }
     }
 
-    private func restoreActiveTools(_ names: [String]) {
-        let pending = Set(names.filter(isAllowedTool))
-        state.withLock { $0.pendingToolNames = pending }
-        setActiveTools(names)
-    }
-
     private func restoreToolsFromTranscript(modifiers: [String] = []) {
-        state.withLock { $0.pendingToolNames.removeAll() }
+        state.withLock { current in
+            current.pendingToolNames.removeAll()
+            current.restoredToolNames.removeAll()
+        }
         // Replay raw branch deltas, including changes before compaction (bd3c9b823).
         let systems = sessionManager.getBranch().compactMap { entry -> AgentMessage? in
             guard case .message(let entry) = entry, case .system = entry.message else { return nil }
@@ -2411,8 +2469,15 @@ public final class AgentSession: Sendable {
         let newTools = toolRegistryOrder.filter { name in
             !mentioned.contains(name) && ToolName(rawValue: name) == nil && isActivatedOnRestore(name)
         }
-        let names = applyToolModifiers(base: getCurrentTools(systems).map(\.name) + newTools, entries: modifiers)
-        restoreActiveTools(names)
+        let recordedNames = getCurrentTools(systems).map(\.name)
+        let names = applyToolModifiers(base: recordedNames + newTools, entries: modifiers)
+        let pending = Set(names.filter(isAllowedTool))
+        let restored = Set(applyToolModifiers(base: recordedNames, entries: modifiers))
+        state.withLock { current in
+            current.pendingToolNames = pending
+            current.restoredToolNames = restored
+        }
+        setActiveTools(names)
         let activeNames = getActiveToolNames()
         state.withLock { $0.systemPromptOptions.selectedToolNames = activeNames }
     }
@@ -2556,6 +2621,14 @@ public final class AgentSession: Sendable {
         try? await reloadChecked()
     }
 
+    /// Reload settings, extension code, and lifecycle events as one library operation.
+    /// Hosts that still call `reload()` followed by `reloadExtensions()` keep that sequence.
+    @discardableResult
+    public func reloadWithExtensions() async throws -> ReloadExtensionsResult {
+        try await reloadChecked()
+        return await reloadExtensions()
+    }
+
     /// Reload with upstream's active-operation errors. Hosts should call this entry point.
     public func reloadChecked() async throws {
         if isStreaming { throw AgentSessionError.reloadDuringResponse }
@@ -2618,7 +2691,10 @@ public final class AgentSession: Sendable {
             return ReloadExtensionsResult(droppedPaths: [], loadedPaths: [], errors: [])
         }
         let activeBeforeReload = getActiveToolNames()
-        state.withLock { $0.pendingToolNames.formUnion(activeBeforeReload) }
+        state.withLock { current in
+            current.pendingToolNames.formUnion(activeBeforeReload)
+            current.restoredToolNames = Set(activeBeforeReload)
+        }
         guard let hookRunner = _hookRunner, let reloadHook = reloadExtensionsHookInternal else {
             applyReloadToolNames()
             return ReloadExtensionsResult(droppedPaths: [], loadedPaths: [], errors: [])
@@ -2695,9 +2771,11 @@ public final class AgentSession: Sendable {
 
         applyReloadToolNames()
 
-        // 6. Notify the freshly-loaded extensions.
-        await hookRunner.emitToExtensions(SessionStartEvent(reason: .reload))
-        await extendResourcesFromExtensions(reason: .reload)
+        // 6. Notify the freshly-loaded extensions only after a host has bound them.
+        if hookRunner.extensionsBound {
+            await hookRunner.emitToExtensions(SessionStartEvent(reason: .reload))
+            await extendResourcesFromExtensions(reason: .reload)
+        }
 
         return ReloadExtensionsResult(
             droppedPaths: dropped,
@@ -2722,9 +2800,8 @@ public final class AgentSession: Sendable {
             return
         }
 
-        let extensionResources = hookRunner.hasHandlers("resources_discover")
-            ? await hookRunner.emitResourcesDiscover(cwd: sessionManager.getCwd(), reason: reason)
-            : ResourceExtensionPaths()
+        guard hookRunner.hasHandlers("resources_discover") else { return }
+        let extensionResources = await hookRunner.emitResourcesDiscover(cwd: sessionManager.getCwd(), reason: reason)
 
         resourceLoader.extendResources(extensionResources)
         promptTemplatesInternal = resourceLoader.getPrompts().prompts
@@ -3258,6 +3335,7 @@ public final class AgentSession: Sendable {
         steeringMessages.removeAll()
         followUpMessages.removeAll()
         pendingNextTurnMessages.removeAll()
+        await refreshCreationDiagnostics()
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(SessionStartEvent(reason: .new, previousSessionFile: previousSession))
         }
@@ -3286,10 +3364,11 @@ public final class AgentSession: Sendable {
         pendingNextTurnMessages.removeAll()
         sessionManager.setSessionFile(sessionPath, cwdOverride: cwdOverride)
         agent.sessionId = sessionManager.getSessionId()
+        let restoredModel = await refreshCreationDiagnostics(restoringModel: true)
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(SessionStartEvent(reason: .resume, previousSessionFile: previousSession))
         }
-        await syncAgentContext()
+        await syncAgentContext(modelRestore: .prepared(restoredModel))
         await emitCustomToolSessionEvent(.switch, previousSessionFile: previousSession)
         return true
     }
@@ -3578,7 +3657,12 @@ public final class AgentSession: Sendable {
     public func getLastAssistantText() -> String? {
         let lastAssistant = agent.state.messages.reversed().first { message in
             if case .assistant(let assistant) = message {
-                return !(assistant.stopReason == .aborted && assistant.content.isEmpty)
+                return assistant.stopReason == .stop || assistant.content.contains { block in
+                    if case .text(let text) = block {
+                        return !text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
+                    return false
+                }
             }
             return false
         }
@@ -3622,7 +3706,7 @@ public final class AgentSession: Sendable {
         let previousSession = sessionFile
 
         if let hookRunner = _hookRunner, hookRunner.hasHandlers("session_before_fork") {
-            if let result = await hookRunner.emit(SessionBeforeForkEvent(entryId: leafId)) as? SessionBeforeForkResult,
+            if let result = await hookRunner.emit(SessionBeforeForkEvent(entryId: leafId, position: .at)) as? SessionBeforeForkResult,
                result.cancel {
                 return false
             }
@@ -3638,6 +3722,7 @@ public final class AgentSession: Sendable {
             throw AgentSessionError.invalidEntryIdForForking
         }
         agent.sessionId = sessionManager.getSessionId()
+        let restoredModel = await refreshCreationDiagnostics(restoringModel: true)
 
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(SessionStartEvent(reason: .fork, previousSessionFile: previousSession))
@@ -3645,7 +3730,7 @@ public final class AgentSession: Sendable {
 
         await emitCustomToolSessionEvent(.fork, previousSessionFile: previousSession)
         pendingNextTurnMessages.removeAll()
-        await syncAgentContext()
+        await syncAgentContext(modelRestore: .prepared(restoredModel))
         return true
     }
 
@@ -3682,6 +3767,7 @@ public final class AgentSession: Sendable {
             }
         }
         agent.sessionId = sessionManager.getSessionId()
+        let restoredModel = await refreshCreationDiagnostics(restoringModel: !skipConversationRestore)
 
         if let hookRunner = _hookRunner {
             _ = await hookRunner.emit(SessionStartEvent(reason: .fork, previousSessionFile: previousSession))
@@ -3691,7 +3777,7 @@ public final class AgentSession: Sendable {
         pendingNextTurnMessages.removeAll()
 
         if !skipConversationRestore {
-            await syncAgentContext()
+            await syncAgentContext(modelRestore: .prepared(restoredModel))
         }
 
         return (selectedText, false)
@@ -4126,16 +4212,56 @@ public final class AgentSession: Sendable {
         agent.messages = projection.messages
     }
 
-    private func syncAgentContext(restoreThinkingLevel: Bool = true) async {
+    @discardableResult
+    private func refreshCreationDiagnostics(restoringModel: Bool = false) async -> Model? {
+        let configuration = replacementDiagnosticState.withLock { $0 }
+        let settings = await configuration.readSettings?() ?? settingsManager
+        var diagnostics = collectSettingsDiagnostics(settings)
+        if configuration.resolvesModelScope, let patterns = configuration.modelPatterns ?? settings.getEnabledModels() {
+            let scope = await resolveModelScopeWithDiagnostics(patterns, modelRegistry)
+            setScopedModels(scope.scopedModels)
+            diagnostics += scope.resourceDiagnostics
+        }
+
+        var restoredModel: Model?
+        if restoringModel,
+           let selection = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {
+            if let savedModel = modelRegistry.find(selection.provider, selection.modelId),
+               await modelRegistry.isAvailable(savedModel) {
+                restoredModel = savedModel
+            } else if let fallback = await findSessionDefaultModel(settings, modelRegistry) {
+                restoredModel = fallback
+                diagnostics.append(ResourceDiagnostic(type: "warning", message: modelRestoreFallbackMessage(
+                    provider: selection.provider, modelID: selection.modelId, fallback: fallback)))
+            }
+        }
+
+        replacementDiagnosticState.withLock { $0.diagnostics = diagnostics }
+        return restoredModel
+    }
+
+    private enum ContextModelRestore {
+        case branch
+        case prepared(Model?)
+    }
+
+    private func syncAgentContext(restoreThinkingLevel: Bool = true, modelRestore: ContextModelRestore = .branch) async {
         let context = sessionManager.buildSessionProjection()
         let previousModel = agent.state.model
         refreshContext(context)
         restoreToolsFromTranscript()
-        if let modelInfo = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find) {
-            if let model = modelRegistry.find(modelInfo.provider, modelInfo.modelId) {
-                agent.model = model
-                await emitModelSelect(nextModel: model, previousModel: previousModel, source: .restore)
+        let model: Model?
+        switch modelRestore {
+        case .branch:
+            model = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find).flatMap {
+                modelRegistry.find($0.provider, $0.modelId)
             }
+        case .prepared(let preparedModel):
+            model = preparedModel
+        }
+        if let model {
+            agent.model = model
+            await emitModelSelect(nextModel: model, previousModel: previousModel, source: .restore)
         }
         if restoreThinkingLevel {
             agent.thinkingLevel = ThinkingLevel(rawValue: context.thinkingLevel) ?? .off

@@ -1,0 +1,1 @@
+{"format":1,"type":"record","seq":19,"ordinal":0,"payload":{"type":"document","id":18,"content":{"kind":"base","version":1,"value":{"items":[{"id":17,"mode":"followUp","content":"answer later","onAbort":"keep"}]}}}}

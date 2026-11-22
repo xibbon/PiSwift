@@ -11,6 +11,8 @@ public final class HarnessChatSetup: Sendable {
     public let registry: Registry
     /// Errors captured from concurrent test handlers.
     public let reports = HarnessReports()
+    /// Tagged reports, including host callback identity, for integration tests.
+    public let taggedReports = Mutex<[Report]>([])
     /// The time source used for task sleeps and retry deadlines.
     public let clock: any DurableClock
     private let settingsState: Mutex<HarnessSettings>
@@ -45,7 +47,10 @@ public func openChat(storage: any DurableStorage = MemoryStorage(), setup: Harne
                      context: ChordContext = .background) async throws -> OpenChatResult {
     let harness = try await Harness.open(storage: storage,
         options: HarnessOptions(models: models ?? setup.models, registry: setup.registry,
-            settings: setup.settingsProvider, clock: setup.clock, onReport: { setup.reports.appendReport($0) }), context: context)
+            settings: setup.settingsProvider, clock: setup.clock, onReport: { report in
+                setup.reports.appendReport(report)
+                setup.taggedReports.withLock { $0.append(report) }
+            }), context: context)
     let root = try await harness.root(options: .init(agent: AgentChange(model: .set(ModelRef(provider: "faux", modelId: "faux-1")))), context: context)
     return OpenChatResult(harness: harness, root: root)
 }

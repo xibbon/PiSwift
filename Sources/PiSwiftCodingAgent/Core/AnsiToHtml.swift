@@ -98,27 +98,73 @@ private struct HtmlAnsiStyle {
     }
 }
 
-/// Convert ANSI SGR text to HTML. Other escape sequences remain in the text.
+private let htmlEscapeRegex = try! NSRegularExpression(
+    pattern: "\u{1b}\\[([0-9;]*)m|\u{1b}\\[[0-?]*[ -/]*[@-~]|\u{1b}\\]([^\u{07}\u{1b}]*)(?:\u{07}|\u{1b}\\\\)|\u{1b}_[^\u{07}\u{1b}]*(?:\u{07}|\u{1b}\\\\)"
+)
+
+/// Remove terminal controls recognized by the HTML converter.
+public func stripAnsiEscapes(_ text: String) -> String {
+    let range = NSRange(location: 0, length: (text as NSString).length)
+    return htmlEscapeRegex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+        .replacingOccurrences(of: "\u{1b}", with: "")
+}
+
+/// Convert SGR and safe OSC 8 hyperlinks to HTML.
 public func ansiToHtml(_ text: String) -> String {
-    let regex = try! NSRegularExpression(pattern: "\u{1b}\\[([0-9;]*)m")
     let source = text as NSString
     var style = HtmlAnsiStyle()
     var result = ""
     var lastIndex = 0
     var inSpan = false
-    for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
-        result += escapeAnsiHtml(source.substring(with: NSRange(location: lastIndex, length: match.range.location - lastIndex)))
-        let parameters = source.substring(with: match.range(at: 1))
-        let params: [Double] = parameters.isEmpty ? [0] : parameters.components(separatedBy: ";").map { Double($0) ?? 0 }
-        if inSpan { result += "</span>" }
-        style.apply(params)
+    var inLink = false
+    func cleaned(_ raw: String) -> String {
+        escapeAnsiHtml(raw.replacingOccurrences(of: "\u{1b}", with: ""))
+    }
+    func safeURL(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = String(trimmed.unicodeScalars.filter { $0.value > 31 && $0.value != 127 })
+        let lower = cleaned.lowercased()
+        return lower.hasPrefix("http:") || lower.hasPrefix("https:") || lower.hasPrefix("mailto:") ? cleaned : nil
+    }
+    func openSpan() {
         let css = style.css
-        inSpan = !css.isEmpty
-        if inSpan { result += "<span style=\"\(css)\">" }
+        if !css.isEmpty {
+            result += "<span style=\"\(css)\">"
+            inSpan = true
+        }
+    }
+    func closeSpan() {
+        if inSpan {
+            result += "</span>"
+            inSpan = false
+        }
+    }
+    for match in htmlEscapeRegex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+        result += cleaned(source.substring(with: NSRange(location: lastIndex, length: match.range.location - lastIndex)))
+        if match.range(at: 1).location != NSNotFound {
+            let parameters = source.substring(with: match.range(at: 1))
+            let params: [Double] = parameters.isEmpty ? [0] : parameters.components(separatedBy: ";").map { Double($0) ?? 0 }
+            closeSpan()
+            style.apply(params)
+            openSpan()
+        } else if match.range(at: 2).location != NSNotFound {
+            let payload = source.substring(with: match.range(at: 2))
+            if payload.hasPrefix("8;"), let separator = payload.dropFirst(2).firstIndex(of: ";") {
+                let url = String(payload[payload.index(after: separator)...])
+                closeSpan()
+                if inLink { result += "</a>"; inLink = false }
+                if let safe = safeURL(url) {
+                    result += "<a href=\"\(escapeAnsiHtml(safe))\">"
+                    inLink = true
+                }
+                openSpan()
+            }
+        }
         lastIndex = NSMaxRange(match.range)
     }
-    result += escapeAnsiHtml(source.substring(from: lastIndex))
-    if inSpan { result += "</span>" }
+    result += cleaned(source.substring(from: lastIndex))
+    closeSpan()
+    if inLink { result += "</a>" }
     return result
 }
 

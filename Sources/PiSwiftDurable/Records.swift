@@ -295,6 +295,74 @@ public enum JoinPolicy: String, Sendable, Equatable, Codable {
     case failFast
     /// Waits for every joined task, including failed tasks.
     case allSettled
+    /// Resumes when at least one joined task ends.
+    case any
+}
+
+/// One signal name and key stored on a sleeping task.
+public struct SignalKey: Sendable, Equatable, Codable {
+    public let signal: String
+    public let key: String
+    public let extensionFields: JSONObject
+    public init(signal: String, key: String, extensionFields: JSONObject = [:]) {
+        self.signal = signal; self.key = key; self.extensionFields = extensionFields
+    }
+    public init(from decoder: any Decoder) throws {
+        let object = try recordObject(decoder)
+        signal = try recordRequired(object, "signal")
+        key = try recordRequired(object, "key")
+        extensionFields = recordExtensions(object, excluding: ["signal", "key"])
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var object = extensionFields
+        try recordSet(&object, "signal", signal)
+        try recordSet(&object, "key", key)
+        try object.encode(to: encoder)
+    }
+}
+
+/// Why a pending or running task resumed after a sleep or wait.
+public enum WakeReason: Sendable, Equatable, Codable {
+    case time(extensions: JSONObject = [:])
+    case expired(extensions: JSONObject = [:])
+    case signal(signal: String, key: String, extensions: JSONObject = [:])
+    case tasks(ended: [TaskID], extensions: JSONObject = [:])
+
+    public init(from decoder: any Decoder) throws {
+        let object = try recordObject(decoder)
+        let reason: String = try recordRequired(object, "reason")
+        switch reason {
+        case "time":
+            try recordForbid(object, ["signal", "key", "ended"])
+            self = .time(extensions: recordExtensions(object, excluding: ["reason"]))
+        case "expired":
+            try recordForbid(object, ["signal", "key", "ended"])
+            self = .expired(extensions: recordExtensions(object, excluding: ["reason"]))
+        case "signal":
+            try recordForbid(object, ["ended"])
+            self = .signal(signal: try recordRequired(object, "signal"), key: try recordRequired(object, "key"),
+                           extensions: recordExtensions(object, excluding: ["reason", "signal", "key"]))
+        case "tasks":
+            try recordForbid(object, ["signal", "key"])
+            self = .tasks(ended: try recordRequired(object, "ended"),
+                          extensions: recordExtensions(object, excluding: ["reason", "ended"]))
+        default: throw recordUnknown("wake reason", reason)
+        }
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var object: JSONObject
+        switch self {
+        case .time(let fields): object = fields; object["reason"] = "time"; try recordForbid(object, ["signal", "key", "ended"])
+        case .expired(let fields): object = fields; object["reason"] = "expired"; try recordForbid(object, ["signal", "key", "ended"])
+        case let .signal(signal, key, fields):
+            object = fields; object["reason"] = "signal"; try recordForbid(object, ["ended"])
+            try recordSet(&object, "signal", signal); try recordSet(&object, "key", key)
+        case let .tasks(ended, fields):
+            object = fields; object["reason"] = "tasks"; try recordForbid(object, ["signal", "key"])
+            try recordSet(&object, "ended", ended)
+        }
+        try object.encode(to: encoder)
+    }
 }
 
 /// A conversation owns a top-level task; a task owns a child task in the same conversation.
@@ -439,8 +507,8 @@ public enum TaskState: Sendable, Equatable, Codable {
     case running(checkpoint: JSONValue, extensions: JSONObject = [:])
     /// Work waits for the selected tasks under its join policy.
     case waiting(checkpoint: JSONValue, on: [TaskID], policy: JoinPolicy, extensions: JSONObject = [:])
-    /// Work waits until the Harness clock reaches the saved time in milliseconds.
-    case sleeping(checkpoint: JSONValue, until: Double, extensions: JSONObject = [:])
+    /// Work waits for a deadline, one or more signals, or both.
+    case sleeping(checkpoint: JSONValue, until: Double?, extensions: JSONObject = [:])
     /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: TaskOutcome, extensions: JSONObject = [:])
     /// The task has a final outcome and cannot execute again.
@@ -456,21 +524,45 @@ public enum TaskState: Sendable, Equatable, Codable {
         case .terminal: "terminal"
         }
     }
+    /// The wake retained on a pending or running task until its next checkpoint.
+    public func wakeReason() throws -> WakeReason? {
+        switch self {
+        case .pending(_, let fields), .running(_, let fields): return try recordOptional(fields, "wake")
+        default: return nil
+        }
+    }
+    /// The keys named by a sleep, if it waits for signals.
+    public func sleepSignals() throws -> [SignalKey]? {
+        guard case .sleeping(_, _, let fields) = self else { return nil }
+        return try recordOptional(fields, "signals")
+    }
+    /// Creates a signal sleep with a typed signal list.
+    public static func sleeping(checkpoint: JSONValue, until: Double?, signals: [SignalKey]) throws -> Self {
+        try validateSleep(until: until, signals: signals)
+        return .sleeping(checkpoint: checkpoint, until: until, extensions: ["signals": try JSONValue(encoding: signals)])
+    }
     /// Decodes this value from its durable JSON representation.
     public init(from decoder: any Decoder) throws {
         let object = try recordObject(decoder)
         let tag: String = try recordRequired(object, "status")
         switch tag {
-        case "pending": try recordForbid(object, ["on", "outcome", "policy", "until"]); self = .pending(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
-        case "running": try recordForbid(object, ["on", "outcome", "policy", "until"]); self = .running(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
-        case "waiting": try recordForbid(object, ["outcome", "until"]); self = .waiting(checkpoint: try recordRequired(object, "checkpoint"), on: try recordRequired(object, "on"), policy: try recordRequired(object, "policy"), extensions: recordExtensions(object, excluding: ["status", "checkpoint", "on", "policy"]))
+        case "pending":
+            try recordForbid(object, ["on", "outcome", "policy", "until", "signals"])
+            let _: WakeReason? = try recordOptional(object, "wake")
+            self = .pending(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
+        case "running":
+            try recordForbid(object, ["on", "outcome", "policy", "until", "signals"])
+            let _: WakeReason? = try recordOptional(object, "wake")
+            self = .running(checkpoint: try recordRequired(object, "checkpoint"), extensions: recordExtensions(object, excluding: ["status", "checkpoint"]))
+        case "waiting": try recordForbid(object, ["outcome", "until", "wake", "signals"]); self = .waiting(checkpoint: try recordRequired(object, "checkpoint"), on: try recordRequired(object, "on"), policy: try recordRequired(object, "policy"), extensions: recordExtensions(object, excluding: ["status", "checkpoint", "on", "policy"]))
         case "sleeping":
-            try recordForbid(object, ["on", "outcome", "policy"])
-            let until: Double = try recordRequired(object, "until")
-            try recordValidateDeadline(until)
+            try recordForbid(object, ["on", "outcome", "policy", "wake"])
+            let until: Double? = try recordOptional(object, "until")
+            let signals: [SignalKey]? = try recordOptional(object, "signals")
+            try Self.validateSleep(until: until, signals: signals)
             self = .sleeping(checkpoint: try recordRequired(object, "checkpoint"), until: until, extensions: recordExtensions(object, excluding: ["status", "checkpoint", "until"]))
-        case "completing": try recordForbid(object, ["checkpoint", "on", "policy", "until"]); self = .completing(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
-        case "terminal": try recordForbid(object, ["checkpoint", "on", "policy", "until"]); self = .terminal(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
+        case "completing": try recordForbid(object, ["checkpoint", "on", "policy", "until", "wake", "signals"]); self = .completing(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
+        case "terminal": try recordForbid(object, ["checkpoint", "on", "policy", "until", "wake", "signals"]); self = .terminal(outcome: try recordRequired(object, "outcome"), extensions: recordExtensions(object, excluding: ["status", "outcome"]))
         default: throw recordUnknown("status", tag)
         }
     }
@@ -481,39 +573,47 @@ public enum TaskState: Sendable, Equatable, Codable {
         case let .pending(checkpoint, extensions):
             object = extensions
             object["status"] = .string("pending")
-            try recordForbid(object, ["on", "outcome", "policy", "until"])
+            try recordForbid(object, ["on", "outcome", "policy", "until", "signals"])
+            let _: WakeReason? = try recordOptional(object, "wake")
             try recordSet(&object, "checkpoint", checkpoint)
         case let .running(checkpoint, extensions):
             object = extensions
             object["status"] = .string("running")
-            try recordForbid(object, ["on", "outcome", "policy", "until"])
+            try recordForbid(object, ["on", "outcome", "policy", "until", "signals"])
+            let _: WakeReason? = try recordOptional(object, "wake")
             try recordSet(&object, "checkpoint", checkpoint)
         case let .waiting(checkpoint, on, policy, extensions):
             object = extensions
             object["status"] = .string("waiting")
-            try recordForbid(object, ["outcome", "until"])
+            try recordForbid(object, ["outcome", "until", "wake", "signals"])
             try recordSet(&object, "checkpoint", checkpoint)
             try recordSet(&object, "on", on)
             try recordSet(&object, "policy", policy)
         case let .sleeping(checkpoint, until, extensions):
-            try recordValidateDeadline(until)
+            let signals: [SignalKey]? = try recordOptional(extensions, "signals")
+            try Self.validateSleep(until: until, signals: signals)
             object = extensions
             object["status"] = .string("sleeping")
-            try recordForbid(object, ["on", "outcome", "policy"])
+            try recordForbid(object, ["on", "outcome", "policy", "wake"])
             try recordSet(&object, "checkpoint", checkpoint)
-            try recordSet(&object, "until", until)
+            try recordSetOptional(&object, "until", until)
         case let .completing(outcome, extensions):
             object = extensions
             object["status"] = .string("completing")
-            try recordForbid(object, ["checkpoint", "on", "policy", "until"])
+            try recordForbid(object, ["checkpoint", "on", "policy", "until", "wake", "signals"])
             try recordSet(&object, "outcome", outcome)
         case let .terminal(outcome, extensions):
             object = extensions
             object["status"] = .string("terminal")
-            try recordForbid(object, ["checkpoint", "on", "policy", "until"])
+            try recordForbid(object, ["checkpoint", "on", "policy", "until", "wake", "signals"])
             try recordSet(&object, "outcome", outcome)
         }
         try object.encode(to: encoder)
+    }
+    private static func validateSleep(until: Double?, signals: [SignalKey]?) throws {
+        if let until { try recordValidateDeadline(until) }
+        if let signals, signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
+        if until == nil && signals == nil { throw recordUnknown("sleep", "missing until and signals") }
     }
 }
 
@@ -818,6 +918,28 @@ public enum ContinueSubmissionState: Sendable, Equatable, Codable {
     }
 }
 
+/// Task and key notified when a submission settles.
+public struct SubmissionNotify: Sendable, Equatable, Codable {
+    public let taskId: TaskID
+    public let key: String
+    public let extensionFields: JSONObject
+    public init(taskId: TaskID, key: String, extensionFields: JSONObject = [:]) {
+        self.taskId = taskId; self.key = key; self.extensionFields = extensionFields
+    }
+    public init(from decoder: any Decoder) throws {
+        let object = try recordObject(decoder)
+        taskId = try recordRequired(object, "taskId")
+        key = try recordRequired(object, "key")
+        extensionFields = recordExtensions(object, excluding: ["taskId", "key"])
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var object = extensionFields
+        try recordSet(&object, "taskId", taskId)
+        try recordSet(&object, "key", key)
+        try object.encode(to: encoder)
+    }
+}
+
 /// Durable lifecycle of admitted input, a passive write, or a continued run. JSON uses flat type and status fields.
 public enum SubmissionRecord: Sendable, Equatable, Codable {
     /// Stores user content and its admission policy.
@@ -837,6 +959,18 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
     /// An optional conversation-scoped key that makes request admission idempotent.
     public var requestId: String? {
         switch self { case .input(_, _, let value, _), .write(_, _, let value, _), .continue(_, _, let value, _): value }
+    }
+    /// The signal target retained with this submission until settlement.
+    public var notify: SubmissionNotify? {
+        get throws {
+            let fields: JSONObject
+            switch self {
+            case .input(_, _, _, let state): fields = try JSONValue(encoding: state).decode()
+            case .write(_, _, _, let state): fields = try JSONValue(encoding: state).decode()
+            case .continue(_, _, _, let state): fields = try JSONValue(encoding: state).decode()
+            }
+            return try recordOptional(fields, "notify")
+        }
     }
     /// The carrier of the admission context, when propagation is available.
     public var trace: [String: String]? {
@@ -872,6 +1006,7 @@ public enum SubmissionRecord: Sendable, Equatable, Codable {
         let id: SubmissionID = try recordRequired(object, "id")
         let conversationId: ConversationID = try recordRequired(object, "conversationId")
         let requestId: String? = try recordOptional(object, "requestId")
+        let _: SubmissionNotify? = try recordOptional(object, "notify")
         let _: [String: String]? = try recordOptional(object, "trace")
         for key in ["type", "id", "conversationId", "requestId"] { object[key] = nil }
         switch type {

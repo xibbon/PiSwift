@@ -97,6 +97,9 @@ private struct MissingToolClock: Error, Sendable {}
 /// Tool operations bound to a task invocation.
 public struct ToolExecutionApi: Sendable {
     internal var nestedCalls: NestedToolCalls?
+    internal var baseParks = ToolBaseParks()
+    internal var cancelOnly = false
+    internal var cancelToolName: String?
     internal var abandonCreatedTasks = false
     internal var pendingDetailsCount: @Sendable () -> Int = { 0 }
     /// The optional task runtime bound to this tool invocation.
@@ -107,6 +110,10 @@ public struct ToolExecutionApi: Sendable {
     public var conversationId: ConversationID
     /// The model-supplied identifier of the tool call.
     public var callId: String
+    /// Why this run started after a park. Nil on the first run and in cancel.
+    public var wake: WakeReason?
+    /// The last park's saved value. Nil if no value was saved.
+    public var checkpoint: JSONValue?
     /// The installed extension and task definitions used by this harness.
     public var registry: RegistrySnapshot
     /// The agent configuration used for this conversation.
@@ -135,10 +142,19 @@ public struct ToolExecutionApi: Sendable {
     public var details: @Sendable (JSONValue, ChordContext) async throws -> Void
     /// A nil candidate reads; a supplied candidate installs only when no value exists.
     public var memo: @Sendable (String, JSONValue?, ChordContext) async throws -> JSONValue?
+    /// Reads a committed signal key in this tool's task.
+    public func readSignal<Value: Codable & Sendable>(
+        _ token: SignalToken<Value>, key: String, context: ChordContext
+    ) async throws -> SignalState<Value>? {
+        let name = signalMemoName(token.name, key)
+        let stored = try await memo(name, nil, context)
+        return try PiSwiftDurable.readSignal(token, key: key, memos: stored.map { [name: $0] })
+    }
     /// Binds tool services and publication callbacks to one task invocation.
     public init(taskId: TaskID, conversationId: ConversationID, callId: String, registry: RegistrySnapshot,
                 models: @autoclosure @escaping @Sendable () -> any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                 outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime? = nil,
+                wake: WakeReason? = nil, checkpoint: JSONValue? = nil,
                 now: (@Sendable () throws -> Int64)? = nil,
                 agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                 output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void = { _, _ in },
@@ -149,6 +165,7 @@ public struct ToolExecutionApi: Sendable {
         self.runtime = runtime
         self.now = now ?? { guard let runtime else { throw MissingToolClock() }; return try runtime.now() }
         self.taskId = taskId; self.conversationId = conversationId; self.callId = callId; self.registry = registry
+        self.wake = wake; self.checkpoint = checkpoint
         self.modelsProvider = models; self.env = env; self.read = read; self.outputWindow = outputWindow; self.agent = agent
         self.output = output; self.retainedOutput = retainedOutput; self.diagnostic = diagnostic; self.details = details; self.memo = memo
     }
@@ -156,6 +173,7 @@ public struct ToolExecutionApi: Sendable {
                   models: @autoclosure @escaping @Sendable () -> any DurableModels, env: (any ExecutionEnv)? = nil, read: HarnessDocumentReader = .init(),
                   outputWindow: ShellOutputWindow? = nil, runtime: TaskRuntime,
                   lifetime: ToolInvocationLifetime,
+                  wake: WakeReason? = nil, checkpoint: JSONValue? = nil,
                   now: (@Sendable () throws -> Int64)? = nil,
                   agent: @escaping @Sendable (ChordContext) async throws -> Agent,
                   output: @escaping @Sendable (ToolOutputChunk, ShellOutputSkip?) throws -> Void,
@@ -168,7 +186,7 @@ public struct ToolExecutionApi: Sendable {
         }
         self.init(taskId: taskId, conversationId: conversationId, callId: callId, registry: registry,
                   models: models(), env: env, read: toolBoundReader(read, check: check),
-                  outputWindow: outputWindow, runtime: runtime,
+                  outputWindow: outputWindow, runtime: runtime, wake: wake, checkpoint: checkpoint,
                   now: { try check(); return try (now ?? { try runtime.now() })() },
                   agent: { context in try check(); return try await agent(context) },
                   output: { chunk, skipped in try lifetime.check(); try check(); try output(chunk, skipped) },
@@ -213,8 +231,28 @@ public struct ToolRegistration: Sendable {
     public var outputLimits: OutputLimitOverrides?
     /// The schema for the separate program value. This schema is not sent to the model.
     public var structuredOutputSchema: JSONObject?
+    /// Cleanup for external work left by a parked call. It cannot start children.
+    public var cancel: (@Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> Void)?
+    internal var requiresBasePark = false
     /// The caller supplies repaired and validated arguments. defineTool also checks at the typed boundary.
-    public var execute: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
+    public var executeOutcome: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionOutcome
+    /// Compatibility view for older result-only tools. A parked tool needs the Harness to resume it.
+    @available(*, deprecated, message: "Use executeOutcome and handle ToolExecutionOutcome")
+    public var execute: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult {
+        get {
+            let callback = executeOutcome
+            let toolName = name
+            return { args, api, context in
+                switch try await callback(args, api, context) {
+                case .result(let result): return result
+                case .park: throw TaskDefinitionError("Tool \(toolName) parked outside the Harness")
+                }
+            }
+        }
+        set {
+            executeOutcome = { args, api, context in .result(try await newValue(args, api, context)) }
+        }
+    }
     /// The stable name used to resolve this definition in the registry.
     public var name: String { get { declaration.name } set { declaration.name = newValue; orderedDeclaration["name"] = .string(newValue) } }
     /// Text that describes this value or error to the caller.
@@ -239,26 +277,53 @@ public struct ToolRegistration: Sendable {
                 replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
-                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
+                cancel: (@Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> Void)? = nil,
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionOutcome) throws {
         self.declaration = declaration
         self.orderedDeclaration = try orderedDeclaration ?? JSONObject([
             ("name", .string(declaration.name)), ("description", .string(declaration.description)),
             ("parameters", durableJSON(fromFoundation: declaration.parameters.mapValues(\.value)))])
         self.replay = replay; self.callers = callers; self.deferred = deferred
         self.executionMode = executionMode; self.prepareArguments = prepareArguments
-        self.outputLimits = outputLimits; self.structuredOutputSchema = structuredOutputSchema; self.execute = execute
+        self.outputLimits = outputLimits; self.structuredOutputSchema = structuredOutputSchema
+        self.cancel = cancel; self.executeOutcome = execute
     }
     /// Creates a tool declaration and its execution callback, preserving schema member order.
     public init(name: String, description: String, parameters: JSONObject,
                 replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
                 prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
                 outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
-                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
+                cancel: (@Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> Void)? = nil,
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionOutcome) throws {
         let dictionary = try foundationJSON(from: .object(parameters)) as! [String: Any]
         try self.init(declaration: AITool(name: name, description: description, parameters: dictionary.mapValues(AnyCodable.init)),
             orderedDeclaration: ["name": .string(name), "description": .string(description), "parameters": .object(parameters)],
             replay: replay, callers: callers, deferred: deferred, executionMode: executionMode, prepareArguments: prepareArguments,
-            outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema, execute: execute)
+            outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema, cancel: cancel, execute: execute)
+    }
+    /// Wraps an older result-only callback in a final outcome.
+    @available(*, deprecated, message: "Return ToolExecutionOutcome from execute")
+    public init(declaration: AITool, orderedDeclaration: JSONObject? = nil,
+                replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
+                prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
+                outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
+        try self.init(declaration: declaration, orderedDeclaration: orderedDeclaration, replay: replay, callers: callers,
+                      deferred: deferred, executionMode: executionMode, prepareArguments: prepareArguments,
+                      outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema,
+                      execute: { args, api, context -> ToolExecutionOutcome in .result(try await execute(args, api, context)) })
+    }
+    /// Wraps an older result-only callback in a final outcome.
+    @available(*, deprecated, message: "Return ToolExecutionOutcome from execute")
+    public init(name: String, description: String, parameters: JSONObject,
+                replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
+                prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
+                outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
+                execute: @escaping @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult) throws {
+        try self.init(name: name, description: description, parameters: parameters, replay: replay, callers: callers,
+                      deferred: deferred, executionMode: executionMode, prepareArguments: prepareArguments,
+                      outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema,
+                      execute: { args, api, context -> ToolExecutionOutcome in .result(try await execute(args, api, context)) })
     }
 }
 
@@ -299,20 +364,45 @@ public func defineTool<Args: Decodable & Sendable>(
     replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
     prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
     outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
-    execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
+    cancel: (@Sendable (Args, ToolExecutionApi, ChordContext) async throws -> Void)? = nil,
+    execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionOutcome
 ) throws -> ToolRegistration {
     let schema = try foundationJSON(from: .object(parameters)) as! [String: Any]
     let declaration = AITool(name: name, description: description, parameters: schema.mapValues(AnyCodable.init))
+    let cancelCallback: (@Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> Void)?
+    if let cancel {
+        cancelCallback = { value, api, context in
+            let decoded = try JSONDecoder().decode(Args.self, from: JSONEncoder().encode(value))
+            try await cancel(decoded, api, context)
+        }
+    } else { cancelCallback = nil }
+    let executeCallback: @Sendable (JSONValue, ToolExecutionApi, ChordContext) async throws -> ToolExecutionOutcome = { value, api, context in
+        guard let object = try foundationJSON(from: value) as? [String: Any] else {
+            throw HarnessDefinitionError.argumentsMustBeObject(name)
+        }
+        let call = ToolCall(id: api.callId, name: name, arguments: object.mapValues(AnyCodable.init))
+        let checked = try PiSwiftAI.validateToolArguments(tool: declaration, toolCall: call,
+            orderedParameters: OrderedJSON.parse(parameters.jsonText()))
+        let decoded = try JSONDecoder().decode(Args.self, from: JSONEncoder().encode(checked))
+        return try await execute(decoded, api, context)
+    }
     return try ToolRegistration(name: name, description: description, parameters: parameters,
         replay: replay, callers: callers, deferred: deferred, executionMode: executionMode, prepareArguments: prepareArguments,
-        outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema) { value, api, context in
-            guard let object = try foundationJSON(from: value) as? [String: Any] else {
-                throw HarnessDefinitionError.argumentsMustBeObject(name)
-            }
-            let call = ToolCall(id: api.callId, name: name, arguments: object.mapValues(AnyCodable.init))
-            let checked = try PiSwiftAI.validateToolArguments(tool: declaration, toolCall: call,
-                orderedParameters: OrderedJSON.parse(parameters.jsonText()))
-            let decoded = try JSONDecoder().decode(Args.self, from: JSONEncoder().encode(checked))
-            return try await execute(decoded, api, context)
-        }
+        outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema,
+        cancel: cancelCallback, execute: executeCallback)
+}
+
+/// Creates a typed tool from a result-only callback.
+@available(*, deprecated, message: "Return ToolExecutionOutcome from execute")
+public func defineTool<Args: Decodable & Sendable>(
+    name: String, description: String, parameters: JSONObject, args: Args.Type = Args.self,
+    replay: ToolReplay? = nil, callers: [ToolCaller]? = nil, deferred: Bool? = nil, executionMode: ToolExecutionMode? = nil,
+    prepareArguments: (@Sendable (JSONValue) throws -> JSONValue)? = nil,
+    outputLimits: OutputLimitOverrides? = nil, structuredOutputSchema: JSONObject? = nil,
+    execute: @escaping @Sendable (Args, ToolExecutionApi, ChordContext) async throws -> ToolExecutionResult
+) throws -> ToolRegistration {
+    try defineTool(name: name, description: description, parameters: parameters, args: args, replay: replay,
+                   callers: callers, deferred: deferred, executionMode: executionMode,
+                   prepareArguments: prepareArguments, outputLimits: outputLimits, structuredOutputSchema: structuredOutputSchema,
+                   execute: { args, api, context -> ToolExecutionOutcome in .result(try await execute(args, api, context)) })
 }

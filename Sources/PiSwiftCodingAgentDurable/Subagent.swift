@@ -23,7 +23,7 @@ public func subagentExtension() throws -> Extension {
         ],
         args: SubagentInput.self,
         replay: .safe
-    ) { args, api, context in
+    ) { args, api, context -> ToolExecutionOutcome in
         let child = try await api.commit({ tx in
             if let existing = try await tx.scanConversations(.init(ownerTaskId: api.taskId), limit: 1).items.first {
                 return existing.id
@@ -45,7 +45,7 @@ public func subagentExtension() throws -> Extension {
             throw SessionError.message("Subagent \(child.rawValue) failed: \(settled.status)")
         }
         let text = try await subagentAnswerText(api: api, answer: answer, context: context)
-        return ToolExecutionResult(output: [.text(TextContent(text: text))], details: details)
+        return .result(ToolExecutionResult(output: [.text(TextContent(text: text))], details: details))
     }
     return Extension(name: "subagent", tools: [tool])
 }

@@ -17,14 +17,14 @@ public func createWriteTool() throws -> ToolRegistration {
         parameters: ["type": "object", "properties": [
             "path": ["type": "string", "description": "Path to the file to write (relative or absolute)"],
             "content": ["type": "string", "description": "Content to write to the file"]
-        ], "required": ["path", "content"]], args: WriteToolInput.self) { args, api, context in
+        ], "required": ["path", "content"]], args: WriteToolInput.self) { args, api, context -> ToolExecutionOutcome in
             let env = try requireEnv(api)
             let absolutePath = try await resolveToolPath(env: env, path: args.path, context: context)
-            return try await withFileMutationQueue(env: env, path: absolutePath, context: context) {
+            return .result(try await withFileMutationQueue(env: env, path: absolutePath, context: context) {
                 try checkToolAbort(context)
                 try await env.writeFile(absolutePath, content: .text(args.content), context: context).get()
                 try checkToolAbort(context)
                 return ToolExecutionResult(output: [.text(TextContent(text: "Successfully wrote to \(args.path)"))])
-            }
+            })
         }
 }

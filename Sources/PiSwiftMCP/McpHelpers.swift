@@ -26,6 +26,13 @@ public func mcpNamespace(_ server: String) -> String {
     "mcp__" + server.replacingOccurrences(of: "-", with: "_")
 }
 
+/// Return the first line of a configured description, or of initialize instructions.
+public func mcpServerSummary(description: String?, instructions: String?) -> String {
+    let configured = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let text = configured.isEmpty ? instructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" : configured
+    return text.components(separatedBy: "\n").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+}
+
 /// Supply the object keywords required by model tool APIs and keep all other keywords.
 public func normalizeMcpInputSchema(_ schema: [String: Any]) -> [String: Any] {
     var normalized = schema

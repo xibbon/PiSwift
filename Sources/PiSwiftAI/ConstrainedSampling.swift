@@ -269,6 +269,10 @@ private func makeStrictSchemaNode(
             }
         }
     }
+    // OpenAI accepts an enum without a type, but rejects a bare const or unknown node.
+    if schema["type"] == nil && schema["anyOf"] == nil && schema["enum"] == nil {
+        throw ValidationError.unsupportedStrictSchema("schemas without a type are unsupported")
+    }
     if let value = schema["anyOf"] {
         guard let variants = value as? [Any], !variants.isEmpty else {
             throw ValidationError.unsupportedStrictSchema("anyOf must contain at least one schema")

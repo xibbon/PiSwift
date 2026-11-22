@@ -291,7 +291,7 @@ private func clientIdentityBedrockUsesReducedUserAgentAndProtectsSignedHeaders(_
         _ = await streamBedrock(model: model,
             context: normalizeContext(Context(messages: [.user(UserMessage(content: .text("Hello")))])), options: options).result()
         let request = try #require(identityBedrockRequests.withLock { $0.last })
-        let expected = scenario == .defaults || scenario == .detailed ? "pi/1.5.2" : scenario.expected()
+        let expected = scenario == .defaults || scenario == .detailed ? "pi/1.6.0" : scenario.expected()
         #expect(request.value(forHTTPHeaderField: "User-Agent") == expected)
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer identity-bearer")
         #expect(request.value(forHTTPHeaderField: "Host") == identityBedrockHost)

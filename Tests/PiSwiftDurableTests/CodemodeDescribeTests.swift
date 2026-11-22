@@ -27,7 +27,7 @@ struct CodemodeDescribeTests {
         }): Promise<string | { data: string; mimeType: string; type: "image"; }>; };
         ```
         """
-        #expect(try codemodeSection(tools: [createReadTool()], namespaces: [], inlineBudget: 10_000) == expected)
+        #expect(try codemodeSection(tools: [createReadTool()], extensions: [], inlineBudget: 10_000) == expected)
     }
 
     @Test func malformedLocalReferenceRendersUnknown() {
@@ -35,7 +35,7 @@ struct CodemodeDescribeTests {
         let schema = AnyCodable(["$defs": ["ok": ["type": "string"]], "$ref": "#/$defs/%E0"] as [String: Any])
         #expect(schemaToType(schema) == "unknown")
     }
-    let github = CodemodeNamespace(name: "github", prefix: "mcp__github__", description: "GitHub MCP server")
+    let github = ToolNamespace(name: "mcp__github", description: "GitHub MCP server", instructions: "Pass repositories as owner/name.")
 
     @Test func fixedDescription() {
         let text = codemodeDescription(models: false)
@@ -47,40 +47,60 @@ struct CodemodeDescribeTests {
         #expect(!text.contains("QuickJS"))
     }
     @Test func namespaceDeclarations() throws {
-        let text = try #require(try codemodeSection(tools: [e10Tool("read", description: "Read a file."), e10Tool("mcp__github__list_issues", description: "List issues.")], namespaces: [github], inlineBudget: 3000))
+        let read = try e10Tool("read", description: "Read a file.")
+        let issues = try e10Tool("list_issues", description: "List issues.")
+        let extensions = [Extension(name: "coding", tools: [read]), Extension(name: "github", namespace: github, tools: [issues])]
+        let text = try #require(try codemodeSection(tools: [read, issues], extensions: extensions, inlineBudget: 3000))
         #expect(text.contains("### `read`\nRead a file."))
         #expect(text.contains("read(args: {"))
-        #expect(text.contains("## github\nGitHub MCP server"))
-        #expect(try #require(text.range(of: "### `read`")) .lowerBound < #require(text.range(of: "## github")).lowerBound)
-        #expect(try #require(text.range(of: "## github")).lowerBound < #require(text.range(of: "### `mcp__github__list_issues`")).lowerBound)
+        #expect(text.contains("## mcp__github\nGitHub MCP server"))
+        #expect(!text.contains("owner/name"))
+        #expect(try #require(text.range(of: "### `read`")) .lowerBound < #require(text.range(of: "## mcp__github")).lowerBound)
+        #expect(try #require(text.range(of: "## mcp__github")).lowerBound < #require(text.range(of: "### `list_issues`")) .lowerBound)
         #expect(text.contains("Promise<string>"))
     }
-    @Test func budgetRoundsAndOmissions() throws {
-        let tools = try (0..<30).map { try e10Tool("mcp__github__tool\($0)", description: String(repeating: "x", count: 200)) }
-        let text = try #require(try codemodeSection(tools: [e10Tool("read", description: "Read a file.")] + tools, namespaces: [github], inlineBudget: 400))
-        #expect(text.contains("### `read`"))
-        #expect(text.contains("## github (some tools not listed)"))
-        #expect(!text.contains("tool29"))
-        #expect(try codemodeSection(tools: tools, namespaces: [github], inlineBudget: 10)?.contains("## github (tools not listed)") == true)
-        #expect(try codemodeSection(tools: [], namespaces: [github], inlineBudget: 3000) == nil)
+    @Test func namespaceWithoutToolsAndStableDeferredSection() throws {
+        let read = try e10Tool("read")
+        let before = try codemodeSection(tools: [read], extensions: [Extension(name: "coding", tools: [read]), Extension(name: "github", namespace: github)], inlineBudget: 3000)
+        let deferred = try e10Tool("list_issues", deferred: true)
+        let after = try codemodeSection(tools: [read], extensions: [Extension(name: "coding", tools: [read]), Extension(name: "github", namespace: github, tools: [deferred])], inlineBudget: 3000)
+        #expect(before == after)
+        #expect(before?.contains("## mcp__github\nGitHub MCP server") == true)
+        #expect(try codemodeSection(tools: [], extensions: [Extension(name: "github", namespace: github)], inlineBudget: 3000)?.contains("## mcp__github") == true)
+        #expect(try codemodeSection(tools: [], extensions: [], inlineBudget: 3000) == nil)
     }
-    @Test func longestPrefix() throws {
-        let text = try #require(try codemodeSection(tools: [e10Tool("mcp__github__x")], namespaces: [.init(name: "git", prefix: "mcp__git"), github], inlineBudget: 3000))
-        #expect(text.contains("## github"))
-        #expect(!text.contains("## git\n"))
+    @Test func budgetRoundsAndOmissions() throws {
+        let tools = try (0..<30).map { try e10Tool("tool\($0)", description: String(repeating: "x", count: 200)) }
+        let read = try e10Tool("read", description: "Read a file.")
+        let text = try #require(try codemodeSection(tools: [read] + tools, extensions: [Extension(name: "coding", tools: [read]), Extension(name: "github", namespace: github, tools: tools)], inlineBudget: 400))
+        #expect(text.contains("### `read`"))
+        #expect(text.contains("Some tools are not listed: find them with `searchTools()`."))
+        #expect(text.contains("## mcp__github\nGitHub MCP server"))
+        #expect(!text.contains("tool29"))
+        #expect(!text.contains("not listed)"))
+    }
+    @Test func firstExtensionNamingAToolWins() throws {
+        let shared = try e10Tool("read")
+        let issues = try e10Tool("list_issues")
+        let first = namespacesOf([Extension(name: "coding", tools: [shared]), Extension(name: "github", namespace: github, tools: [issues, shared])])
+        #expect(first["read"] == nil)
+        #expect(first["list_issues"] == github)
+        let second = namespacesOf([Extension(name: "github", namespace: github, tools: [issues, shared]), Extension(name: "coding", tools: [shared])])
+        #expect(second["read"] == github)
     }
     @Test func callablePromptSectionAndGrammar() async throws {
         let setup = HarnessChatSetup()
-        try setup.registry.install(createCodemodeExtension(options: .init(sandbox: DeterministicCodemodeSandbox(), namespaces: [github])))
-        try setup.registry.install(Extension(name: "tools", tools: [e10Tool("read"), e10Tool("mcp__github__list_issues", callers: [.tools]), e10Tool("mcp__github__get_issue", deferred: true)]))
+        try setup.registry.install(createCodemodeExtension(options: .init(sandbox: DeterministicCodemodeSandbox())))
+        try setup.registry.install(Extension(name: "tools", tools: [e10Tool("read")]))
+        try setup.registry.install(Extension(name: "github", namespace: github, tools: [e10Tool("list_issues", callers: [.tools]), e10Tool("get_issue", deferred: true)]))
         setup.models.setResponses([.message(chatAssistant("hi"))])
         let opened = try await e10Open(setup: setup)
         try await e10Submit(opened)
         let system = try #require(await allEntries(opened.root).first { $0.kind == "pi.system" }?.model?.first)
         let section = try #require(system["sections"]?["codemode"]?.stringValue)
         #expect(section.contains("### `read`"))
-        #expect(section.contains("### `mcp__github__list_issues`"))
-        #expect(!section.contains("mcp__github__get_issue"))
+        #expect(section.contains("### `list_issues`"))
+        #expect(!section.contains("get_issue"))
         #expect(!section.contains("### `codemode`"))
         let tool = try #require(system["toolsAdded"]?.arrayValue?.first { $0["name"] == "codemode" })
         #expect(tool["constrainedSampling"]?["type"] == "grammar")

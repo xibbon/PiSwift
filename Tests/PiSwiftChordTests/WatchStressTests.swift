@@ -167,19 +167,15 @@ private final class BlockingReplacement: Sendable {
     @Test(.timeLimit(.minutes(1))) func hundredThousandSeededFramesFromFourTasksStayBoundedAndSerial() async throws {
         let source = Mutex(0)
         let observation = StressObservation()
-        let listenerSeed = Mutex(UInt32(0x51a7_20c3))
+        let releaseFirst = StressGate()
         let watch = Watch<JSONValue>(value: ["n": 0], detach: {})
         try watch.start { call, _ in
             observation.begin()
             defer { observation.finish() }
             observation.receive(call)
-            let yields = listenerSeed.withLock { seed in
-                seed ^= seed << 13
-                seed ^= seed >> 17
-                seed ^= seed << 5
-                return 64 + Int(seed % 64)
-            }
-            for _ in 0..<yields { await Task.yield() }
+            // Hold the first delivery until all producers finish. The pending
+            // frames must then coalesce into exactly one later delivery.
+            if observation.result.calls == 1 { await releaseFirst.wait() }
         }
         // Ensure the listener has actually entered before concurrent producers begin.
         watch.advance(.value(value: ["n": 1], ops: [.set(["n"], 1)], retired: false), context: .background)
@@ -211,6 +207,7 @@ private final class BlockingReplacement: Sendable {
         }
         let lateRSS = peakRSS()
         watch.endAfterDelivery()
+        await releaseFirst.release()
         #expect(await watch.closed == .ended)
         await watch.waitUntilIdle()
         let result = observation.result
@@ -219,7 +216,7 @@ private final class BlockingReplacement: Sendable {
         #expect(watch.value == finalValue)
         #expect(result.maximumActive == 1)
         #expect(result.mismatch == 0)
-        #expect(result.calls < 10_000)
+        #expect(result.calls == 2)
         #expect(maximumPending.withLock { $0 } <= maxPendingOps)
         #expect(watch.pendingOperationCount == 0)
         print("CH2 stress frames=100000 calls=\(result.calls) maxActive=\(result.maximumActive) maxPendingOps=\(maximumPending.withLock { $0 }) peakRSSStart=\(initialRSS) peakRSSLate=\(lateRSS)")

@@ -26,6 +26,12 @@ public struct ProgressEvent: Sendable {
 
 public typealias ProgressCallback = @Sendable (ProgressEvent) -> Void
 
+/// Where package command output goes. The default keeps the existing process path.
+public enum PackageCommandOutput: String, Sendable {
+    case inherit
+    case capture
+}
+
 public struct PackageInstallFailure: Sendable, Hashable {
     public let source: String
     public let scope: String
@@ -264,6 +270,10 @@ public final class DefaultPackageManager: PackageManager {
     private let projectTrusted: Bool
     private let offline: Bool
     private let builtinExtensions: [String]
+    private let commandOutput: PackageCommandOutput
+    private let commandEnvironment: [String: String]?
+    private static let gitCredentialsHint = "git cannot ask for a password or passphrase while pi runs. Set up a git credential helper or an ssh agent, or install the package once from the shell with `pi install <source>`."
+    private static let gitPromptFailure = try! NSRegularExpression(pattern: "terminal prompts disabled|could not read (Username|Password)|Permission denied \\(publickey|Host key verification failed|passphrase", options: .caseInsensitive)
     private struct State: Sendable {
         var globalNpmRoot: String?
         var progressCallback: ProgressCallback?
@@ -282,13 +292,16 @@ public final class DefaultPackageManager: PackageManager {
     }
 
     public init(cwd: String, agentDir: String, settingsManager: SettingsManager, projectTrusted: Bool = true, offline: Bool = false,
-                builtinExtensions: [String] = []) {
+                builtinExtensions: [String] = [], commandOutput: PackageCommandOutput = .inherit,
+                commandEnvironment: [String: String]? = nil) {
         self.cwd = cwd
         self.agentDir = agentDir
         self.settingsManager = settingsManager
         self.projectTrusted = projectTrusted
         self.offline = offline
         self.builtinExtensions = builtinExtensions
+        self.commandOutput = commandOutput
+        self.commandEnvironment = commandEnvironment
     }
 
     public func setProgressCallback(_ callback: ProgressCallback?) {
@@ -578,7 +591,9 @@ public final class DefaultPackageManager: PackageManager {
                     }
                 }
                 do {
-                    try await self.installParsedSource(parsed, scope: scope)
+                    try await self.withProgress(action: "install", source: sourceStr, message: "Installing \(sourceStr)...") {
+                        try await self.installParsedSource(parsed, scope: scope)
+                    }
                     return true
                 } catch {
                     installFailures.append(PackageInstallFailure(source: sourceStr, scope: scope, message: error.localizedDescription))
@@ -1652,9 +1667,30 @@ public final class DefaultPackageManager: PackageManager {
         #if canImport(UIKit)
         throw PackageManagerError.unsupported("Command execution not available")
         #else
-        let result = try await execCommand(command, args, cwd)
+        let result: ExecResult
+        if commandOutput == .capture {
+            var environment = commandEnvironment ?? ProcessInfo.processInfo.environment
+            environment["GIT_TERMINAL_PROMPT"] = "0"
+            if environment["GIT_SSH_COMMAND"] == nil {
+                environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
+            }
+            result = try await execCommand(command, args, cwd, ExecOptions(
+                environment: environment, combinedOutputTailCharacters: 8_000,
+                postExitPipeIdleGrace: 0.1, ignoreStdin: true))
+        } else {
+            result = try await execCommand(command, args, cwd,
+                commandEnvironment.map { ExecOptions(environment: $0) })
+        }
         if result.code != 0 {
-            throw PackageManagerError.commandFailed("\(command) \(args.joined(separator: " ")) failed with code \(result.code)")
+            var message = "\(command) \(args.joined(separator: " ")) failed with code \(result.code)"
+            if commandOutput == .capture {
+                let tail = (result.combinedOutput ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !tail.isEmpty { message += ":\n\(tail)" }
+                if command == "git", Self.gitPromptFailure.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) != nil {
+                    message += "\n\(Self.gitCredentialsHint)"
+                }
+            }
+            throw PackageManagerError.commandFailed(message)
         }
         return result
         #endif

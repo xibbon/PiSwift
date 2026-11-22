@@ -94,7 +94,7 @@ func makeDurableExtension(agentDir: String, modelRegistry: ModelRegistry, defaul
         parameters: parameters,
         callers: [.model],
         executionMode: .parallel
-    ) { arguments, api, context in
+    ) { arguments, api, context -> ToolExecutionOutcome in
         let context = api.runtime.map { context.withAbortSignal($0.signal) } ?? context
         return try await withContextCancellation(context) { token in
             guard let object = try foundationJSON(from: arguments) as? [String: Any] else {
@@ -133,12 +133,12 @@ func makeDurableExtension(agentDir: String, modelRegistry: ModelRegistry, defaul
                     if !text.isEmpty { try? api.output(.text(text + "\n"), nil) }
                 },
                 host: host, signal: token, environment: environment)
-            return ToolExecutionResult(
+            return .result(ToolExecutionResult(
                 output: result.content,
                 structuredOutput: try result.structuredContent.map { try durableJSON(fromFoundation: $0.value) },
                 isError: result.isError,
                 details: try result.details.map { try durableJSON(fromFoundation: $0.value) }
-            )
+            ))
         }
     }
     return PiSwiftDurable.Extension(name: "codex-image-gen", tools: [tool])

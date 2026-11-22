@@ -13,10 +13,18 @@ public struct LiveRun: Sendable, Equatable, Codable {
     public var first: EntryID?
     /// Tasks requested by afterRun after an answer.
     public var afterRun: LiveAfterRun?
+    /// The answer under review while onYield child tasks decide.
+    public var yield: LiveYield?
     /// Records the active generation task and its admitted input submissions.
-    public init(taskId: TaskID, inputs: [SubmissionID], turns: Int = 0, first: EntryID? = nil, afterRun: LiveAfterRun? = nil) {
-        self.taskId = taskId; self.inputs = inputs; self.turns = turns; self.first = first; self.afterRun = afterRun
+    public init(taskId: TaskID, inputs: [SubmissionID], turns: Int = 0, first: EntryID? = nil, afterRun: LiveAfterRun? = nil, yield: LiveYield? = nil) {
+        self.taskId = taskId; self.inputs = inputs; self.turns = turns; self.first = first; self.afterRun = afterRun; self.yield = yield
     }
+}
+/// The visible answer and child tasks of a pending review.
+public struct LiveYield: Sendable, Equatable, Codable {
+    public var answer: EntryID
+    public var tasks: [TaskID]
+    public init(answer: EntryID, tasks: [TaskID]) { self.answer = answer; self.tasks = tasks }
 }
 /// Tasks that keep an answered run open.
 public struct LiveAfterRun: Sendable, Equatable, Codable {
@@ -78,6 +86,10 @@ public struct ToolSlot: Sendable, Equatable, Codable {
         case pending
         /// The tool call is executing.
         case running
+        /// The tool call waits for a time or a signal.
+        case sleeping
+        /// The tool call waits for other tasks to finish.
+        case waiting
         /// The tool call has finished.
         case done
     }
@@ -125,7 +137,8 @@ public struct ToolSlot: Sendable, Equatable, Codable {
 public struct NestedToolSummary: Sendable, Equatable, Codable {
     /// Whether the call failed.
     public var isError: Bool
-    /// The execution time of this attempt, in milliseconds.
+    /// The time from the call's first run to settlement, in milliseconds.
+    /// For older records without a start time, uses the last execution attempt's time, if available.
     public var durationMs: Int?
     /// The usage reported by the tool.
     public var usage: Usage?
@@ -441,6 +454,10 @@ internal func settleSchedulerOutcome(tx: Transaction, record: TaskRecord, outcom
         return
     }
     guard try live.get("run")?.decode(LiveRun.self).taskId == record.id else { return }
+    if let answer = try live.get("run")?.decode(LiveRun.self).yield?.answer {
+        try endRun(tx: tx, live: live, taskId: record.id, settlement: .done(answer: answer))
+        return
+    }
     let cutOff = outcome.restartLimitFault
     if !cutOff { try await convertPartial(tx: tx, live: live, conversationId: record.conversationId) }
     let settlement: SubmissionSettlement

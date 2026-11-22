@@ -157,7 +157,7 @@ struct K1CatalogV101Tests {
     }
 
     @Test func generationTimestampAndProviderCount() {
-        #expect(builtinModelDataGeneratedAt == 1_794_330_801.608) // 2026-11-10T17:13:21.608Z
+        #expect(builtinModelDataGeneratedAt == 1_795_189_132.383) // 2026-11-20T15:38:52.383Z
         #expect(ModelsData.count == 42)
         #expect(getProviders().count == 41)
         #expect(ClassifierModelsData.count == 7)

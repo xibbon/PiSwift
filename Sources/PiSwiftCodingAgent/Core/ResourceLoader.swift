@@ -82,6 +82,8 @@ public struct DefaultResourceLoaderOptions: Sendable {
     public var cwd: String?
     public var agentDir: String?
     public var settingsManager: SettingsManager?
+    public var packageCommandOutput: PackageCommandOutput
+    public var onPackageProgress: ProgressCallback?
     public var additionalExtensionPaths: [String]?
     public var additionalSkillPaths: [String]?
     public var additionalPromptTemplatePaths: [String]?
@@ -104,6 +106,8 @@ public struct DefaultResourceLoaderOptions: Sendable {
         cwd: String? = nil,
         agentDir: String? = nil,
         settingsManager: SettingsManager? = nil,
+        packageCommandOutput: PackageCommandOutput = .inherit,
+        onPackageProgress: ProgressCallback? = nil,
         additionalExtensionPaths: [String]? = nil,
         additionalSkillPaths: [String]? = nil,
         additionalPromptTemplatePaths: [String]? = nil,
@@ -123,6 +127,8 @@ public struct DefaultResourceLoaderOptions: Sendable {
         self.cwd = cwd
         self.agentDir = agentDir
         self.settingsManager = settingsManager
+        self.packageCommandOutput = packageCommandOutput
+        self.onPackageProgress = onPackageProgress
         self.additionalExtensionPaths = additionalExtensionPaths
         self.additionalSkillPaths = additionalSkillPaths
         self.additionalPromptTemplatePaths = additionalPromptTemplatePaths
@@ -254,8 +260,10 @@ public final class DefaultResourceLoader: ResourceLoader {
             settingsManager: self.settingsManager,
             projectTrusted: self.projectTrusted,
             offline: self.offline,
-            builtinExtensions: options.builtinExtensions ?? []
+            builtinExtensions: options.builtinExtensions ?? [],
+            commandOutput: options.packageCommandOutput
         )
+        self.packageManager.setProgressCallback(options.onPackageProgress)
         self.additionalExtensionPaths = options.additionalExtensionPaths ?? []
         self.additionalSkillPaths = options.additionalSkillPaths ?? []
         self.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? []

@@ -74,6 +74,7 @@ func googleExtendedLevelsMapForBothAdapters(_ reasoning: ThinkingLevel) throws {
 private actor GooglePortHTTP: ProviderHTTPClient {
     let responseBody: Data
     var request: URLRequest?
+    var requestCount = 0
     init(finish: String = "STOP", tool: Bool = false, includeParts: Bool = true) throws {
         var candidate: [String: Any] = ["finishReason": finish]
         if includeParts {
@@ -89,8 +90,22 @@ private actor GooglePortHTTP: ProviderHTTPClient {
     }
     func send(_ request: URLRequest) async throws -> ProviderHTTPResponse {
         self.request = request
+        requestCount += 1
         return ProviderHTTPResponse(statusCode: 200, body: responseBody)
     }
+}
+
+@Test("Google CONTINUATION ends as length through the injected client", arguments: [false, true])
+func googleContinuationEndsWithOneRequest(_ vertex: Bool) async throws {
+    let client = try GooglePortHTTP(finish: "CONTINUATION")
+    let result = await googlePortResult(client: client, vertex: vertex)
+    #expect(result.stopReason == .length)
+    #expect(await client.requestCount == 1)
+    let request = try #require(await client.request)
+    #expect(request.httpMethod == "POST")
+    let body = try #require(request.httpBody)
+    let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(payload["contents"] != nil)
 }
 
 private func googlePortResult(client: GooglePortHTTP, vertex: Bool, headers: ProviderHeaders? = nil) async -> AssistantMessage {

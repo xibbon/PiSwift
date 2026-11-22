@@ -8,8 +8,8 @@ extension Harness {
 extension TaskScheduler {
     /// An abort mark ends a sleep without waiting for its deadline.
     func notDue(_ record: TaskRecord) -> Bool {
-        if case .sleeping(_, let until, _) = record.state {
-            return !record.abortRequested && until > Double(now())
+        if case .sleeping = record.state {
+            return !record.abortRequested && !sleepDue(record.state, memos: record.memos, now: Double(now()))
         }
         return false
     }
@@ -20,8 +20,8 @@ extension TaskScheduler {
         state.withLock { state in
             state.candidateEntries += state.sleeping.count
             for id in state.sleeping {
-                guard let record = state.live[id], case .sleeping(_, let until, _) = record.state else { continue }
-                if record.abortRequested || until <= now { state.runnable.insert(id) }
+                guard let record = state.live[id], case .sleeping = record.state else { continue }
+                if record.abortRequested || sleepDue(record.state, memos: record.memos, now: now) { state.runnable.insert(id) }
             }
         }
     }
@@ -38,7 +38,7 @@ extension TaskScheduler {
         // index, even while work runs. Scan all live tasks only when idle.
         for id in view.sleeping {
             guard let record = view.live[id] else { continue }
-            if !record.abortRequested, case .sleeping(_, let until, _) = record.state, until > time {
+            if !record.abortRequested, case .sleeping(_, let until?, _) = record.state, until > time {
                 at = at.map { min($0, until) } ?? until
             }
         }
@@ -46,9 +46,10 @@ extension TaskScheduler {
             var snapshot: RegistrySnapshot?
             for record in view.live.values {
                 if record.state.status == "completing" { continue }
-                if !record.abortRequested, case .waiting(_, let on, _, _) = record.state,
-                   on.contains(where: { view.live[$0] != nil }) { continue }
-                if !record.abortRequested, case .sleeping(_, let until, _) = record.state, until > time { continue }
+                if !record.abortRequested && !view.waitingOn(record.state, first: true).isEmpty { continue }
+                if !record.abortRequested, case .sleeping = record.state,
+                   !sleepDue(record.state, memos: record.memos, now: time),
+                   !view.gatedWake.contains(record.id) { continue }
                 if record.abortRequested && view.hasOwnedLive(record.id) { continue }
                 if !record.abortRequested || record.abortReason != nil {
                     snapshot = snapshot ?? registry.snapshot()
@@ -91,7 +92,7 @@ extension TaskScheduler {
                 let time = Double(now())
                 let due = state.withLock { state in
                     state.enabled && !state.closing && state.sleeping.contains { id in
-                        guard case .sleeping(_, let until, _) = state.live[id]?.state else { return false }
+                        guard case .sleeping(_, let until?, _) = state.live[id]?.state else { return false }
                         return until <= time
                     }
                 }

@@ -16,12 +16,17 @@ public struct ReadToolInput: Sendable, Codable {
     }
 }
 
-/// Details from a text read. The truncation object contains counts and limits, without file content.
+/// Details from a text or image read.
 public struct ReadToolDetails: Sendable, Codable, Equatable {
     /// The content-free truncation counts and limits, or nil when no truncation occurred.
     public var truncation: JSONValue?
-    /// Creates read details with optional truncation information.
-    public init(truncation: JSONValue? = nil) { self.truncation = truncation }
+    /// The ID of the selected model if it does not support image input.
+    public var imageUnsupportedByModel: String?
+    /// Creates read details with optional truncation information and model ID.
+    public init(truncation: JSONValue? = nil, imageUnsupportedByModel: String? = nil) {
+        self.truncation = truncation
+        self.imageUnsupportedByModel = imageUnsupportedByModel
+    }
 }
 
 /// A read failure that the read tool reports to the model as an error result.
@@ -53,7 +58,7 @@ public func createReadTool(images: (any ImageProcessor)? = nil) throws -> ToolRe
             ]), "required": .array(["type", "data", "mimeType"])])
         ])
     ], execute: { args, api, context in
-        try await executeReadTool(args, api, context, images: images)
+        .result(try await executeReadTool(args, api, context, images: images))
     })
 }
 
@@ -79,7 +84,8 @@ internal func executeReadReader(_ reader: any BinaryReader, args: ReadToolInput,
             if let mime {
                 let model = try await imageModel(api, context: context)
                 result = try await readImage(reader, info: before, path: args.path, mimeType: mime,
-                                             processor: images, vision: model.vision, limits: model.limits, context: context)
+                                             processor: images, limits: model.limits,
+                                             imageUnsupportedByModel: model.imageUnsupportedByModel, context: context)
             } else {
                 result = try await readText(reader, info: before, args: args, context: context)
             }
@@ -203,15 +209,12 @@ private func truncationDetails(_ result: TruncationResult, outputLines: Int? = n
     ])])
 }
 
-private func imageModel(_ api: ToolExecutionApi?, context: ChordContext) async throws -> (vision: Bool, limits: ImageLimits) {
-    guard let api else { return (true, defaultImageLimits) }
+private func imageModel(_ api: ToolExecutionApi?, context: ChordContext) async throws -> (limits: ImageLimits, imageUnsupportedByModel: String?) {
+    guard let api else { return (defaultImageLimits, nil) }
     let ref = try await api.agent(context).model
     let model = ref.flatMap { api.models.getModel(provider: $0.provider, modelId: $0.modelId) }
-    let resize = model?.inputLimits?.images?.resize
-    return (model?.input.contains(.image) ?? true,
-            ImageLimits(maxWidth: resize?.maxWidth ?? defaultImageLimits.maxWidth,
-                        maxHeight: resize?.maxHeight ?? defaultImageLimits.maxHeight,
-                        maxBytes: resize?.maxBytes ?? defaultImageLimits.maxBytes))
+    let imageUnsupportedByModel: String? = model.flatMap { $0.input.contains(.image) ? nil : $0.id }
+    return (imageLimits(model), imageUnsupportedByModel)
 }
 
 private func imageError(_ message: String) -> ToolExecutionResult {
@@ -219,10 +222,9 @@ private func imageError(_ message: String) -> ToolExecutionResult {
 }
 
 private func readImage(_ reader: any BinaryReader, info: FileInfo, path: String, mimeType: String,
-                       processor: (any ImageProcessor)?, vision: Bool, limits: ImageLimits,
-                       context: ChordContext) async throws -> ToolExecutionResult {
+                       processor: (any ImageProcessor)?, limits: ImageLimits,
+                       imageUnsupportedByModel: String?, context: ChordContext) async throws -> ToolExecutionResult {
     let image: PreparedImage
-    var notes: [String] = []
     if let processor {
         let bytes = try await reader.read(offset: 0, length: Int(info.size), context: context).get()
         try context.abortSignal?.throwIfAborted()
@@ -240,11 +242,6 @@ private func readImage(_ reader: any BinaryReader, info: FileInfo, path: String,
             return imageError("\(path) is an image (\(mimeType)) that cannot be prepared for the model")
         }
         image = prepared
-        if let from = prepared.convertedFrom { notes.append("Converted from \(from) to \(prepared.mimeType).") }
-        if let resized = prepared.resized {
-            let scale = imageScaleText(Double(resized.from.width) / Double(resized.to.width))
-            notes.append("Resized from \(resized.from.width)x\(resized.from.height) to \(resized.to.width)x\(resized.to.height). Multiply coordinates by \(scale) to map them to the original.")
-        }
     } else {
         guard inlineImageTypes.contains(mimeType) else {
             return imageError("\(path) is an image (\(mimeType)) that needs converting, and no image processor is configured")
@@ -262,21 +259,9 @@ private func readImage(_ reader: any BinaryReader, info: FileInfo, path: String,
         }
         image = PreparedImage(data: toBase64(bytes), mimeType: mimeType)
     }
-    if !vision { notes.append("The current model does not support images; it sees a placeholder instead.") }
+    let details = imageUnsupportedByModel.map { JSONValue.object(["imageUnsupportedByModel": .string($0)]) }
+    let message = (["Read image file [\(image.mimeType)]."] + preparedNotes(image)).joined(separator: " ")
     return .init(output: [.image(.init(data: image.data, mimeType: image.mimeType))],
-                 structuredOutput: .object(["type": "image", "data": .string(image.data), "mimeType": .string(image.mimeType)]), diagnostics: [
-        .init(severity: .info, message: (["Read image file [\(image.mimeType)]."] + notes).joined(separator: " "), code: "image")
-    ])
-}
-
-// Match JavaScript toFixed(2), including exact decimal half ties.
-private func imageScaleText(_ value: Double) -> String {
-    if value.isNaN { return "NaN" }
-    if value.isInfinite { return value > 0 ? "Infinity" : "-Infinity" }
-    // Exact binary half ties at two places are odd multiples of 1/8.
-    let halves = value * 8
-    let tie = abs(halves) < 9_007_199_254_740_992 && halves.rounded(.towardZero) == halves
-        && abs(halves.truncatingRemainder(dividingBy: 2)) == 1
-    let rounded = tie ? (value > 0 ? value.nextUp : value.nextDown) : value
-    return String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), rounded)
+                 structuredOutput: .object(["type": "image", "data": .string(image.data), "mimeType": .string(image.mimeType)]),
+                 details: details, diagnostics: [.init(severity: .info, message: message, code: "image")])
 }

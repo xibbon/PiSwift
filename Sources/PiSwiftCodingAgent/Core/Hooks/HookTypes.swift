@@ -1746,10 +1746,17 @@ public struct SessionCompactFailedEvent: HookEvent, Sendable {
 public struct SessionBeforeForkEvent: HookEvent, Sendable {
     public let type: String = "session_before_fork"
     public var entryId: String
+    public var position: SessionForkPosition
 
-    public init(entryId: String) {
+    public init(entryId: String, position: SessionForkPosition = .before) {
         self.entryId = entryId
+        self.position = position
     }
+}
+
+public enum SessionForkPosition: String, Sendable {
+    case before
+    case at
 }
 
 // v0.65.0: SessionForkEvent removed. Use SessionStartEvent(reason: .fork).
@@ -2094,6 +2101,7 @@ public struct LoadedHook: Sendable {
     public var setFlagValue: HookSetFlagValue
     /// Removes event-bus listeners registered by this hook.
     public var dispose: @Sendable () -> Void
+    var trackedEventBus: TrackedEventBus?
     /// True when this hook was loaded from a `.swift`/SPM extension (vs a settings-defined hook).
     /// Used by the reload lifecycle to swap extensions without disturbing built-in hooks.
     public var isExtension: Bool
@@ -2207,6 +2215,12 @@ public struct LoadedHook: Sendable {
         self.replaceable = replaceable
         self.hidden = hidden
     }
+
+    func withTrackedEventBus(_ eventBus: TrackedEventBus) -> Self {
+        var hook = self
+        hook.trackedEventBus = eventBus
+        return hook
+    }
 }
 
 public struct TreePreparation: Sendable {
@@ -2303,7 +2317,7 @@ public final class HookAPI: Sendable {
 
     public let events: EventBus
     public let mcpServerRegistry: McpServerRegistry?
-    private let trackedEventBus: TrackedEventBus
+    let trackedEventBus: TrackedEventBus
     private let state: LockedState<State>
 
     private struct State: Sendable {

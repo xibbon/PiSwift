@@ -15,7 +15,7 @@ struct D5bReverseFixtureTests {
                            "interrupted", "restart_limit", "nothing_to_answer", "turn_limit", "answer", "terminate"]
     private var fixtures: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Scripts/durable-fixtures/d5b-reverse-v152")
+            .deletingLastPathComponent().appendingPathComponent("Scripts/durable-fixtures/d5b-reverse-v160")
     }
     private func open(_ path: URL, backend: String) async throws -> any DurableStorage {
         if backend == "jsonl" {
@@ -311,7 +311,9 @@ struct D5bReverseFixtureTests {
         for scenario in scenarios { for backend in ["sqlite", "jsonl"] {
             cases["\(scenario)-\(backend)"] = try await generate(scenario, backend: backend, directory: directory)
         } }
-        let manifest: JSONValue = ["tag": "v1.5.2", "clock": .number(Double(clock)), "resumeClock": .number(Double(clock + 1_000)),
+        // v1.6.0 D1: tool.ts:155-167 and generation.ts:184-194 raise the versions in Swift-written files.
+        // The v1.6.0 Node oracle resumes those exact Swift files.
+        let manifest: JSONValue = ["tag": "v1.6.0", "clock": .number(Double(clock)), "resumeClock": .number(Double(clock + 1_000)),
             "normalization": "Provider session UUID; faux assistant API; absent tool result details", "cases": .object(cases)]
         try JSONEncoder().encode(manifest).write(to: directory.appendingPathComponent("manifest.json"))
         if export == nil {
@@ -324,7 +326,7 @@ struct D5bReverseFixtureTests {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["node", fixtures.deletingLastPathComponent().appendingPathComponent("generate-d5b-reverse-v152.mjs").path,
-                "--verify-swift", directory.path]
+                "--v160", "--verify-swift", directory.path]
             process.standardOutput = handle; process.standardError = handle
             try process.run()
             // Bound the child separately: Swift Testing time limits do not stop Process.waitUntilExit.

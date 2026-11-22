@@ -64,6 +64,19 @@ private func threadToolSuccess(_ id: String, name: String = "lookup") -> Provide
     return ProviderHTTPResponse(statusCode: 200, body: Data(wire.utf8))
 }
 
+private func threadServerToolSuccess(_ id: String) -> ProviderHTTPResponse {
+    let start = #"{"type":"message_start","message":{"id":"\#(id)","type":"message","role":"assistant","content":[],"model":"claude-haiku-4-5","usage":{"input_tokens":10,"output_tokens":0}}}"#
+    let use = #"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"swift"}}}"#
+    let result = #"{"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result","url":"https://example.com","title":"Result","encrypted_content":"opaque"}]}}"#
+    let delta = #"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#
+    let events = [("message_start", start), ("content_block_start", use),
+        ("content_block_stop", #"{"type":"content_block_stop","index":0}"#),
+        ("content_block_start", result), ("content_block_stop", #"{"type":"content_block_stop","index":1}"#),
+        ("message_delta", delta), ("message_stop", #"{"type":"message_stop"}"#)]
+    let wire = events.map { "event: \($0.0)\ndata: \($0.1)\n\n" }.joined()
+    return ProviderHTTPResponse(statusCode: 200, body: Data(wire.utf8))
+}
+
 private func threadToolResult(_ name: String = "lookup") -> Message {
     .toolResult(ToolResultMessage(toolCallId: "toolu_1", toolName: name,
         content: [.text(TextContent(text: "result"))], isError: false, timestamp: 2))
@@ -202,6 +215,49 @@ private func checkExplicitBetaOverride(_ header: String?) async throws {
 
 @Suite("Anthropic message threads v1.5.2")
 struct AnthropicMessageThreadsTests {
+    @Test("enables threads for an alias provider on the Anthropic endpoint with a server tool reply")
+    func aliasProviderContinuesAfterServerToolReply() async throws {
+        let client = ThreadHTTPClient([threadServerToolSuccess("msg_alias"),
+            threadSuccess("msg_next"), threadSuccess("msg_replay")])
+        let options = threadOptions(client)
+        defer { try? cleanupSessionResources(options.sessionId) }
+        let model = threadModel(provider: "anthropic-alias")
+        let first = await streamAnthropic(model: model,
+            context: threadContext([threadUser("search")]), options: options).result()
+        #expect(first.stopReason == .stop)
+        #expect(first.providerContent != nil)
+        let second = await streamAnthropic(model: model,
+            context: threadContext([threadUser("search"), .assistant(first), threadUser("more", 2)]),
+            options: options).result()
+        #expect(second.stopReason == .stop)
+        let third = await streamAnthropic(model: model,
+            context: threadContext([threadUser("search"), .assistant(first), threadUser("more", 2),
+                .assistant(second), threadUser("again", 3)], system: "Changed prompt"), options: options).result()
+        #expect(third.stopReason == .stop)
+        let bodies = try await threadBodies(client)
+        #expect((bodies[0]["thread"] as? [String: String]) == ["type": "create"])
+        #expect((bodies[1]["thread"] as? [String: String]) ==
+            ["type": "continue", "previous_message_id": "msg_alias"])
+        let messages = try #require(bodies[1]["messages"] as? [[String: Any]])
+        #expect(messages.count == 1)
+        #expect(messages[0]["role"] as? String == "user")
+        #expect((bodies[2]["thread"] as? [String: String]) == ["type": "create"])
+        let replay = try #require(bodies[2]["messages"] as? [[String: Any]])
+        let replayBlocks = try #require(replay[1]["content"] as? [[String: Any]])
+        #expect(replayBlocks.map { $0["type"] as? String ?? "" } ==
+            ["server_tool_use", "web_search_tool_result"])
+        #expect(await client.headers().allSatisfy { $0?.contains("message-threads-2026-08-12") == true })
+
+        let gateway = ThreadHTTPClient([threadSuccess("msg_gateway")])
+        let gatewayOptions = threadOptions(gateway)
+        defer { try? cleanupSessionResources(gatewayOptions.sessionId) }
+        _ = await streamAnthropic(model: threadModel(baseUrl: "https://gateway.example.com"),
+            context: threadContext([threadUser("first")]), options: gatewayOptions).result()
+        let gatewayBody = try await threadBodies(gateway)[0]
+        #expect(gatewayBody["thread"] == nil)
+        #expect(await gateway.headers().allSatisfy { $0?.contains("message-threads-2026-08-12") != true })
+    }
+
     @Test("creates a thread, then continues it with only the new messages")
     func createsAndContinues() async throws {
         let client = ThreadHTTPClient([threadSuccess("msg_first"), threadSuccess("msg_second")])

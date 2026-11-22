@@ -66,6 +66,41 @@ private func applyResponsesMiddleware(
     #expect(encoded[0]["strict"] as? Bool == true)
 }
 
+// constrained-sampling.test.ts: "keeps strict mode for enum-only schemas"
+@Test func keepsStrictModeForEnumOnlySchemas() throws {
+    var tool = constrainedTool(.jsonSchema(strict: .prefer))
+    tool.parameters["properties"] = AnyCodable(["level": ["enum": ["low", "high"]]] as [String: Any])
+    tool.parameters["required"] = AnyCodable(["level"])
+    #expect(try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true) == true)
+    let tools = try #require(try responsesToolsPayload([tool], supportsStrictMode: true))
+    let encoded = try #require(try encodedJSONObject(tools) as? [[String: Any]])
+    #expect(encoded[0]["strict"] as? Bool == true)
+}
+
+// constrained-sampling.test.ts: "falls back or rejects schemas that cannot be safely converted"
+@Test(arguments: ["array item", "unknown value", "bare const", "empty object"])
+func untypedStrictNodesFallBackOrReject(kind: String) throws {
+    let properties: [String: [String: Any]]
+    switch kind {
+    case "array item": properties = ["commandArguments": ["type": "array", "items": [String: Any]()]]
+    case "unknown value": properties = ["value": ["description": "Any JSON value"]]
+    case "empty object": properties = ["value": [:]]
+    default: properties = ["mode": ["const": "fast"]]
+    }
+    var preferred = constrainedTool(.jsonSchema(strict: .prefer))
+    preferred.parameters["properties"] = AnyCodable(properties)
+    preferred.parameters["required"] = AnyCodable(Array(properties.keys))
+    #expect(try resolveJsonSchemaStrictSampling(tool: preferred, supportsStrictMode: true) == nil)
+    var required = preferred
+    required.constrainedSampling = .jsonSchema(strict: .require)
+    do {
+        _ = try resolveJsonSchemaStrictSampling(tool: required, supportsStrictMode: true)
+        Issue.record("Expected strict schema rejection")
+    } catch {
+        #expect(error.localizedDescription == "Tool \"write\" requires JSON-schema constrained sampling, but schemas without a type are unsupported.")
+    }
+}
+
 @Test func disabledSamplingNeverEnablesStrictOrGrammar() throws {
     let tool = constrainedTool(.disabled)
     #expect(try resolveJsonSchemaStrictSampling(tool: tool, supportsStrictMode: true) == nil)
@@ -82,6 +117,26 @@ private func applyResponsesMiddleware(
     let tools = try #require(try responsesToolsPayload([tool], supportsStrictMode: true))
     let encoded = try #require(try encodedJSONObject(tools) as? [[String: Any]])
     #expect(encoded[0]["strict"] as? Bool == false)
+}
+
+// openai-responses-compat.test.ts:161-170: Copilot, MAI and Grok tools carry explicit strict values.
+@Test("sets strict mode explicitly for Responses tools", arguments: [
+    ("cloudflare-ai-gateway", "gpt-5.6-sol"),
+    ("github-copilot", "gpt-5.3-codex"),
+    ("github-copilot", "mai-code-2"),
+    ("github-copilot", "grok-4.7"),
+])
+func copilotResponsesExplicitStrict(_ provider: String, _ id: String) throws {
+    let model = try #require(getModel(provider: provider, modelId: id))
+    #expect(model.compat?.supportsStrictMode == true)
+    let ordinary = constrainedTool(nil)
+    let constrained = constrainedTool(.jsonSchema(strict: .prefer))
+    let query = try buildResponsesQuery(model: model,
+        context: Context(messages: [], tools: [ordinary, constrained]),
+        options: OpenAIResponsesOptions(cacheRetention: .short))
+    let payload = try #require(encodedJSONObject(query) as? [String: Any])
+    let tools = try #require(payload["tools"] as? [[String: Any]])
+    #expect(tools.map { $0["strict"] as? Bool } == [false, true])
 }
 
 @Test func grammarSamplingUsesCustomToolOnlyWhenSupported() throws {

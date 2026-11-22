@@ -3,16 +3,20 @@ import PiSwiftAI
 import PiSwiftChord
 
 internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: ToolRegistration,
-                          _ args: JSONObject, _ context: ChordContext) async throws {
+                          _ args: JSONObject, _ context: ChordContext,
+                          wake: WakeReason? = nil, checkpoint: JSONValue? = nil) async throws {
     let limits = OutputLimits(maxBytes: tool.outputLimits?.maxBytes ?? defaultMaxBytes,
                               maxLines: tool.outputLimits?.maxLines ?? defaultMaxLines,
                               retain: tool.outputLimits?.retain ?? .head)
     let lifetime = ToolInvocationLifetime(callId: call.id)
     let record = try await runtime.getTask(runtime.taskId, context: context)
     let streams = record?.input["kind"] != "nested" || record?.input["progress"] != false
-    let reporter = ToolReporter(runtime: runtime, lifetime: lifetime, limits: limits, enabled: streams, context: context)
-    let nested = NestedToolCalls(runtime: runtime, callId: call.id, resumes: tool.replay == .safe)
-    var result: ToolExecutionResult
+    let kept = wake != nil && streams ? try await currentToolSlot(runtime, context) : nil
+    let reporter = ToolReporter(runtime: runtime, lifetime: lifetime, limits: limits, enabled: streams,
+                                initialDetails: kept?.details, initialDiagnostics: kept?.diagnostics ?? [], context: context)
+    let nested = NestedToolCalls(runtime: runtime, callId: call.id, resumes: tool.replay == .safe, woken: wake != nil)
+    let baseParks = ToolBaseParks()
+    var returned: ToolExecutionOutcome
     var ending = ToolEnding.completed
     var durationMs: Int?
     do {
@@ -21,17 +25,19 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: 
             registry: runtime.registry, models: runtime.models, env: env, read: runtime.hookApi.read,
             outputWindow: limits.retain == .tail ? ShellOutputWindow(maxBytes: limits.maxBytes, maxLines: limits.maxLines,
                 minIntervalMs: runtime.settings.progress.outputIntervalMs, bytesPerSecond: progressBytesPerSecond) : nil,
-            runtime: runtime, lifetime: lifetime, agent: { try await runtime.agent(context: $0) },
+            runtime: runtime, lifetime: lifetime, wake: wake, checkpoint: checkpoint,
+            agent: { try await runtime.agent(context: $0) },
             output: { try reporter.output($0, skipped: $1) },
             retainedOutput: { let output = reporter.snapshot().output; return .init(text: output.text, truncated: output.droppedBytes > 0) }, diagnostic: { try reporter.diagnostic($0) },
             details: { try await reporter.details($0, context: $1) },
             memo: { try await runtime.memo($0, value: $1, context: $2) })
         api.nestedCalls = nested
+        api.baseParks = baseParks
         api.abandonCreatedTasks = tool.replay != .safe
         api.pendingDetailsCount = { reporter.pendingDetailsCount }
         let now = runtime.scheduler.toolServices.executionTime()
         let started = now()
-        do { result = try await tool.execute(.object(args), api, context) }
+        do { returned = try await tool.executeOutcome(.object(args), api, context) }
         catch {
             durationMs = toolDurationMs(now() - started)
             throw error
@@ -44,13 +50,26 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: 
             for waiter in pending { waiter.reject(error) }
             throw error
         }
-        result = ToolExecutionResult(isError: true, diagnostics: [ToolDiagnostic(severity: .error, message: toolErrorText(error), code: "tool_error")])
+        returned = .result(ToolExecutionResult(isError: true, diagnostics: [ToolDiagnostic(severity: .error, message: toolErrorText(error), code: "tool_error")]))
         ending = .failed("Tool \(call.name) threw")
     }
     nested.close(); lifetime.end()
     await nested.end()
     let pending = await reporter.stop()
     do {
+        if case .park(let park) = returned {
+            if let invalid = try await parkTool(runtime, call, tool, args, park, reporter.snapshot(),
+                                                requiresBasePark: tool.requiresBasePark,
+                                                baseParks: baseParks, context: context) {
+                returned = .result(harnessToolError(code: "invalid_park",
+                    message: "Tool \(call.name) returned an invalid park: \(invalid)"))
+                ending = .failed("Tool \(call.name) returned an invalid park")
+            } else {
+                for waiter in pending { waiter.resolve() }
+                return
+            }
+        }
+        guard case .result(let result) = returned else { throw TaskDefinitionError("Tool park was not handled") }
         let final = try await finalToolResult(runtime, call, tool, result, reporter, context)
         try await settleTool(runtime, call, ending, result: final, durationMs: durationMs, context: context)
         for waiter in pending { waiter.resolve() }
@@ -62,6 +81,77 @@ internal func executeTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: 
 private func toolDurationMs(_ duration: Duration) -> Int {
     let value = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     return max(0, Int(value.rounded()))
+}
+
+/// Saves a tool park in one commit. A returned reason becomes an invalid_park result.
+private func parkTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: ToolRegistration,
+                      _ args: JSONObject, _ park: ToolPark, _ reported: ToolReportSnapshot,
+                      requiresBasePark: Bool, baseParks: ToolBaseParks,
+                      context: ChordContext) async throws -> String? {
+    if requiresBasePark && !baseParks.contains(park) {
+        return "a wrapper returned a park its base did not return"
+    }
+    if case .wait(let on, _) = park.trigger {
+        for id in on {
+            if try await runtime.getTask(id, context: context)?.owner != runtime.taskId {
+                return "task \(id.rawValue) is not owned by the call"
+            }
+        }
+    }
+    let parked = ToolTaskCheckpoint(phase: .parked, arguments: args,
+                                    replay: tool.replay ?? .unsafe, checkpoint: park.checkpoint)
+    do {
+        try await runtime.commit({ tx, _ in
+            if let slot = try toolSlot(live: await tx.doc(LiveDoc, conversationId: runtime.conversationId), taskId: runtime.taskId) {
+                if let details = reported.details { try assignJSON(target: slot, key: "details", value: details) }
+                if !reported.diagnostics.isEmpty {
+                    try slot.set("diagnostics", JSONValue(encoding: reported.diagnostics))
+                }
+                for key in ["output", "droppedBytes", "droppedLines"] { try slot.remove(key) }
+                switch park.trigger {
+                case .sleep: try slot.set("status", .string("sleeping"))
+                case .wait: try slot.set("status", .string("waiting"))
+                }
+            }
+            let checkpoint = try JSONValue(encoding: parked)
+            switch park.trigger {
+            case .sleep(let until, let signals):
+                if signals.isEmpty, let until { return .sleeping(checkpoint: checkpoint, until: until) }
+                return try .sleeping(checkpoint: checkpoint, until: until, signals: signals)
+            case .wait(let on, let policy):
+                return .waiting(checkpoint: checkpoint, on: on, policy: policy)
+            }
+        }, context: context)
+    } catch {
+        if runtime.signal.aborted || context.abortSignal?.aborted == true {
+            if let record = try? await runtime.getTask(runtime.taskId, context: .background), record.abortRequested {
+                try await cancelTool(runtime, call, tool, args, checkpoint: park.checkpoint, context: .background)
+            }
+            throw error
+        }
+        return toolErrorText(error)
+    }
+    return nil
+}
+
+/// Cleans up work left outside the Harness by a parked or interrupted woken call.
+internal func cancelTool(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: ToolRegistration,
+                         _ args: JSONObject, checkpoint: JSONValue?, context: ChordContext) async throws {
+    guard let cancel = tool.cancel else { return }
+    do {
+        let env = try await runtime.env(context: context)
+        var api = ToolExecutionApi(taskId: runtime.taskId, conversationId: runtime.conversationId,
+            callId: call.id, registry: runtime.registry, models: runtime.models,
+            env: env, read: runtime.hookApi.read, runtime: runtime, checkpoint: checkpoint,
+            agent: { try await runtime.agent(context: $0) })
+        api.cancelOnly = true
+        api.cancelToolName = call.name
+        try await cancel(.object(args), api, context)
+    } catch {
+        if context.abortSignal?.aborted == true { throw error }
+        let agent = try? await runtime.agent(context: context)
+        try runtime.report(error, from: .extension(agent.flatMap { toolExtension($0, name: tool.name) }))
+    }
 }
 private func finalToolResult(_ runtime: TaskRuntime, _ call: ToolHookCall, _ tool: ToolRegistration, _ result: ToolExecutionResult,
                              _ reporter: ToolReporter, _ context: ChordContext) async throws -> ToolExecutionResult {

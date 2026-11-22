@@ -403,14 +403,38 @@ public func codemodeSample(of tool: ToolRegistration) throws -> String {
         outputSchema: AnyCodable(try foundationJSON(from: tool.structuredOutputSchema.map(JSONValue.object) ?? ["type": "string"]))))
 }
 
+/// The first extension naming a tool owns its namespace, including when it has none.
+public func namespacesOf(_ extensions: [Extension]) -> [String: ToolNamespace] {
+    var result: [String: ToolNamespace] = [:]
+    var seen = Set<String>()
+    for item in extensions {
+        for tool in item.tools where seen.insert(tool.name).inserted {
+            if let namespace = item.namespace { result[tool.name] = namespace }
+        }
+    }
+    return result
+}
+
+/// The first declaration of each name wins; every selected extension is considered.
+public func declaredNamespaces(_ extensions: [Extension]) -> [ToolNamespace] {
+    var result: [String: ToolNamespace] = [:]
+    for item in extensions {
+        if let namespace = item.namespace, result[namespace.name] == nil { result[namespace.name] = namespace }
+    }
+    return result.values.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+}
+
 /// Selects declarations in rounds, so each namespace can have a tool within the budget.
-public func codemodeSection(tools: [ToolRegistration], namespaces: [CodemodeNamespace], inlineBudget: Int) throws -> String? {
-    guard !tools.isEmpty else { return nil }
+public func codemodeSection(tools: [ToolRegistration], extensions: [Extension], inlineBudget: Int) throws -> String? {
+    let declared = declaredNamespaces(extensions)
+    guard !tools.isEmpty || !declared.isEmpty else { return nil }
     struct Entry { var name: String; var section: String; var cost: Int; var order: Int }
-    struct Group { var namespace: CodemodeNamespace?; var entries: [Entry] }
+    struct Group { var namespace: ToolNamespace?; var entries: [Entry] }
     var groups: [[UInt16]: Group] = [[]: Group(namespace: nil, entries: [])]
+    let owners = namespacesOf(extensions)
+    for namespace in declared { groups[Array(("ns:" + namespace.name).utf16)] = Group(namespace: namespace, entries: []) }
     for (order, tool) in tools.enumerated() {
-        let namespace = namespaces.filter { tool.name.utf16.starts(with: $0.prefix.utf16) }.max { $0.prefix.utf16.count < $1.prefix.utf16.count }
+        let namespace = owners[tool.name]
         let key = Array((namespace.map { "ns:" + $0.name } ?? "").utf16)
         let id = toCodemodeIdentifier(tool.name)
         let heading = id == tool.name ? "### `\(id)`" : "### `\(id)` (`\(tool.name)`)"
@@ -436,13 +460,12 @@ public func codemodeSection(tools: [ToolRegistration], namespaces: [CodemodeName
         }
     }
     var sections = ["Tools scripts can call (`await tools.<name>(args)`):"]
-    for group in ordered where !group.entries.isEmpty {
+    if shown.count < tools.count { sections.append("Some tools are not listed: find them with `searchTools()`.") }
+    for group in ordered {
         let visible = group.entries.filter { shown.contains(Array($0.name.utf16)) }
         if let namespace = group.namespace {
-            let suffix = visible.count == group.entries.count ? "" : visible.isEmpty ? " (tools not listed)" : " (some tools not listed)"
-            let description = namespace.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            sections.append("## \(namespace.name)\(suffix)" + (description.isEmpty ? "" : "\n" + description))
-        } else if visible.count < group.entries.count { sections.append("Some tools are not listed: find them with `searchTools()`.") }
+            sections.append("## \(namespace.name)\n" + namespace.description.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         sections.append(contentsOf: visible.map(\.section))
     }
     return sections.joined(separator: "\n\n")

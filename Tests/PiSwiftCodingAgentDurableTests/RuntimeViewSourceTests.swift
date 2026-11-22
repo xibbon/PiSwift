@@ -202,3 +202,27 @@ private struct ViewReportError: Error, LocalizedError {
         #expect(runtimeTitle(of: entry) == nil)
     }
 }
+
+@Test(arguments: [nil, 2_000] as [Double?])
+func viewShowsSignalSleepWhenTaskPanelIsHidden(until: Double?) throws {
+    let source = RuntimeViewSource(runtimeView(), schedule: { _ in })
+    let key = SignalKey(signal: "example.answer", key: "confirm")
+    let state = TaskGraphState.signalSleeping(phase: "answered", until: until, signals: [key])
+    let id = try TaskID(2)
+    let nodeJSON: JSONValue = [
+        "id": 2, "kind": "example.ask", "conversationId": 1, "background": false,
+        "abortRequested": false, "state": try JSONValue(encoding: state), "conversations": [],
+    ]
+    let node = try nodeJSON.decode(TaskGraphNode.self)
+    source.updateTasks(TaskGraph(tasks: ["2": node]), visible: false)
+    let host = source.hostCurrent()
+    let expected = DurableSignalSleepingTask(id: id, kind: "example.ask", phase: "answered", signals: [key], until: until)
+    #expect(host.activity == .sleeping)
+    #expect(host.tasks?.tasks["2"] == node)
+    #expect(host.sleepingTasks.isEmpty)
+    #expect(host.signalSleepingTasks == [expected])
+    let legacy = try JSONValue(encoding: source.current())
+    #expect(legacy["tasks"] == nil)
+    let roundTripped = try legacy.decode(DurableView.self)
+    #expect(roundTripped.signalSleepingTasks == [expected])
+}

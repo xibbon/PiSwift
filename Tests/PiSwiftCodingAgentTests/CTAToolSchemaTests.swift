@@ -11,10 +11,10 @@ private struct CTAToolSchemaFixture: Decodable {
 // v1.5.2 C-TA, 6536f8012 and 6291b9bcc: compare JSON values from the tagged tool declarations.
 @Test func ctaBuiltInToolParametersMatchTaggedSchemas() throws {
     let url = try #require(Bundle.module.url(
-        forResource: "builtin-tool-schemas-v152", withExtension: "json", subdirectory: "fixtures"
+        forResource: "builtin-tool-schemas", withExtension: "json", subdirectory: "fixtures"
     ))
     let fixture = try JSONDecoder().decode(CTAToolSchemaFixture.self, from: Data(contentsOf: url))
-    #expect(fixture.tag == "v1.5.2")
+    #expect(fixture.tag == "v1.6.0")
     let tools = [
         createBashTool(cwd: "/"), createEditTool(cwd: "/"), createFindTool(cwd: "/"),
         createGrepTool(cwd: "/"), createLsTool(cwd: "/"), createReadTool(cwd: "/"),

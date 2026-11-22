@@ -39,6 +39,8 @@ public struct CreateAgentSessionOptions: Sendable {
     public var model: Model?
     public var thinkingLevel: ThinkingLevel?
     public var scopedModels: [ScopedModel]?
+    /// Scope patterns for this session. An explicit list takes precedence over enabledModels and scopedModels.
+    public var modelPatterns: [String]?
     public var sessionId: String?
     public var projectTrusted: Bool?
     public var offline: Bool?
@@ -64,6 +66,8 @@ public struct CreateAgentSessionOptions: Sendable {
     public var customTools: [CustomToolDefinition]?
     public var additionalCustomToolPaths: [String]?
     public var resourceLoader: ResourceLoader?
+    public var packageCommandOutput: PackageCommandOutput
+    public var onPackageProgress: ProgressCallback?
     public var hooks: [HookDefinition]?
     public var additionalHookPaths: [String]?
     public var additionalExtensionPaths: [String]?
@@ -103,6 +107,8 @@ public struct CreateAgentSessionOptions: Sendable {
         customTools: [CustomToolDefinition]? = nil,
         additionalCustomToolPaths: [String]? = nil,
         resourceLoader: ResourceLoader? = nil,
+        packageCommandOutput: PackageCommandOutput = .inherit,
+        onPackageProgress: ProgressCallback? = nil,
         hooks: [HookDefinition]? = nil,
         additionalHookPaths: [String]? = nil,
         additionalExtensionPaths: [String]? = nil,
@@ -117,7 +123,8 @@ public struct CreateAgentSessionOptions: Sendable {
         sessionManager: SessionManager? = nil,
         settingsManager: SettingsManager? = nil,
         bashOperations: BashOperations? = nil,
-        clientIdentityProvider: ClientIdentityProvider? = nil
+        clientIdentityProvider: ClientIdentityProvider? = nil,
+        modelPatterns: [String]? = nil
     ) {
         self.cwd = cwd
         self.agentDir = agentDir
@@ -127,6 +134,7 @@ public struct CreateAgentSessionOptions: Sendable {
         self.model = model
         self.thinkingLevel = thinkingLevel
         self.scopedModels = scopedModels
+        self.modelPatterns = modelPatterns
         self.sessionId = sessionId
         self.projectTrusted = projectTrusted
         self.offline = offline
@@ -138,6 +146,8 @@ public struct CreateAgentSessionOptions: Sendable {
         self.customTools = customTools
         self.additionalCustomToolPaths = additionalCustomToolPaths
         self.resourceLoader = resourceLoader
+        self.packageCommandOutput = packageCommandOutput
+        self.onPackageProgress = onPackageProgress
         self.hooks = hooks
         self.additionalHookPaths = additionalHookPaths
         self.additionalExtensionPaths = additionalExtensionPaths
@@ -270,9 +280,9 @@ package let defaultModelPerProvider: [(KnownProvider, String)] = [
     (.amazonBedrock, "us.anthropic.claude-opus-5-5"),
     (.antLing, "Ring-2.6-1T"),
     (.anthropic, "claude-opus-5-5"),
-    (.openai, "gpt-6.1-sol"),
-    (.azure, "gpt-6.1-sol"),
-    (.openaiCodex, "gpt-6.1-sol"),
+    (.openai, "gpt-6.2-sol"),
+    (.azure, "gpt-6.2-sol"),
+    (.openaiCodex, "gpt-6.2-sol"),
     (.nvidia, "nvidia/nemotron-3.5-super-vl-120b-a12b"),
     (.deepseek, "deepseek-v4-pro"),
     (.google, "gemini-4-argon"),
@@ -501,7 +511,7 @@ private func createLoadedHooksFromDefinitions(_ definitions: [HookDefinition], e
             setUnregisterOwnedToolHandler: api.setUnregisterOwnedToolHandler,
             setFlagValue: api.setFlagValue,
             dispose: api.disposeEventBusListeners
-        )
+        ).withTrackedEventBus(api.trackedEventBus)
     }
 }
 
@@ -552,6 +562,21 @@ private func createFactoryFromLoadedHook(_ loaded: LoadedHook) -> HookFactory {
     }
 }
 
+private func extensionLoadDiagnostic(_ failure: ExtensionLoadError) -> ResourceDiagnostic {
+    let path: String
+    let error: String
+    switch failure {
+    case .fileNotFound(let source):
+        (path, error) = (source, "Extension not found")
+    case .invalidExtension(let source, let detail), .compilationError(let source, let detail),
+         .packageLoadError(let source, let detail), .loadError(let source, let detail):
+        (path, error) = (source, detail)
+    case .ioError(let source, let cause):
+        (path, error) = (source, cause.localizedDescription)
+    }
+    return ResourceDiagnostic(type: "error", message: "Failed to load extension \"\(path)\": \(error)", path: path)
+}
+
 public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgentSessionOptions()) async throws -> CreateAgentSessionResult {
     if let names = options.toolNames, let problem = getToolListError(names) {
         throw ToolSelectionError.invalidToolsOption(problem)
@@ -581,6 +606,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             cwd: cwd,
             agentDir: agentDir,
             settingsManager: settingsManager,
+            packageCommandOutput: options.packageCommandOutput,
+            onPackageProgress: options.onPackageProgress,
             noExtensions: options.noExtensions,
             builtinExtensions: (options.inlineExtensions ?? []).filter(\.builtin).map(\.name),
             disabledBuiltinExtensions: options.disabledBuiltinExtensions,
@@ -595,6 +622,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     let resolvedResourceLoader = resourceLoader!
 
     var allLoadedHooks: [LoadedHook] = []
+    var extensionDiagnostics: [ResourceDiagnostic] = []
 
     if let hooks = options.hooks {
         if !hooks.isEmpty {
@@ -604,8 +632,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         let hookPaths = settingsManager.getHooks() + (options.additionalHookPaths ?? [])
         let loadResult = discoverAndLoadHooks(hookPaths, cwd, agentDir, eventBus)
         time("discoverAndLoadHooks")
-        for error in loadResult.errors {
-            writeStderr("Failed to load hook \"\(error.path)\": \(error.error)\n")
+        extensionDiagnostics += loadResult.errors.map {
+            ResourceDiagnostic(type: "error", message: "Failed to load hook \"\($0.path)\": \($0.error)", path: $0.path)
         }
         allLoadedHooks = loadResult.hooks
     }
@@ -654,8 +682,8 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     } else {
         let configuredPaths = settingsManager.getCustomTools() + (options.additionalCustomToolPaths ?? [])
         customToolsResult = discoverAndLoadCustomTools(configuredPaths, cwd, builtInToolNames, agentDir, eventBus)
-        for error in customToolsResult.errors {
-            writeStderr("Failed to load custom tool \"\(error.path)\": \(error.error)\n")
+        extensionDiagnostics += customToolsResult.errors.map {
+            ResourceDiagnostic(type: "error", message: "Failed to load custom tool \"\($0.path)\": \($0.error)", path: $0.path)
         }
     }
 
@@ -705,16 +733,16 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         toolRegistrationRegistry: toolRegistrationRegistry
     )
     time("discoverAndLoadExtensions")
-    for error in extensionResult.errors {
-        writeStderr("Failed to load extension: \(error.localizedDescription)\n")
-    }
     let inlineExtensionResult = loadInlineExtensions(toolRegistrationRegistry)
-    for error in inlineExtensionResult.errors {
-        writeStderr("Failed to load inline extension: \(error.localizedDescription)\n")
-    }
     let replacementResult = omitReplacedExtensions(extensionResult.hooks + inlineExtensionResult.hooks)
     allLoadedHooks += replacementResult.hooks
-    for warning in replacementResult.warnings { writeStderr("Warning: \(warning.message)\n") }
+    extensionDiagnostics += extensionResult.warnings + inlineExtensionResult.warnings + replacementResult.warnings
+    extensionDiagnostics += (extensionResult.errors + inlineExtensionResult.errors).map(extensionLoadDiagnostic)
+    extensionDiagnostics += allLoadedHooks.flatMap { hook in
+        hook.toolRegistrationErrors.map { error in
+            ResourceDiagnostic(type: "error", message: error.localizedDescription, path: hook.path)
+        }
+    }
 
     // Closure used by AgentSession.reloadExtensions() so /reload can swap extensions live.
     // Captures the same paths/cwd/agentDir/eventBus the initial load used. SDK extension
@@ -744,66 +772,47 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     // `hasHandlers(...)`, so empty runners cost nothing.
     let hookRunner = HookRunner(allLoadedHooks, cwd, sessionManager, modelRegistry, settingsManager: settingsManager)
 
-    if hookRunner.hasHandlers("resources_discover") {
-        let extensionResources = await hookRunner.emitResourcesDiscover(cwd: cwd, reason: .startup)
-        if !extensionResources.skillPaths.isEmpty || !extensionResources.promptPaths.isEmpty || !extensionResources.themePaths.isEmpty {
-            resolvedResourceLoader.extendResources(extensionResources)
-        }
-        time("resourcesDiscover")
-    }
-
     let existingSession = sessionManager.buildSessionContext()
     time("loadSession")
     let hasExistingSession = !existingSession.messages.isEmpty
     let sessionModel = getBranchSelection(sessionManager.getBranch(), getModel: modelRegistry.find)
+    let resolvesModelScope = options.modelPatterns != nil || options.scopedModels == nil
+    let scopePatterns = options.modelPatterns ?? (resolvesModelScope ? settingsManager.getEnabledModels() : nil)
+    let scope = await resolveModelScopeWithDiagnostics(scopePatterns ?? [], modelRegistry)
+    let scopedModels = resolvesModelScope ? scope.scopedModels : options.scopedModels ?? []
 
     var model = options.model
-    var modelFallbackMessage: String?
+    var unavailableSessionModel: (provider: String, modelId: String)?
 
     if model == nil, hasExistingSession, let existingModel = sessionModel {
         if let restored = modelRegistry.find(existingModel.provider, existingModel.modelId),
-           modelRegistry.hasConfiguredAuth(restored),
            await modelRegistry.isAvailable(restored) {
             model = restored
         }
         if model == nil {
-            modelFallbackMessage = "Could not restore model \(existingModel.provider)/\(existingModel.modelId)"
+            unavailableSessionModel = existingModel
         }
     }
 
-    if model == nil, !hasExistingSession, let scoped = options.scopedModels?.first {
+    if model == nil, !hasExistingSession, let scoped = scopedModels.first {
         model = scoped.model
     }
 
     if model == nil {
-        if let provider = settingsManager.getDefaultProvider(),
-           let modelId = settingsManager.getDefaultModel(),
-           let settingsModel = modelRegistry.find(provider, modelId),
-           modelRegistry.hasConfiguredAuth(settingsModel),
-           await modelRegistry.isAvailable(settingsModel) {
-            model = settingsModel
-        }
+        model = await findSessionDefaultModel(settingsManager, modelRegistry)
+        time("findAvailableModel")
     }
 
-    if model == nil {
-        let available = await modelRegistry.getAvailable()
-        if let preferred = await selectDefaultModel(available: available, registry: modelRegistry) {
-            model = preferred
-        } else {
-            for candidate in available {
-                if modelRegistry.hasConfiguredAuth(candidate) {
-                    model = candidate
-                    break
-                }
-            }
-        }
-        time("findAvailableModel")
-
-        if model == nil {
-            modelFallbackMessage = "No models available. Use /login or set an API key environment variable."
-        } else if let existingMessage = modelFallbackMessage {
-            modelFallbackMessage = "\(existingMessage). Using \(model!.provider)/\(model!.id)"
-        }
+    let modelFallbackMessage: String?
+    var sessionDiagnostics = collectSettingsDiagnostics(settingsManager) + scope.resourceDiagnostics
+    if let model, let unavailableSessionModel {
+        let message = modelRestoreFallbackMessage(provider: unavailableSessionModel.provider,
+                                                  modelID: unavailableSessionModel.modelId, fallback: model)
+        modelFallbackMessage = message
+        sessionDiagnostics.append(ResourceDiagnostic(type: "warning", message: message))
+    } else {
+        modelFallbackMessage = model == nil
+            ? "No models available. Use /login or set an API key environment variable." : nil
     }
 
     let resolvedModel = model ?? getModel(provider: .openai, modelId: "gpt-4o-mini")
@@ -813,7 +822,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         thinkingLevel = ThinkingLevel(rawValue: existingSession.thinkingLevel) ?? .off
     }
     if thinkingLevel == nil, options.model == nil, !hasExistingSession,
-       let scoped = options.scopedModels?.first,
+       let scoped = scopedModels.first,
        scoped.model.provider == resolvedModel.provider, scoped.model.id == resolvedModel.id,
        scoped.isThinkingExplicit {
         thinkingLevel = scoped.thinkingLevel
@@ -1199,7 +1208,7 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
         resourceLoader: resolvedResourceLoader,
         projectTrusted: projectTrusted,
         systemPromptOptions: makeSystemPromptOptions(initialActiveToolNames),
-        scopedModels: options.scopedModels,
+        scopedModels: scopedModels,
         fileCommands: slashCommands,
         promptTemplates: promptTemplates,
         hookRunner: hookRunner,
@@ -1228,8 +1237,24 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
             return wrapped
         },
         bashOperations: options.bashOperations,
-        clientIdentityProvider: clientIdentityProvider
+        clientIdentityProvider: clientIdentityProvider,
+        diagnostics: extensionDiagnostics
     ))
+    let readSettings: (@Sendable () async -> SettingsManager)?
+    if options.settingsManager == nil {
+        readSettings = {
+            await settingsManager.flush()
+            return SettingsManager.create(sessionManager.getCwd(), agentDir, projectTrusted: projectTrusted)
+        }
+    } else {
+        readSettings = nil
+    }
+    createdSession.configureReplacementDiagnostics(
+        sessionDiagnostics,
+        resolvesModelScope: resolvesModelScope,
+        modelPatterns: options.modelPatterns,
+        readSettings: readSettings
+    )
     time("createAgentSession")
     sessionBox.withLock { $0 = createdSession }
     let sendMessageHandler: HookSendMessageHandler = { [weak createdSession] message, options in
@@ -1239,13 +1264,6 @@ public func createAgentSession(_ options: CreateAgentSessionOptions = CreateAgen
     customToolsResult.setSendMessageHandler(sendMessageHandler)
     sendMessageHandlerBox.withLock { $0 = sendMessageHandler }
 
-    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult, modelFallbackMessage: modelFallbackMessage,
-        diagnostics: deduplicateDiagnostics(collectSettingsDiagnostics(settingsManager) + extensionResult.warnings + inlineExtensionResult.warnings + replacementResult.warnings +
-            (extensionResult.errors + inlineExtensionResult.errors).map {
-                ResourceDiagnostic(type: "error", message: $0.localizedDescription)
-            } + allLoadedHooks.flatMap { hook in
-                hook.toolRegistrationErrors.map { error in
-                    ResourceDiagnostic(type: "error", message: error.localizedDescription, path: hook.path)
-                }
-            }))
+    return CreateAgentSessionResult(session: createdSession, customToolsResult: customToolsResult,
+        modelFallbackMessage: modelFallbackMessage, diagnostics: createdSession.creationDiagnostics)
 }

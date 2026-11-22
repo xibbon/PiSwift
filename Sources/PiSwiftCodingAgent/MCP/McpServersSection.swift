@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftMCP
 
 public let MCP_SERVERS_SECTION = "mcp_servers"
 public let MAX_SERVERS_SECTION_CHARS = 4096
@@ -41,9 +42,8 @@ public func renderServersSection(_ servers: [McpServerListing]) -> String? {
     while kept > 0 && size(kept) > MAX_SERVERS_SECTION_CHARS { kept -= 1 }
     let perServer = kept == 0 ? 0 : min(maxServerDescriptionChars, (MAX_SERVERS_SECTION_CHARS - size(kept)) / kept - 2)
     let lines = listed.prefix(kept).enumerated().map { index, server in
-        let description = server.entry.config.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let source = description.isEmpty ? server.instructions ?? "" : description
-        let summary = source.components(separatedBy: "\n").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let summary = mcpServerSummary(description: server.entry.config.description,
+            instructions: server.instructions)
         let text: String
         if perServer <= 0 { text = "" }
         else if summary.utf16.count <= perServer { text = summary }

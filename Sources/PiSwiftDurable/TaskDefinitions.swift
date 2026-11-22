@@ -27,25 +27,51 @@ public struct TaskOptions: Sendable {
     public let background: Bool
     /// Abort this task before a later Harness runs it.
     public let abandonOnRestart: Bool
+    /// A tool-local key for finding the same child after a rerun or wake.
+    public let key: String?
     internal let hasRestartPolicy: Bool
     /// Selects task ownership, conversation, and lifetime.
-    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool? = nil) {
+    public init(ownership: TaskOwnership, conversationId: ConversationID? = nil, background: Bool = false, abandonOnRestart: Bool? = nil, key: String? = nil) {
         self.ownership = ownership
         self.conversationId = conversationId
         self.background = background
         self.abandonOnRestart = abandonOnRestart ?? false
         self.hasRestartPolicy = abandonOnRestart != nil
+        self.key = key
     }
 }
 
 /// A submission before the storage assigns an ID.
 public enum SubmissionCreate: Sendable {
+    internal func notifying(_ notify: SubmissionNotify?) throws -> Self {
+        guard let notify else { return self }
+        switch self {
+        case .input(let id, let request, let state): return .input(conversationId: id, requestId: request, state: try state.notifying(notify))
+        case .write(let id, let request, let state): return .write(conversationId: id, requestId: request, state: try state.notifying(notify))
+        case .continue(let id, let request, let state): return .continue(conversationId: id, requestId: request, state: try state.notifying(notify))
+        }
+    }
     /// Stores user content and its admission policy.
     case input(conversationId: ConversationID, requestId: String? = nil, state: InputSubmissionState = .queued())
     /// Stores an entry write request.
     case write(conversationId: ConversationID, requestId: String? = nil, state: WriteSubmissionState = .queued())
     /// Stores a run that starts from the current context without an entry.
     case `continue`(conversationId: ConversationID, requestId: String? = nil, state: ContinueSubmissionState = .placed())
+    /// Creates an input submission that notifies a task when it settles.
+    public static func input(conversationId: ConversationID, requestId: String? = nil,
+                             notify: SubmissionNotify, state: InputSubmissionState = .queued()) throws -> Self {
+        .input(conversationId: conversationId, requestId: requestId, state: try state.notifying(notify))
+    }
+    /// Creates a write submission that notifies a task when it settles.
+    public static func write(conversationId: ConversationID, requestId: String? = nil,
+                             notify: SubmissionNotify, state: WriteSubmissionState = .queued()) throws -> Self {
+        .write(conversationId: conversationId, requestId: requestId, state: try state.notifying(notify))
+    }
+    /// Creates a continued run that notifies a task when it settles.
+    public static func `continue`(conversationId: ConversationID, requestId: String? = nil,
+                                  notify: SubmissionNotify, state: ContinueSubmissionState = .placed()) throws -> Self {
+        .continue(conversationId: conversationId, requestId: requestId, state: try state.notifying(notify))
+    }
     /// The conversation that owns or is addressed by this value.
     public var conversationId: ConversationID {
         switch self { case .input(let id, _, _), .write(let id, _, _), .continue(let id, _, _): id }
@@ -59,6 +85,44 @@ public enum SubmissionCreate: Sendable {
             .write(id: id, conversationId: conversationId, requestId: requestId, state: state)
         case .continue(let conversationId, let requestId, let state):
             .continue(id: id, conversationId: conversationId, requestId: requestId, state: state)
+        }
+    }
+}
+
+private extension InputSubmissionState {
+    func notifying(_ notify: SubmissionNotify) throws -> Self {
+        let value = try JSONValue(encoding: notify)
+        switch self {
+        case .queued(let fields): var fields = fields; fields["notify"] = value; return .queued(extensions: fields)
+        case let .placed(entry, fields): var fields = fields; fields["notify"] = value; return .placed(entry: entry, extensions: fields)
+        case let .done(entry, answer, fields): var fields = fields; fields["notify"] = value; return .done(entry: entry, answer: answer, extensions: fields)
+        case let .unanswered(reason, entry, detail, fields):
+            var fields = fields; fields["notify"] = value
+            return .unanswered(reason: reason, entry: entry, detail: detail, extensions: fields)
+        }
+    }
+}
+private extension WriteSubmissionState {
+    func notifying(_ notify: SubmissionNotify) throws -> Self {
+        let value = try JSONValue(encoding: notify)
+        switch self {
+        case .queued(let fields): var fields = fields; fields["notify"] = value; return .queued(extensions: fields)
+        case let .done(entry, fields): var fields = fields; fields["notify"] = value; return .done(entry: entry, extensions: fields)
+        case let .unanswered(reason, detail, fields):
+            var fields = fields; fields["notify"] = value
+            return .unanswered(reason: reason, detail: detail, extensions: fields)
+        }
+    }
+}
+private extension ContinueSubmissionState {
+    func notifying(_ notify: SubmissionNotify) throws -> Self {
+        let value = try JSONValue(encoding: notify)
+        switch self {
+        case .placed(let fields): var fields = fields; fields["notify"] = value; return .placed(extensions: fields)
+        case .done(let answer, let fields): var fields = fields; fields["notify"] = value; return .done(answer: answer, extensions: fields)
+        case let .unanswered(reason, detail, fields):
+            var fields = fields; fields["notify"] = value
+            return .unanswered(reason: reason, detail: detail, extensions: fields)
         }
     }
 }

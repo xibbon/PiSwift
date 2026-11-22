@@ -54,6 +54,60 @@ private func retryTestMessage(
     #expect(!isRetryableAssistantError(retryTestMessage("rate limit", stopReason: .stop)))
 }
 
+// retry.test.ts: "matches Node socket error codes: %s"
+@Test(arguments: ["read ECONNRESET", "connect ETIMEDOUT 140.82.113.3:443", "write EPIPE",
+                  "connect ECONNREFUSED 127.0.0.1:443", "ECONNABORTED", "Connection reset by peer"])
+func matchesNodeSocketErrorCodes(_ text: String) {
+    #expect(isRetryableAssistantError(retryTestMessage(text)))
+}
+
+// retry.test.ts: "does not match socket error codes inside longer identifiers: %s"
+@Test(arguments: ["Invalid value EXECONNRESET", "Unknown field ETIMEDOUTX", "Invalid key ERR_EPIPE_ID"])
+func doesNotMatchSocketCodesInsideLongerIdentifiers(_ text: String) {
+    #expect(!isRetryableAssistantError(retryTestMessage(text)))
+}
+
+// retry.test.ts: "matches gateway wording for a closed connection"
+@Test func matchesGatewayWordingForClosedConnection() {
+    #expect(isRetryableAssistantError(retryTestMessage(#"{"type":"error","error":{"type":"api_error","message":"Connection closed."}}"#)))
+}
+
+// retry.test.ts: "matches the Codex websocket connection lifetime limit: %s"
+@Test(arguments: ["Codex error: Responses websocket connection limit reached (60 minutes). Create a new websocket connection to continue.",
+                  "Codex error: websocket_connection_limit_reached"])
+func matchesCodexWebsocketConnectionLifetimeLimit(_ text: String) {
+    #expect(isRetryableAssistantError(retryTestMessage(text)))
+}
+
+// retry.test.ts: "does not match a generic connection limit"
+@Test func doesNotMatchGenericConnectionLimit() {
+    #expect(!isRetryableAssistantError(retryTestMessage("connection limit reached")))
+}
+
+@Test(arguments: [POSIXErrorCode.ECONNRESET, .ECONNABORTED, .ECONNREFUSED, .ETIMEDOUT, .EPIPE, .ENOTCONN])
+func structuredSocketCodesMatchTransportErrors(_ code: POSIXErrorCode) {
+    #expect(isRetryableTransportError(POSIXError(code)))
+    #expect(retryAwareErrorDescription(POSIXError(code)).hasPrefix("Network error: "))
+}
+
+@Test(arguments: [URLError.timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet])
+func structuredURLErrorCodesMatchTransportErrors(_ code: URLError.Code) {
+    #expect(isRetryableTransportError(URLError(code)))
+    #expect(retryAwareErrorDescription(URLError(code)).hasPrefix("Network error: "))
+}
+
+private struct SocketTextError: LocalizedError {
+    let text: String
+    var errorDescription: String? { text }
+}
+
+@Test func boundedSocketTextAlsoMatchesThrownTransportErrors() {
+    #expect(isRetryableTransportError(SocketTextError(text: "read ECONNRESET")))
+    #expect(!isRetryableTransportError(SocketTextError(text: "Invalid value EXECONNRESET")))
+    #expect(isRetryableTransportError(SocketTextError(text: "Connection closed.")))
+    #expect(isRetryableTransportError(SocketTextError(text: "websocket_connection_limit_reached")))
+}
+
 @Test func retryableTransportErrorRecognizesDirectAndUnderlyingENOTCONN() {
     let notConnected = NSError(
         domain: NSPOSIXErrorDomain,

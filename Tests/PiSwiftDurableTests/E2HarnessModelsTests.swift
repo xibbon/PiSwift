@@ -110,18 +110,24 @@ struct E2HarnessModelsTests {
 
     @Test func providerFailureFaultsGeneration() async throws {
         let reports = Mutex<[ReportInfo]>([]), fail = Mutex(true)
+        let reportEvents = AsyncStream<ReportInfo>.makeStream()
         let recovered = FakeDurableModels(responses: [.message(chatAssistant("recovered"))])
         let opened = try await open(.init(models: {
             if fail.withLock({ $0 }) { throw TaskDefinitionError("models failed") }
             return recovered
         }, registry: createRegistry(),
-            onReport: { _, info in reports.withLock { $0.append(info) } }))
+            onReport: { _, info in
+                reports.withLock { $0.append(info) }
+                reportEvents.continuation.yield(info)
+            }))
         let settled = try await opened.root.submit(.input(content: .text("go")), context: .background).wait(context: .background)
         #expect(settled.status == "unanswered")
         // v1.5.2 D5b scheduler.ts:2686–2688,2428–2442 and live.ts:439–450:
         // a throwing models getter faults the task and reports task_faulted.
         let live = try await opened.harness.snapshot(LiveDoc, conversationId: opened.root.id, context: .background)
         #expect(live?.runFailure?.reason == .faulted)
+        var reportIterator = reportEvents.stream.makeAsyncIterator()
+        _ = await reportIterator.next()
         let seen = reports.withLock { $0 }
         #expect(!seen.isEmpty)
         for info in seen {

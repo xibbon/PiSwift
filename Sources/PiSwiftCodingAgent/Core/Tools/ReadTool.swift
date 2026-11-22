@@ -29,6 +29,13 @@ enum ReadToolError: LocalizedError, Sendable {
 
 public struct ReadToolDetails: Sendable {
     public var truncation: TruncationResult?
+    /// Selected model ID when an image result is shown to a text-only model.
+    public var imageUnsupportedByModel: String?
+
+    public init(truncation: TruncationResult? = nil, imageUnsupportedByModel: String? = nil) {
+        self.truncation = truncation
+        self.imageUnsupportedByModel = imageUnsupportedByModel
+    }
 }
 
 /// File operations for local and remote read tools. The stream is pulled one chunk at a time.
@@ -294,6 +301,10 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
         try await operations.access(absolutePath)
 
         if let mimeType = try await operations.detectImageMimeType?(absolutePath) {
+            let selectedModel = options?.modelProvider?()
+            let imageDetails: AnyCodable? = selectedModel.flatMap { model in
+                model.input.contains(.image) ? nil : AnyCodable(["imageUnsupportedByModel": model.id])
+            }
             if blockImages {
                 let warning = "[Image file detected: \(absolutePath)]\nImage reading is disabled. The 'blockImages' setting is enabled."
                 return readToolResult(content: [.text(TextContent(text: warning))])
@@ -302,7 +313,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
             let base64 = data.base64EncodedString()
 
             if autoResizeImages {
-                let profile = options?.modelProvider?()?.inputLimits?.images?.resize ?? options?.resizeOptions
+                let profile = selectedModel?.inputLimits?.images?.resize ?? options?.resizeOptions
                 let limits = ImageResizeOptions(modelProfile: profile)
                 let resized = resizeImage(ImageContent(data: base64, mimeType: mimeType), options: limits)
                 guard imageFitsResizeLimits(resized, options: limits) else {
@@ -317,7 +328,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
                     .text(TextContent(text: textNote)),
                     .image(ImageContent(data: resized.data, mimeType: resized.mimeType)),
                 ]
-                return readToolResult(content: content)
+                return readToolResult(content: content, details: imageDetails)
             }
 
             // v1.5.2 C-TB: image-process.ts:47-62,72-100 normalizes BMP even when resizing is off.
@@ -334,7 +345,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
                 .text(TextContent(text: textNote)),
                 .image(inlineImage),
             ]
-            return readToolResult(content: content)
+            return readToolResult(content: content, details: imageDetails)
         }
 
         let rawStartLine = max(0, (rawOffset ?? Double(offset ?? 1)) - 1)
@@ -394,7 +405,7 @@ public func createReadTool(cwd: String, options: ReadToolOptions? = nil) -> Agen
     tool.executeWithContext = { id, params, signal, onUpdate, context in
         var executionOptions = options ?? ReadToolOptions()
         executionOptions.resizeOptions = context.model?.inputLimits?.images?.resize ?? executionOptions.resizeOptions
-        if context.model != nil { executionOptions.modelProvider = nil }
+        if let model = context.model { executionOptions.modelProvider = { model } }
         return try await createReadTool(cwd: resolveToolExecutionCwd(context, fallback: cwd), options: executionOptions).execute(id, params, signal, onUpdate)
     }
     // No property descriptions: the codemode output type stays on one line (#10251).

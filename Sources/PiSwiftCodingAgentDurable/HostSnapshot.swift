@@ -93,10 +93,30 @@ public enum DurableRunActivity: String, Sendable, Equatable {
     case idle, progressing, sleeping, blocked
 }
 
+/// A tool call parked by a gate or by its execution callback.
+public struct DurableParkedTool: Sendable, Equatable {
+    public let slot: ToolSlot
+    public let phase: String?
+    public let until: Double?
+    public let signals: [SignalKey]
+    public let waitingOn: [TaskID]
+    public let waitingPolicy: JoinPolicy?
+    /// A call-phase wait can be an approval gate. The host owns the signal kind.
+    public var isGated: Bool { phase == "call" }
+
+    public init(slot: ToolSlot, phase: String? = nil, until: Double? = nil, signals: [SignalKey] = [],
+                waitingOn: [TaskID] = [], waitingPolicy: JoinPolicy? = nil) {
+        self.slot = slot; self.phase = phase; self.until = until; self.signals = signals
+        self.waitingOn = waitingOn; self.waitingPolicy = waitingPolicy
+    }
+}
+
 public struct DurableHostView: Sendable {
     public let transcript: TranscriptView
     public let rows: [DurableTranscriptRow]
     public let live: LiveState
+    /// An appended answer still under review; the run's inputs remain open.
+    public let pendingReview: LiveYield?
     public let inbox: InboxState
     public let agent: PiSwiftDurable.AgentState
     public let usage: UsageState
@@ -111,6 +131,13 @@ public struct DurableHostView: Sendable {
     public let openMode: DurableOpenMode
     public let activity: DurableRunActivity
     public let sleepingTasks: [DurableSleepingTask]
+    public let signalSleepingTasks: [DurableSignalSleepingTask]
+    /// Sleeping or waiting top-level tool calls, with their task wake conditions.
+    public let parkedTools: [DurableParkedTool]
+    /// Queued inputs that survive conversation abort.
+    public let keptInputs: [InboxItem]
+    /// Tool result duration from first start through settlement, including parked time.
+    public let toolDurationMs: [String: Int]
     public let documentError: String?
 
     /// Reads typed documents and retains a diagnostic if a document is invalid.
@@ -125,6 +152,7 @@ public struct DurableHostView: Sendable {
         self.transcript = transcript
         rows = transcript.items.map { DurableTranscriptRow(conversationId: transcript.conversation.id, item: $0) }
         self.live = live
+        pendingReview = live.run?.yield
         do { agent = try decodeAgentOf(view) }
         catch { agent = PiSwiftDurable.AgentState(); errors.append("Agent: \(error)") }
         if let document = transcript.docs["pi.usage"] {
@@ -154,6 +182,39 @@ public struct DurableHostView: Sendable {
         case .blocked: activity = .blocked
         }
         sleepingTasks = legacy.sleepingTasks
+        signalSleepingTasks = legacy.signalSleepingTasks
+        keptInputs = inbox.items.filter { $0.onAbort == .keep }
+        let graph = tasks
+        parkedTools = (live.tools ?? []).filter { $0.status == .sleeping || $0.status == .waiting }.map { slot in
+            let node = slot.taskId.flatMap { graph?.tasks[String($0.rawValue)] }
+            let phase: String?
+            let until: Double?
+            let signals: [SignalKey]
+            let waitingOn: [TaskID]
+            let waitingPolicy: JoinPolicy?
+            switch node?.state {
+            case .sleeping(let value, let deadline):
+                phase = value; until = deadline; signals = []; waitingOn = []; waitingPolicy = nil
+            case .signalSleeping(let value, let deadline, let keys):
+                phase = value; until = deadline; signals = keys; waitingOn = []; waitingPolicy = nil
+            case .waiting(let value, let children, let policy):
+                phase = value; until = nil; signals = []; waitingOn = children; waitingPolicy = policy
+            default:
+                phase = nil; until = nil; signals = []; waitingOn = []; waitingPolicy = nil
+            }
+            return DurableParkedTool(slot: slot, phase: phase, until: until, signals: signals,
+                                     waitingOn: waitingOn, waitingPolicy: waitingPolicy)
+        }
+        var durations: [String: Int] = [:]
+        for item in transcript.items {
+            guard case .entry(let entry) = item else { continue }
+            for message in (try? entry.messages()) ?? [] {
+                if case .toolResult(let result) = message, let duration = result.durationMs {
+                    durations[result.toolCallId] = duration
+                }
+            }
+        }
+        toolDurationMs = durations
     }
 }
 

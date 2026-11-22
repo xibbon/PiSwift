@@ -61,6 +61,41 @@ func startGenerationToolRound(runtime: TaskRuntime, request: GenerationCheckpoin
     }, context: context)
 }
 internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], context: ChordContext) async throws {
+    let slots = try await runtime.snapshot(LiveDoc, conversationId: runtime.conversationId, context: context)?.tools ?? []
+    let results = slots.compactMap(\.entry)
+    var prepared: [PreparedHookTask] = []
+    try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in
+        guard let asked = try await hooks.afterTools?(assistant, results, runtime.hookApi, context) else { return }
+        try prepareHookTasks(asked.tasks, runtime: runtime, prepared: &prepared)
+    }
+    if !prepared.isEmpty {
+        try await runtime.commit({ tx, _ in
+            let ids = try await createHookTasks(tx: tx, runtime: runtime, prepared: prepared)
+            return try generationTask.waiting(GenerationCheckpoint(phase: .afterTools, assistant: assistant, tools: tools, tasks: ids),
+                                              on: ids, policy: .allSettled)
+        }, context: context)
+        return
+    }
+    try await endToolRound(runtime: runtime, assistant: assistant, tools: tools, taskTerminates: false, context: context)
+}
+
+/// Applies every completed afterTools decision after its child tasks settle.
+internal func finishAfterTools(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], tasks: [TaskID], context: ChordContext) async throws {
+    let outcomes = try await runtime.outcomes(tasks, context: context)
+    var terminates = false
+    for (index, outcome) in outcomes.enumerated() {
+        guard case .completed(let result, _) = outcome else { continue }
+        if result == .null || result == .object([:]) { continue }
+        if result == .object(["terminate": .bool(true)]) { terminates = true; continue }
+        let record = try await runtime.getTask(tasks[index], context: context)
+        let kind = record?.kind ?? "undefined"
+        let owner = runtime.registry.installed().last { item in item.tasks.contains { $0.name == kind } }?.name
+        try runtime.report(TaskDefinitionError("afterTools task \(tasks[index]) (\(kind)) completed with no AfterToolsDecision"), from: .extension(owner))
+    }
+    try await endToolRound(runtime: runtime, assistant: assistant, tools: tools, taskTerminates: terminates, context: context)
+}
+
+internal func endToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [TaskID], taskTerminates: Bool, context: ChordContext) async throws {
     let outcomes = try await runtime.outcomes(tools, context: context)
     var controls: [ToolControl?] = []
     for outcome in outcomes {
@@ -75,10 +110,9 @@ internal func finishToolRound(runtime: TaskRuntime, assistant: EntryID, tools: [
     }
     let slots = try await runtime.snapshot(LiveDoc, conversationId: runtime.conversationId, context: context)?.tools ?? []
     let results = slots.compactMap(\.entry)
-    try await runtime.hooks.each(GenerationHooks.self, context: context) { hooks in try await hooks.afterTools?(assistant, results, runtime.hookApi, context) }
     let byTask = Dictionary(uniqueKeysWithValues: zip(tools, controls))
     let ordered: [ToolControl?] = slots.map { $0.taskId.flatMap { byTask[$0] ?? nil } }
-    let terminate = !slots.isEmpty && ordered.allSatisfy { $0?.terminate == true }
+    let terminate = taskTerminates || (!slots.isEmpty && ordered.allSatisfy { $0?.terminate == true })
     let added = ordered.flatMap { $0?.addTools ?? [] }
     let handoff = ordered.reversed().compactMap { $0?.handoff }.first
     let agent = try await runtime.agent(context: context)

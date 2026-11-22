@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { mirrorV160, upstreamTag as upstreamTagV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
@@ -15,10 +16,12 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
-const output = fileURLToPath(new URL('./d5b-endings-v152/', import.meta.url));
+const v160 = process.argv.includes('--v160');
+const output = fileURLToPath(new URL(v160 ? './d5b-endings-v160/' : './d5b-endings-v152/', import.meta.url));
+const oldOutput = fileURLToPath(new URL('./d5b-endings-v152/', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-endings-'));
 const swiftSeeds = join(temporary, 'swift-seeds');
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -149,7 +152,91 @@ async function resume(kind, path, ids, rootId, ending) {
   await harness.close(context);
   return post;
 }
+async function generateV160() {
+  const old = JSON.parse(await readFile(join(oldOutput, 'manifest.json'), 'utf8'));
+  const manifest = { tag: upstreamTagV160, inputTag: 'v1.5.2', clock,
+    normalization: 'pi.provider.sessionId only', cases: {} };
+  for (const seedEnding of endings) for (const kind of ['sqlite', 'jsonl']) {
+    const name = `${seedEnding}-${kind}`;
+    const oldCase = old.cases[`${seedEnding}-sqlite`];
+    const input = join(oldOutput, name, kind === 'sqlite' ? 'pre.sqlite.gz' : 'pre');
+    const path = join(temporary, `v160-${name}${kind === 'sqlite' ? '.sqlite' : ''}`);
+    if (kind === 'sqlite') await writeFile(path, gunzipSync(await readFile(input)));
+    else await copy(kind, input, path);
+    const store = await storage(kind, path);
+    const pre = await snapshot(store, oldCase.rootId);
+    await store.close(context);
+    if (!isDeepStrictEqual(pre, oldCase.pre)) throw new Error(`${name} frozen input differs`);
+    const ending = seedEnding === 'orphaned' ? 'aborted' : seedEnding;
+    const post = await resume(kind, path, oldCase.ids, oldCase.rootId, ending);
+    manifest.cases[name] = { seedEnding, ending, backend: kind, ids: oldCase.ids,
+      rootId: oldCase.rootId, pre, post };
+    if (kind === 'jsonl') {
+      const sqlite = manifest.cases[`${seedEnding}-sqlite`];
+      if (!isDeepStrictEqual(pre, sqlite.pre) || !isDeepStrictEqual(post, sqlite.post))
+        throw new Error(`${seedEnding} v1.6.0 records differ between SQLite and JSONL`);
+      manifest.cases[name] = { backend: kind, recordsFrom: `${seedEnding}-sqlite` };
+    }
+  }
+  await addV160FutureOrphan(manifest);
+  const serialized = JSON.stringify(manifest) + '\n';
+  if (check) {
+    if (await readFile(join(output, 'manifest.json'), 'utf8') !== serialized) throw new Error('V1.6.0 endings manifest differs');
+  } else {
+    await mkdir(output, { recursive: true });
+    await writeFile(join(output, 'manifest.json'), serialized);
+  }
+  console.log(`D5b v1.6.0 endings ${check ? 'match' : 'written'}: 12 frozen inputs and one future-version case, SQLite and JSONL.`);
+}
+async function addV160FutureOrphan(manifest) {
+  const old = JSON.parse(await readFile(join(oldOutput, 'manifest.json'), 'utf8'));
+  const oldCase = old.cases['orphaned-sqlite'];
+  for (const kind of ['sqlite', 'jsonl']) {
+    const name = `orphaned-future-${kind}`;
+    const frozen = join(oldOutput, `orphaned-${kind}`, kind === 'sqlite' ? 'pre.sqlite.gz' : 'pre');
+    const path = join(temporary, `v160-${name}${kind === 'sqlite' ? '.sqlite' : ''}`);
+    if (kind === 'sqlite') await writeFile(path, gunzipSync(await readFile(frozen)));
+    else await copy(kind, frozen, path);
+    const store = await storage(kind, path);
+    const { createSession } = await source.import('packages/durable/src/session/session.ts');
+    const session = createSession(store, { now: () => clock });
+    await session.commitWith(async tx => {
+      const record = await tx.task(oldCase.ids.taskId);
+      tx.setTask({ ...record, version: 4 });
+    }, context);
+    const pre = await snapshot(store, oldCase.rootId);
+    await session.close(context);
+    const dest = join(output, name);
+    if (check) {
+      const saved = join(dest, kind === 'sqlite' ? 'pre.sqlite.gz' : 'pre');
+      const copyPath = join(temporary, `v160-check-${name}${kind === 'sqlite' ? '.sqlite' : ''}`);
+      if (kind === 'sqlite') await writeFile(copyPath, gunzipSync(await readFile(saved)));
+      else await copy(kind, saved, copyPath);
+      const savedStore = await storage(kind, copyPath);
+      const savedPre = await snapshot(savedStore, oldCase.rootId);
+      await savedStore.close(context);
+      if (!isDeepStrictEqual(savedPre, pre)) throw new Error(`${name} future input differs`);
+    } else {
+      await rm(dest, { recursive: true, force: true });
+      await mkdir(dest, { recursive: true });
+      if (kind === 'sqlite') await writeFile(join(dest, 'pre.sqlite.gz'), gzipSync(await readFile(path), { level: 9 }));
+      else await copy(kind, path, join(dest, 'pre'));
+    }
+    const post = await resume(kind, path, oldCase.ids, oldCase.rootId, 'orphaned');
+    manifest.cases[name] = { ending: 'orphaned', backend: kind, ids: oldCase.ids,
+      rootId: oldCase.rootId, pre, post };
+    if (kind === 'jsonl') {
+      const sqlite = manifest.cases['orphaned-future-sqlite'];
+      if (!isDeepStrictEqual(pre, sqlite.pre) || !isDeepStrictEqual(post, sqlite.post))
+        throw new Error('Future orphaned records differ between SQLite and JSONL');
+      manifest.cases[name] = { backend: kind, recordsFrom: 'orphaned-future-sqlite' };
+    }
+  }
+}
 try {
+  if (v160) {
+    await generateV160();
+  } else {
   const reverse = process.argv.indexOf('--resume-swift');
   if (reverse >= 0) {
     const name = process.argv[reverse + 1], path = process.argv[reverse + 2];
@@ -236,6 +323,7 @@ try {
     await writeFile(join(output, 'manifest.json'), serialized);
   }
   console.log(`D5b tagged endings ${check ? 'match (including Swift-written reverse files)' : 'written'}: 12 endings, SQLite and JSONL.`);
+  }
   }
 } finally {
   Date.now = oldDateNow;

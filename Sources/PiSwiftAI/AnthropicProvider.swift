@@ -116,8 +116,7 @@ private func resolveAnthropicCompat(model: Model) -> ResolvedAnthropicCompat {
         supportsStrictTools: compat?.supportsStrictTools ?? false,
         supportsMidConvoSystemMessages: compat?.supportsMidConvoSystemMessages ?? false,
         supportsMidConvoToolChanges: compat?.supportsMidConvoToolChanges ?? false,
-        supportsMessageThreads: compat?.supportsMessageThreads ??
-            (provider == "anthropic" && baseUrl.contains("api.anthropic.com")),
+        supportsMessageThreads: compat?.supportsMessageThreads ?? baseUrl.contains("api.anthropic.com"),
         sessionAffinityFormat: compat?.sessionAffinityFormat ?? (isOpenRouter ? .openrouter : nil)
     )
 }
@@ -1886,6 +1885,9 @@ private func anthropicToolDefinitionJSON(
     schema["type"] = AnyCodable("object")
     schema["properties"] = parameters["properties"] ?? AnyCodable([String: Any]())
     schema["required"] = parameters["required"] ?? AnyCodable([String]())
+    if let additionalProperties = parameters["additionalProperties"] {
+        schema["additionalProperties"] = additionalProperties
+    }
     if let definitions = parameters["$defs"] { schema["$defs"] = definitions }
     if let definitions = parameters["definitions"] { schema["definitions"] = definitions }
     var definition: [String: AnyCodable] = [

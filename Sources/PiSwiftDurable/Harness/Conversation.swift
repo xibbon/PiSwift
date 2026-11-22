@@ -34,6 +34,20 @@ public final class Conversation: Sendable {
     public func submit(_ draft: SubmissionDraft, context: ChordContext) async throws -> Submission {
         try await withTaskCancellationContext(try bound(context)) { context in
             try harness.assertOpen()
+            if let binding {
+                // A pending abort mark still permits admission. Recheck after
+                // this call reaches the Session line so a published mark does not.
+                let id = try await harness.session.commit({ tx in
+                    try binding.check()
+                    guard let owner = harness.tasks.current(binding.invocation.taskId),
+                          owner.state.status == "running",
+                          binding.invocation.abort || !owner.abortRequested else {
+                        throw SessionError.message("Task \(binding.invocation.taskId.rawValue) cannot admit a submission")
+                    }
+                    return try await harness.submissions.admit(tx: tx, conversationId: id, draft: draft)
+                }, context: context)
+                return Submission(id: id, submissions: harness.submissions).bound(binding)
+            }
             return try await harness.submissions.submit(conversationId: id, draft: draft, context: context).bound(binding)
         }
     }

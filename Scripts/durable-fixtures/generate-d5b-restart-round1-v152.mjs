@@ -7,15 +7,18 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
+const v160 = process.argv.includes('--v160');
 const output = fileURLToPath(new URL('./d5b-restart-round1-v152/', import.meta.url));
+const oracleOutput = fileURLToPath(new URL('./d5b-restart-round1-v160/manifest.json.gz', import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d5b-restart-round1-'));
 const swiftSeeds = join(temporary, 'swift-seeds');
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -171,6 +174,39 @@ async function resume(backend, path, item) {
   return { afterOpen, ...(sleeping ? { sleeping } : {}), post, calls: json(calls) };
 }
 try {
+  if (v160) {
+    const frozen = JSON.parse(gunzipSync(await readFile(join(output, 'manifest.json.gz'))));
+    if (frozen.tag !== 'v1.5.2') throw new Error('Frozen restart manifest differs');
+    const manifest = { sourceTag: 'v1.5.2', tag: 'v1.6.0', clock, normalization: frozen.normalization,
+      notApplicable: frozen.notApplicable, cases: {} };
+    for (const [name, item] of Object.entries(frozen.cases)) {
+      const backend = item.backend, suffix = backend === 'sqlite' ? '.sqlite' : '';
+      const copied = join(temporary, `${name}-frozen${suffix}`);
+      if (backend === 'sqlite') await writeFile(copied, gunzipSync(await readFile(join(output, name, 'pre.sqlite.gz'))));
+      else await cp(join(output, name, 'pre'), copied, { recursive: true });
+      const store = await storage(backend, copied);
+      equal(await snapshot(store, item.rootId), item.pre, `${name} frozen pre`);
+      await store.close(context);
+      const continuation = await resume(backend, copied, item);
+      const seedPath = join(temporary, `${name}-seed${suffix}`);
+      const seeded = await seed(backend, seedPath, item.scenario);
+      const swiftPostPath = join(temporary, `${name}-swift-post${suffix}`);
+      await cp(seedPath, swiftPostPath, { recursive: true });
+      const swiftContinuation = await resume(backend, swiftPostPath,
+        { ...item, ...seeded });
+      manifest.cases[name] = { ...item, ...continuation, swiftPre: seeded.pre,
+        swiftContinuation };
+    }
+    const text = JSON.stringify(manifest) + '\n';
+    if (check) {
+      if (gunzipSync(await readFile(oracleOutput)).toString('utf8') !== text)
+        throw new Error('v1.6.0 restart continuation differs');
+    } else {
+      await mkdir(join(output, '..', 'd5b-restart-round1-v160'), { recursive: true });
+      await writeFile(oracleOutput, gzipSync(text));
+    }
+    console.log(`D5b v1.6.0 frozen restart continuations ${check ? 'match' : 'written'}: ${Object.keys(manifest.cases).length} cases.`);
+  } else {
   const manifest = { tag: upstreamTag, clock, normalization: 'Provider session UUID and faux assistant API only',
     notApplicable: { '737': 'Normal-path settings resolution count has no restart state. Direct Swift test: normalRoundsDoNotResolveRestartLimitPerTask.' }, cases: {} };
   for (const scenario of scenarios) for (const backend of ['sqlite', 'jsonl']) {
@@ -233,6 +269,7 @@ try {
         post: item.post, calls: item.calls }, `${name} tagged reverse continuation`);
     }
   } else { await writeFile(join(output, 'manifest.json.gz'), gzipSync(serialized)); await rm(join(output, 'manifest.json'), { force: true }); }
+  }
 } finally {
   Date.now = oldDateNow;
   await source.close();

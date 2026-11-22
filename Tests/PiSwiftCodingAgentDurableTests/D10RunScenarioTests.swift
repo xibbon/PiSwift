@@ -61,7 +61,7 @@ private struct ScenarioCheckpoint: TaskCheckpoint {
                 return changed
             })),
             hook(GenerationHooks(afterRun: { _, _, _ in
-                AfterRunResult(tasks: [try runEndTask(after, input: .init(label: "after complete"))])
+                AfterRunResult(tasks: [try hookTask(after, input: .init(label: "after complete"))])
             }))
         ], tasks: [AnyTaskDefinition(after)]))
         let host = try await ScenarioHost.open(setup: setup)
@@ -77,6 +77,7 @@ private struct ScenarioCheckpoint: TaskCheckpoint {
         #expect(running.live.run != nil)
         release.signal()
         await afterReached.wait()
+        await host.waitForTaskKind("scenario.after")
         let finishing = try await host.snapshot()
         #expect(finishing.live.run?.afterRun?.tasks?.isEmpty == false)
         #expect(finishing.tasks?.tasks.values.contains { $0.kind == "scenario.after" } == true)
@@ -154,6 +155,17 @@ private struct ScenarioHost: Sendable {
     }
 
     func snapshot() async throws -> DurableHostView { result.hostView.hostCurrent() }
+    func waitForTaskKind(_ kind: String) async {
+        let (updates, continuation) = AsyncStream<Void>.makeStream()
+        let subscription = result.hostView.subscribe { continuation.yield(()) }
+        defer { subscription.cancel(); continuation.finish() }
+        continuation.yield()
+        for await _ in updates {
+            if result.hostView.hostCurrent().tasks?.tasks.values.contains(where: { $0.kind == kind }) == true {
+                return
+            }
+        }
+    }
     func waitForAnswer(_ answer: String) async throws {
         try await eventually {
             let view = result.hostView.hostCurrent()

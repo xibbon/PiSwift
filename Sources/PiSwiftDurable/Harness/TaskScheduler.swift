@@ -2,7 +2,15 @@ import Foundation
 import PiSwiftChord
 import Synchronization
 
+/// A parked or not-started tool keeps its restart-marked children.
+private func keepsAbandonedChildren(_ owner: TaskRecord) -> Bool {
+    guard owner.kind == "pi.tool", let checkpoint = owner.state.checkpoint?.objectValue,
+          let phase = checkpoint["phase"]?.stringValue else { return false }
+    return phase == "call" || phase == "parked"
+}
+
 internal struct InvocationBinding: Sendable {
+    let invocation: TaskInvocation
     let signal: AbortSignal
     let check: @Sendable () throws -> Void
 }
@@ -39,8 +47,10 @@ internal final class RuntimePhase: Sendable {
     }
     let state: Mutex<State>
     let installer: String?
-    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot) {
+    let registryEpoch: UInt64
+    init(_ definition: AnyTaskDefinition, _ snapshot: RegistrySnapshot, registryEpoch: UInt64) {
         installer = snapshot.installer(of: definition)
+        self.registryEpoch = registryEpoch
         state = Mutex(State(definition: definition, snapshot: snapshot))
     }
 }
@@ -48,6 +58,7 @@ internal final class RuntimePhase: Sendable {
 /// Every decision that changes a task runs in one callback on the Session line.
 internal final class TaskScheduler: Sendable {
     internal let toolServices = ToolServices()
+    internal let providerSessionIds = Mutex<Set<String>>([])
     let session: Session
     let storage: any DurableStorage
     let registry: any RegistryReader
@@ -79,6 +90,8 @@ internal final class TaskScheduler: Sendable {
         var intent = Set<TaskID>()
         var runnable = Set<TaskID>()
         var sleeping = Set<TaskID>()
+        var gatedWake = Set<TaskID>()
+        var registryEpoch: UInt64 = 0
         var refreshBlocked: (@Sendable () -> Void)?
         var sleepDisarm: HarnessDisarm?
         var sleepAt: Double?
@@ -143,6 +156,20 @@ internal final class TaskScheduler: Sendable {
         state.withLock { state in state.live.values.sorted { state.liveOrder[$0.id, default: 0] < state.liveOrder[$1.id, default: 0] } }
     }
     func current(_ id: TaskID) -> TaskRecord? { state.withLock { $0.live[id] } }
+    var registryEpoch: UInt64 { state.withLock { $0.registryEpoch } }
+    /// Recheck a gate when its registry snapshot changed while its hook ran.
+    func wakeGatedCallIfRegistryChanged(_ id: TaskID, since epoch: UInt64) {
+        let changed = state.withLock { state -> Bool in
+            guard state.registryEpoch != epoch, let record = state.live[id], isGatedCall(record) else { return false }
+            state.gatedWake.insert(id); state.runnable.insert(id)
+            return true
+        }
+        if changed { kick() }
+    }
+    private func isGatedCall(_ record: TaskRecord) -> Bool {
+        guard record.kind == "pi.tool", case .sleeping(let checkpoint, _, _) = record.state else { return false }
+        return checkpoint["phase"]?.stringValue == "call"
+    }
     func open(context: ChordContext) async throws {
         let commits = try session.observeCommits { [weak self] publication, _ in self?.observe(publication) }
         let close = try session.subscribeClose { [weak self] in self?.seal() }
@@ -157,14 +184,15 @@ internal final class TaskScheduler: Sendable {
                 for record in found {
                     state.track(record)
                     if readOnly { continue } // v1.5.2 scheduler.ts:470
+                    if isGatedCall(record) { state.gatedWake.insert(record.id); state.runnable.insert(record.id) }
                     if case .waiting(_, _, .failFast, _) = record.state { state.failFastChecks.insert(record.id) }
                     if record.abandonOnRestart == true { state.abandoned.insert(record.id) }
                 }
             }
             for record in found where !readOnly {
-                if case .running(let checkpoint, _) = record.state {
+                if case .running(let checkpoint, let fields) = record.state {
                     let restarts = record.restarts + 1
-                    try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint), restarts: .some(restarts)))
+                    try tx.setTask(record.replacing(state: .pending(checkpoint: checkpoint, extensions: fields), restarts: .some(restarts)))
                 }
             }
         }, context: context)
@@ -196,8 +224,8 @@ internal final class TaskScheduler: Sendable {
                 // v1.5.2 scheduler.ts:592–599: take the record after all
                 // admitted marks. Swift's close listener has detached the
                 // scheduler observer, so its live map can lag publication.
-                guard let record = try await tx.task(id), case .running(let checkpoint, _) = record.state else { continue }
-                pending.append(record.replacing(state: .pending(checkpoint: checkpoint)))
+                guard let record = try await tx.task(id), case .running(let checkpoint, let fields) = record.state else { continue }
+                pending.append(record.replacing(state: .pending(checkpoint: checkpoint, extensions: fields)))
             }
             for record in pending { try tx.setTask(record) }
         }, context: context)
@@ -255,6 +283,7 @@ internal final class TaskScheduler: Sendable {
                 if previous == nil || record.state.status == "terminal" { idleChanges.append(record) }
                 if record.failedOutcome && previous?.failedOutcome != true { failed.insert(record.id) }
                 state.track(record)
+                if !isGatedCall(record) { state.gatedWake.remove(record.id) }
                 if record.state.status == "terminal" {
                     state.failedMigrations.removeValue(forKey: record.id); state.failFastChecks.remove(record.id)
                     settled.append(record); repair = true
@@ -304,13 +333,9 @@ internal final class TaskScheduler: Sendable {
         if changed {
             var scopes: Set<ConversationID>? = []
             for record in idleChanges {
-                for step in above(record.parent) {
-                    switch step {
-                    case .conversation(let id): scopes?.insert(id)
-                    case .unknown: scopes = nil
-                    case .task: break
-                    }
-                    if scopes == nil { break }
+                if var known = scopes {
+                    if addScopesAbove(conversationId: record.conversationId, scopes: &known) == nil { scopes = nil }
+                    else { scopes = known }
                 }
                 if scopes == nil { break }
             }
@@ -319,6 +344,20 @@ internal final class TaskScheduler: Sendable {
         } else {
             state.withLock { $0.sweep() }
         }
+    }
+    /// Returns the owner-step count, or nil when an ownership link is unknown.
+    /// A task change starts at its own conversation, so task depth does not affect this count.
+    func addScopesAbove(conversationId: ConversationID, scopes: inout Set<ConversationID>) -> Int? {
+        var ownerSteps = 0
+        for step in above(.conversation(conversationId)) {
+            switch step {
+            case .conversation(let id):
+                if !scopes.insert(id).inserted { return ownerSteps }
+            case .task: ownerSteps += 1
+            case .unknown: return nil
+            }
+        }
+        return ownerSteps
     }
     /// A Task is created under the lock. It cannot enter the pump until the lock is released.
     func kick(offerWake: Bool = true) {
@@ -462,28 +501,28 @@ internal final class TaskScheduler: Sendable {
     func fit(_ record: TaskBlockedSubject, definition: AnyTaskDefinition?) -> (reason: String?, error: (any Error)?, migrates: Bool) {
         guard let definition else { return ("missing_task", nil, false) }
         if definition.version < record.version { return ("task_too_old", nil, false) }
-        if let phase = unsupportedBuiltInPhase(record) {
+        if let unsupported = unsupportedBuiltInPhase(record) {
             // The tagged scheduler blocks work it cannot migrate as migration_failed
-            // (scheduler.ts:2083-2096). Block these D5/D6 shapes before reservation.
-            let order = record.kind == "pi.generation" ? "D5b" : "D6"
-            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires \(order) for \(phase)"), false)
+            // (scheduler.ts:2178-2185). Keep unsupported v1.6.0 records unchanged.
+            return ("migration_failed", TaskDefinitionError("Task \(record.kind) requires \(unsupported.order) for \(unsupported.shape)"), false)
         }
         if definition.version == record.version { return (nil, nil, false) }
         if let failed = state.withLock({ $0.failedMigrations[record.id] }), failed.0 == definition.identity { return ("migration_failed", failed.1, false) }
         return (nil, nil, true)
     }
-    private func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> String? {
+    func unsupportedBuiltInPhase(_ record: TaskBlockedSubject) -> (shape: String, order: String)? {
         let phase = record.checkpoint?["phase"]?.stringValue
         if record.kind == "pi.generation" {
-            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain"].contains(phase) { return "phase \(phase)" }
+            if let phase, !["prepare", "request", "retry", "poll", "tools", "finish", "drain", "afterTools", "yield"].contains(phase) { return ("phase \(phase)", "D5b") }
         }
         if record.kind == "pi.tool" {
-            if let phase, !["call", "execute"].contains(phase) { return "phase \(phase)" }
+            if let phase, !["call", "execute", "parked"].contains(phase) { return ("phase \(phase)", "D6") }
         }
         return nil
     }
     func blockedReason(_ record: TaskBlockedSubject) -> TaskBlockedReason? {
-        if ["running", "completing", "terminal"].contains(record.status) { return nil }
+        if ["completing", "terminal"].contains(record.status) { return nil }
+        if unsupportedBuiltInPhase(record) != nil { return .migrationFailed }
         if record.abortRequested && record.abortReason == nil { return nil }
         let definition = registry.snapshot().task(name: record.kind), fit = fit(record, definition: definition)
         if let reason = fit.reason { return TaskBlockedReason(rawValue: reason) }
@@ -491,6 +530,13 @@ internal final class TaskScheduler: Sendable {
     }
     /// Registry notifications can arrive off the line. Graph frames use the Session order.
     private func registryChanged() {
+        state.withLock { state in
+            state.registryEpoch &+= 1
+            for id in state.sleeping {
+                guard let record = state.live[id], isGatedCall(record) else { continue }
+                state.gatedWake.insert(id); state.runnable.insert(id)
+            }
+        }
         Task { [weak self] in
             guard let self else { return }
             do { try await self.session.readOnLine { self.refreshBlocked() } }
@@ -499,8 +545,17 @@ internal final class TaskScheduler: Sendable {
         }
     }
     func refreshBlocked() { state.withLock { $0.refreshBlocked }?() }
-    struct Reservation: Sendable { let invocation: TaskInvocation; let definition: AnyTaskDefinition; let snapshot: RegistrySnapshot; let joinID: UUID }
+    struct Reservation: Sendable {
+        let invocation: TaskInvocation
+        let definition: AnyTaskDefinition
+        let snapshot: RegistrySnapshot
+        let registryEpoch: UInt64
+        let joinID: UUID
+    }
     private func reserve() async throws -> [Reservation] {
+        // Read the epoch before any awaited work or registry snapshot. A later
+        // publication must recheck a gate even if it arrived before the hook.
+        let reservationEpoch = registryEpoch
         var reservations: [Reservation] = []
         var faulted: [(TaskRecord, String)] = []
         var abandoned: Set<TaskID> = []
@@ -514,7 +569,12 @@ internal final class TaskScheduler: Sendable {
                 // Commit all restart marks before a descendant can reserve a run invocation.
                 if !abandoned.isEmpty {
                     for id in abandoned {
-                        if let record = current(id), !record.abortRequested { try tx.setTask(record.withAbortMark(.restart)) }
+                        if let record = current(id), !record.abortRequested {
+                            let owner = record.owner.flatMap { current($0) }
+                            if owner.map(keepsAbandonedChildren) != true {
+                                try tx.setTask(record.withAbortMark(.restart))
+                            }
+                        }
                     }
                     return
                 }
@@ -547,8 +607,17 @@ internal final class TaskScheduler: Sendable {
                     guard let original = current(id), original.state.status != "completing", !state.withLock({ $0.invocations[id] != nil }) else {
                         dropped.insert(id); continue
                     }
+                    if let unsupported = unsupportedBuiltInPhase(TaskBlockedSubject(record: original)) {
+                        snapshot = snapshot ?? registry.snapshot()
+                        if state.withLock({ $0.unsupportedReported.insert(original.id).inserted }) {
+                            let error = TaskDefinitionError("Task \(original.kind) requires \(unsupported.order) for \(unsupported.shape)")
+                            report(error, .migrationFailed(task: ReportTask(original), extension: snapshot!.installer(of: snapshot!.task(name: original.kind))))
+                        }
+                        dropped.insert(id)
+                        continue
+                    }
                     if !waitingOn(original, first: true).isEmpty { dropped.insert(id); continue }
-                    if notDue(original) { dropped.insert(id); continue }
+                    if notDue(original) && !state.withLock({ $0.gatedWake.contains(id) }) { dropped.insert(id); continue }
                     if !original.abortRequested && !original.background && belowCancelled(original.parent) {
                         state.withLock { $0.cascadePending = true }; scheduleReconcile()
                         continue
@@ -571,7 +640,13 @@ internal final class TaskScheduler: Sendable {
                         do {
                             guard let migrate = definition.migrate else { throw SessionError.message("Task \(record.kind) version \(definition.version) has no migration from \(record.version)") }
                             let next = try migrate(record.input, record.state.checkpoint!, record.version)
-                            record = record.replacing(input: next.input, version: definition.version, state: .running(checkpoint: next.checkpoint))
+                            let fields: JSONObject
+                            switch record.state {
+                            case .pending(_, let kept), .running(_, let kept): fields = kept
+                            default: fields = [:]
+                            }
+                            record = record.replacing(input: next.input, version: definition.version,
+                                                      state: .running(checkpoint: next.checkpoint, extensions: fields))
                         } catch {
                             state.withLock { $0.failedMigrations[record.id] = (definition.identity, error) }; report(error, .migrationFailed(task: ReportTask(record), extension: snapshot!.installer(of: definition)))
                             refreshBlocked()
@@ -589,16 +664,28 @@ internal final class TaskScheduler: Sendable {
                         continue
                     }
                     guard let definition, let checkpoint = record.state.checkpoint else { continue }
+                    if let (wake, memos) = try woke(original) {
+                        record = signalWithMemos(record, memos)
+                        record = record.replacing(state: .running(checkpoint: checkpoint,
+                            extensions: ["wake": try JSONValue(encoding: wake)]))
+                    }
                     if original.state.status != "running" || resolution.migrates {
-                        try tx.setTask(record.replacing(state: .running(checkpoint: checkpoint)))
+                        if record.state.status != "running" {
+                            let fields: JSONObject
+                            if case .pending(_, let kept) = record.state { fields = kept } else { fields = [:] }
+                            record = record.replacing(state: .running(checkpoint: checkpoint, extensions: fields))
+                        }
+                        try tx.setTask(record)
                     }
                     let invocation = TaskInvocation(record, abort: record.abortRequested, context: context), id = UUID()
                     state.withLock {
+                        $0.gatedWake.remove(record.id)
                         $0.invocations[record.id] = invocation; $0.joining[id] = invocation
                         if $0.closing { $0.stopped.insert(record.id) }
                     }
                     dropped.insert(record.id)
-                    reservations.append(Reservation(invocation: invocation, definition: definition, snapshot: snapshot!, joinID: id))
+                    reservations.append(Reservation(invocation: invocation, definition: definition,
+                        snapshot: snapshot!, registryEpoch: reservationEpoch, joinID: id))
                 }
             }, context: context)
             if !abandoned.isEmpty {
@@ -614,6 +701,18 @@ internal final class TaskScheduler: Sendable {
             throw error
         }
     }
+
+    /// Records why a reservation ends a wait or sleep.
+    private func woke(_ record: TaskRecord) throws -> (WakeReason, JSONObject)? {
+        guard !record.abortRequested else { return nil }
+        if case .waiting(_, let on, let policy, _) = record.state {
+            let ended = policy == .any ? state.withLock { state in on.filter { state.live[$0] == nil } } : on
+            return (.tasks(ended: ended), [:])
+        }
+        guard case .sleeping = record.state else { return nil }
+        return try sleepWake(record.state, memos: record.memos, now: Double(now()))
+    }
+
     private func start(_ reservation: Reservation) {
         let work = Task {
             await run(reservation)
@@ -668,7 +767,8 @@ internal final class TaskScheduler: Sendable {
         } catch { end(invocation); if !closing { session.fail(error) }; return nil }
     }
     private func run(_ reservation: Reservation) async {
-        let invocation = reservation.invocation, phase = RuntimePhase(reservation.definition, reservation.snapshot)
+        let invocation = reservation.invocation, phase = RuntimePhase(reservation.definition,
+            reservation.snapshot, registryEpoch: reservation.registryEpoch)
         let runtime = TaskRuntime(scheduler: self, invocation: invocation, phase: phase)
         if invocation.abort {
             guard let current = current(invocation.taskId), !closing else { return }
@@ -697,7 +797,9 @@ internal final class TaskScheduler: Sendable {
                 phase.state.withLock { $0.snapshot = snapshot }
                 if next?.identity != old.identity {
                     if let next, next.version == current.version || (next.version > current.version && next.migrate != nil) {
-                        try tx.setTask(current.replacing(state: .pending(checkpoint: current.state.checkpoint!))); return .end
+                        let fields: JSONObject
+                        if case .running(_, let kept) = current.state { fields = kept } else { fields = [:] }
+                        try tx.setTask(current.replacing(state: .pending(checkpoint: current.state.checkpoint!, extensions: fields))); return .end
                     }
                     let shouldReport = phase.state.withLock { state -> Bool in
                         if let next { if state.reported == next.identity && !state.reportedMissing { return false }; state.reported = next.identity; state.reportedMissing = false }

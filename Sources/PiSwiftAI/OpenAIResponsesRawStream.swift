@@ -1,5 +1,28 @@
 import Foundation
 
+/// Record reasoning items that the Responses server removed while replaying input.
+func appendOpenAIReasoningRemovals(_ transformations: Any?, to output: inout AssistantMessage) {
+    guard let transformations = transformations as? [Any] else { return }
+    let removals: [[String: Any]] = transformations.compactMap { value in
+        guard let item = value as? [String: Any],
+              item["type"] as? String == "reasoning",
+              item["action"] as? String == "removed",
+              item["reason"] as? String != "turn_boundary" else { return nil }
+        var removal: [String: Any] = [:]
+        for key in ["type", "id", "action", "reason"] {
+            if let value = item[key] { removal[key] = value }
+        }
+        return removal
+    }
+    guard !removals.isEmpty else { return }
+    var diagnostics = output.diagnostics ?? []
+    diagnostics.append(AssistantMessageDiagnostic(
+        type: "openai_input_transformations",
+        details: ["transformations": AnyCodable(removals)]
+    ))
+    output.diagnostics = diagnostics
+}
+
 private enum RawResponsesSlotKind {
     case thinking
     case text
@@ -283,6 +306,7 @@ func processRawOpenAIResponsesStream(
             slots.removeValue(forKey: index)
         case "response.completed", "response.incomplete":
             if let response = event["response"] as? [String: Any] {
+                appendOpenAIReasoningRemovals(response["input_transformations"], to: &output)
                 output.responseId = response["id"] as? String ?? output.responseId
                 let actualTier = (response["service_tier"] as? String).flatMap(OpenAIServiceTier.init(rawValue:))
                 applyRawResponsesUsage(response["usage"], model: model, serviceTier: actualTier ?? serviceTier, output: &output)

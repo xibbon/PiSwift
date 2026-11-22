@@ -8,9 +8,26 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct CodemodeOutputTests {
-    @Test func wallTimeUsesJavaScriptTieRounding() async {
+    /// v1.6.0 output.ts:130 decodes saved images with the shared `fromBase64` (atob rules):
+    /// whitespace and missing padding are accepted; a malformed image fails the result.
+    @Test func savedImagesUseTheSharedBase64Decoder() async throws {
+        func image(_ data: String) -> CodemodeResult {
+            CodemodeResult(output: [.image(data: data, mimeType: "image/png")])
+        }
+        let written = Mutex<[Int]>([])
+        let loose = try await codemodeFormatResult(image("AQI D\nBA"), generatedImages: 0, wallMs: 0, maxOutputTokens: 100,
+            calls: []) { _, bytes in written.withLock { $0.append(bytes.count) }; return .path("/tmp/image-1.png") }
+        #expect(written.withLock { $0 } == [4])
+        #expect(loose.content.contains { if case .text(let text) = $0 { text.text.contains("image/png, 4 bytes") } else { false } })
+        await #expect(throws: (any Error).self) {
+            _ = try await codemodeFormatResult(image("!!!"), generatedImages: 0, wallMs: 0, maxOutputTokens: 100,
+                calls: []) { _, _ in .path("/tmp/unused") }
+        }
+    }
+
+    @Test func wallTimeUsesJavaScriptTieRounding() async throws {
         for (milliseconds, expected) in [(50.0, "0.1"), (150.0, "0.1"), (350.0, "0.3"), (1150.0, "1.1"), (1250.0, "1.3"), (1350.0, "1.4"), (1750.0, "1.8"), (-1250.0, "-1.3"), (-0.0, "0.0"), (1e18 + 256, "1000000000000000.3"), (1e24, "1e+21")] {
-            let formatted = await codemodeFormatResult(.init(), generatedImages: 0, wallMs: milliseconds, maxOutputTokens: 10, calls: []) { _, _ in .error("unused") }
+            let formatted = try await codemodeFormatResult(.init(), generatedImages: 0, wallMs: milliseconds, maxOutputTokens: 10, calls: []) { _, _ in .error("unused") }
             if case .text(let header) = formatted.content[0] { #expect(header.text.contains("Wall time \(expected) seconds")) }
             else { Issue.record("Missing script header") }
         }
@@ -110,30 +127,39 @@ struct CodemodeOutputTests {
     @Test func discoveryUsesTheSavedCatalog() async throws {
         let message = try await e10Run(DeterministicCodemodeSandbox { state in
             if state.seq == 0 {
-                #expect(state.options.tools.contains { $0.name == "mcp__github__list_issues" })
+                #expect(state.options.tools.contains { $0.name == "list_issues" })
                 return .init(calls: [.init(target: .global, name: "searchTools", args: ["issues"]),
+                    .init(target: .global, name: "searchTools", args: ["repository owner"]),
                     .init(target: .global, name: "searchTools", args: ["echo", ["namespace": "github"]]),
                     .init(target: .global, name: "describeTool", args: ["echo"]),
                     .init(target: .global, name: "describeTool", args: ["nope"]),
-                    .init(target: .global, name: "describeNamespace", args: ["github"])])
+                    .init(target: .global, name: "describeNamespace", args: ["github"]),
+                    .init(target: .global, name: "describeNamespace", args: ["linear"])])
             }
-            guard state.deliveries.count == 5 else { return .init() }
+            guard state.deliveries.count == 7 else { return .init() }
             let values = Dictionary(uniqueKeysWithValues: state.deliveries.map { ($0.id, e10Value($0.outcome) ?? .null) })
-            return .init(result: .init(value: ["found": .array(values[1]?.arrayValue?.compactMap { $0["name"] } ?? []),
-                "inNamespace": values[2] ?? .null, "described": .bool(values[3]?.stringValue?.contains("echo(args:") == true),
-                "missing": values[4] ?? .null, "namespace": values[5] ?? .null]))
-        }, tools: [e10Tool("echo"), e10Tool("mcp__github__list_issues")], namespaces: [.init(name: "github", prefix: "mcp__github__", description: "GitHub MCP server")])
+            let found: JSONValue = .array(values[1]?.arrayValue?.compactMap { $0["name"] } ?? [])
+            let byInstructions: JSONValue = .array(values[2]?.arrayValue?.compactMap { $0["name"] } ?? [])
+            let described: JSONValue = .bool(values[4]?.stringValue?.contains("echo(args:") == true)
+            let result: JSONObject = ["found": found, "byInstructions": byInstructions,
+                "inNamespace": values[3] ?? .null, "described": described,
+                "missing": values[5] ?? .null, "namespace": values[6] ?? .null, "empty": values[7] ?? .null]
+            return .init(result: .init(value: .object(result)))
+        }, tools: [e10Tool("echo"), e10Tool("list_issues")], namespace: .init(name: "github", description: "GitHub MCP server", instructions: "Pass the repository as owner/name."),
+            namespacedTools: ["list_issues"], emptyNamespace: .init(name: "linear", description: "Linear: sign in first."))
         let output = try #require(message["content"]?[1]?["text"]?.stringValue)
         let value = try JSONValue(jsonText: output)
-        #expect(value["found"] == ["mcp__github__list_issues"])
+        #expect(value["found"] == ["list_issues"])
+        #expect(value["byInstructions"] == ["list_issues"])
         #expect(value["inNamespace"] == [])
         #expect(value["described"] == true)
         #expect(value["missing"] == .null)
-        #expect(value["namespace"] == ["name": "github", "description": "GitHub MCP server", "tools": ["mcp__github__list_issues"]])
+        #expect(value["namespace"] == ["name": "github", "description": "GitHub MCP server", "instructions": "Pass the repository as owner/name.", "tools": ["list_issues"]])
+        #expect(value["empty"] == ["name": "linear", "description": "Linear: sign in first.", "tools": []])
     }
-    @Test func fileFailuresStayVisibleAndManyTextItemsJoinLinearly() async {
+    @Test func fileFailuresStayVisibleAndManyTextItemsJoinLinearly() async throws {
         let result = CodemodeResult(output: (0..<20_000).map { .text(String($0)) } + [.image(data: e10PNG, mimeType: "image/png")])
-        let formatted = await codemodeFormatResult(result, generatedImages: 0, wallMs: 0, maxOutputTokens: 10, calls: []) { _, _ in .error("disk full") }
+        let formatted = try await codemodeFormatResult(result, generatedImages: 0, wallMs: 0, maxOutputTokens: 10, calls: []) { _, _ in .error("disk full") }
         let text = formatted.content.compactMap { if case .text(let text) = $0 { text.text } else { nil } }.joined()
         #expect(text.contains("Could not save the full output: disk full"))
         #expect(text.contains("could not be saved: disk full"))

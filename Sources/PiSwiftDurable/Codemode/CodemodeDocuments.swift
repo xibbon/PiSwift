@@ -7,17 +7,6 @@ public let CodemodeJournalDoc = try! TaskDocToken<JSONObject>(kind: "pi.codemode
 /// Saved script values. Forks copy the values at their entry boundary.
 public let CodemodeStoreDoc = try! RewindableConversationDocToken<JSONObject>(kind: "pi.codemode.store", version: 1, fork: .asOf, initial: { ["values": [:]] }, checkpointWhen: { _, _, info in info.deltasSinceBase >= 64 })
 
-/// A group of tools with a common name prefix. The longest prefix wins.
-public struct CodemodeNamespace: Sendable, Equatable, Codable {
-    public var name: String
-    public var description: String?
-    public var instructions: String?
-    public var prefix: String
-    public init(name: String, prefix: String, description: String? = nil, instructions: String? = nil) {
-        self.name = name; self.prefix = prefix; self.description = description; self.instructions = instructions
-    }
-}
-
 /// A nested tool call shown in the final code mode details.
 public struct CodemodeNestedCall: Sendable, Equatable, Codable {
     public enum Status: String, Sendable, Codable { case running, ok, error, cancelled }

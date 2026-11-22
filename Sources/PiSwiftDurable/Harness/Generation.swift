@@ -80,6 +80,10 @@ public struct GenerationCheckpoint: TaskCheckpoint {
         case finish
         /// The run waits for tasks created by afterRun hooks.
         case drain
+        /// The round waits for tasks created by afterTools hooks.
+        case afterTools
+        /// The answer remains open while onYield tasks decide whether it stands.
+        case yield
     }
     /// The saved generation phase used on resume.
     public var phase: Phase
@@ -134,11 +138,11 @@ public struct GenerationCheckpoint: TaskCheckpoint {
 }
 /// The built-in generation definition installed in every registry.
 public let generationTask = TaskDefinition<GenerationInput, GenerationCheckpoint, GenerationResult, GenerationHooks>(
-    name: "pi.generation", version: 2, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
+    name: "pi.generation", version: 3, initial: { _ in GenerationCheckpoint(phase: .prepare, attempt: 1) },
     phase: { task, runtime, context in try await runGeneration(task, runtime, context) },
     abort: { task, runtime, context in try await abortGeneration(task.checkpoint, runtime, context) },
     migrate: { input, checkpoint, _ in
-        // v1.5.2 generation.ts:171-174 preserves both values.
+        // v1.6.0 generation.ts:190-194 preserves both values.
         (try input.decode(GenerationInput.self), try checkpoint.decode(GenerationCheckpoint.self))
     }
 )
@@ -152,7 +156,7 @@ private func required<Value>(_ value: Value?, _ key: String) throws -> Value {
 private func runGeneration(_ task: RunningTask<GenerationInput, GenerationCheckpoint>, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
     let checkpoint = task.checkpoint
     if let restarts = task.record.storedRestarts, restarts >= runtime.settings.restartLimit {
-        if checkpoint.phase == .finish || checkpoint.phase == .drain {
+        if checkpoint.phase == .finish || checkpoint.phase == .drain || checkpoint.phase == .yield {
             return try await endAnsweredCutOff(task: task, runtime: runtime, context: context)
         }
         return try await endGenerationCutOff(task: task, runtime: runtime, context: context)
@@ -226,6 +230,12 @@ private func runGeneration(_ task: RunningTask<GenerationInput, GenerationCheckp
             let nextCheckpoint = GenerationCheckpoint(phase: .tools, assistant: assistant, tools: tools + [taskId], pending: Array(pending.dropFirst()))
             return try generationTask.waiting(nextCheckpoint, on: [taskId], policy: .allSettled)
         }, context: context)
+    case .afterTools:
+        try await finishAfterTools(runtime: runtime, assistant: required(checkpoint.assistant, "assistant"),
+                                   tools: checkpoint.tools ?? [], tasks: checkpoint.tasks ?? [], context: context)
+    case .yield:
+        try await finishYield(runtime: runtime, answer: required(checkpoint.answer, "answer"),
+                              tasks: checkpoint.tasks ?? [], context: context)
     }
 }
 private func prepareGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: TaskRuntime, _ context: ChordContext) async throws {
@@ -386,7 +396,11 @@ private func abortGeneration(_ checkpoint: GenerationCheckpoint, _ runtime: Task
                 code: unoffered ? "tool_unavailable" : "aborted",
                 text: unoffered ? "Tool \(call.name) is not available" : "Tool \(call.name) was aborted", now: runtime.now())
         }
-        try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"), failure: .aborted)
+        if checkpoint.phase == .yield, let answer = checkpoint.answer {
+            try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .done(answer: answer))
+        } else {
+            try endRun(tx: tx, live: live, taskId: runtime.taskId, settlement: .unanswered(reason: "aborted"), failure: .aborted)
+        }
         return .terminal(outcome: .aborted())
     }, context: context)
 }

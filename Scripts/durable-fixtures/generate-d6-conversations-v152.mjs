@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mirrorV152, upstreamTag } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 import { isDeepStrictEqual } from 'node:util';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
@@ -13,13 +14,15 @@ if (!process.execArgv.includes('--experimental-strip-types')) {
   process.exit(child.status ?? 1);
 }
 const check = process.argv.includes('--check');
-const output = fileURLToPath(new URL('./d6-conversations-v152.json', import.meta.url));
-const source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+const v160 = process.argv.includes('--v160');
+const output = fileURLToPath(new URL(v160 ? './d6-conversations-v160.json' : './d6-conversations-v152.json', import.meta.url));
+const source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
 const temporary = await mkdtemp(join(tmpdir(), 'piswift-d6-conversations-'));
 const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
 const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
 const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
-const { defineExtension, defineTool, hook, runEndTask } = await source.import('packages/durable/src/harness/define.ts');
+const { defineExtension, defineTool, hook, runEndTask: oldRunEndTask, hookTask } = await source.import('packages/durable/src/harness/define.ts');
+const runEndTask = v160 ? hookTask : oldRunEndTask;
 const { defineTask } = await source.import('packages/durable/src/tasks.ts');
 const { GenerationTask } = await source.import('packages/durable/src/harness/generation.ts');
 const { ToolTask } = await source.import('packages/durable/src/harness/tool.ts');
@@ -141,11 +144,16 @@ try {
     }
     const swift = spawnSync('swift', ['test', '--skip-build', '--filter', 'D6ConversationFixtureTests'], {
       cwd: fileURLToPath(new URL('../../', import.meta.url)),
-      env: { ...process.env, PISWIFT_D12_ATOMIC_EXPORT: temporary, PISWIFT_D12_TAGGED_ATOMIC_DIR: temporary },
+      env: { ...process.env, PISWIFT_D12_ATOMIC_EXPORT: temporary, PISWIFT_D12_TAGGED_ATOMIC_DIR: temporary,
+        PISWIFT_D12_TAGGED_ATOMIC_TAG: v160 ? 'v1.6.0' : 'v1.5.2' },
       stdio: 'inherit', timeout: 180_000,
     });
     if (swift.error) throw swift.error;
     if (swift.status !== 0) throw new Error(`Swift atomic cross-open exited ${swift.status}`);
+    // v1.6.0 D1: Swift's continuation installs the current built-ins even
+    // when this generator is checking a frozen v1.5.2 read-only export.
+    const currentScripts = v160 ? scripts
+      : JSON.parse(await readFile(fileURLToPath(new URL('./d6-conversations-v160.json', import.meta.url)), 'utf8')).scripts;
     for (const backend of ['sqlite', 'jsonl']) {
       const path = join(temporary, `swift-atomic-${backend}`);
       const store = backend === 'sqlite' ? await openNodeSqliteStorage(path) : await openNodeJsonlStorage(path, context);
@@ -153,11 +161,12 @@ try {
       if (page.items.length !== 1) throw new Error(`Swift atomic ${backend}: expected one conversation`);
       const actual = await snapshot(store, page.items[0].id);
       await store.close(context);
-      const mismatch = difference(normalizeCrossLanguage(actual), normalizeCrossLanguage(scripts.find(item => item.seed === 30).records));
+      const mismatch = difference(normalizeCrossLanguage(actual),
+        normalizeCrossLanguage(currentScripts.find(item => item.seed === 30).records));
       if (mismatch) throw new Error(`Swift atomic ${backend}: ${mismatch}`);
     }
   }
-  const serialized = JSON.stringify({ tag: upstreamTag, clock, scripts }) + '\n';
+  const serialized = JSON.stringify({ tag: v160 ? 'v1.6.0' : upstreamTag, clock, scripts }) + '\n';
   if (check) {
     if (await readFile(output, 'utf8') !== serialized) throw new Error('D6 conversations differ');
   } else await writeFile(output, serialized);

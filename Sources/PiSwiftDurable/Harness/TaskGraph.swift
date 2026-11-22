@@ -9,8 +9,10 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
     case running(phase: String)
     /// Work waits for the selected tasks under its join policy.
     case waiting(phase: String, on: [TaskID], policy: JoinPolicy)
-    /// Work waits until the Harness clock reaches its saved time.
-    case sleeping(phase: String, until: Double)
+    /// Work waits for a deadline, signal keys, or both.
+    case sleeping(phase: String, until: Double?)
+    /// Work waits for signal keys, with an optional deadline.
+    case signalSleeping(phase: String, until: Double?, signals: [SignalKey])
     /// An outcome is saved while ordinary owned work finishes.
     case completing(outcome: String)
 
@@ -20,7 +22,7 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         case .pending: "pending"
         case .running: "running"
         case .waiting: "waiting"
-        case .sleeping: "sleeping"
+        case .sleeping, .signalSleeping: "sleeping"
         case .completing: "completing"
         }
     }
@@ -34,16 +36,29 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
         case "waiting": self = .waiting(phase: try recordRequired(object, "phase"),
             on: try recordRequired(object, "on"), policy: try recordRequired(object, "policy"))
         case "sleeping":
-            let until: Double = try recordRequired(object, "until")
-            try recordValidateDeadline(until)
-            self = .sleeping(phase: try recordRequired(object, "phase"), until: until)
+            let until: Double? = try recordOptional(object, "until")
+            let signals: [SignalKey]? = try recordOptional(object, "signals")
+            if let until { try recordValidateDeadline(until) }
+            if let signals, signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
+            if until == nil && signals == nil { throw recordUnknown("sleep", "missing until and signals") }
+            let phase: String = try recordRequired(object, "phase")
+            if let signals { self = .signalSleeping(phase: phase, until: until, signals: signals) }
+            else { self = .sleeping(phase: phase, until: until) }
         case "completing": self = .completing(outcome: try recordRequired(object, "outcome"))
         default: throw recordUnknown("status", status)
         }
     }
     /// Encodes this value with the durable JSON representation.
     public func encode(to encoder: any Encoder) throws {
-        if case .sleeping(_, let until) = self { try recordValidateDeadline(until) }
+        switch self {
+        case .sleeping(_, let until):
+            guard let until else { throw recordUnknown("sleep", "missing until and signals") }
+            try recordValidateDeadline(until)
+        case .signalSleeping(_, let until, let signals):
+            if signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
+            if let until { try recordValidateDeadline(until) }
+        default: break
+        }
         try json.encode(to: encoder)
     }
     fileprivate var json: JSONValue {
@@ -56,7 +71,11 @@ public enum TaskGraphState: Sendable, Equatable, Codable {
             object["policy"] = .string(policy.rawValue)
         case let .sleeping(phase, until):
             object["phase"] = .string(phase)
-            object["until"] = .number(until)
+            if let until { object["until"] = .number(until) }
+        case let .signalSleeping(phase, until, signals):
+            object["phase"] = .string(phase)
+            if let until { object["until"] = .number(until) }
+            object["signals"] = (try? JSONValue(encoding: signals)) ?? .array([])
         case .completing(let outcome): object["outcome"] = .string(outcome)
         }
         return .object(object)
@@ -83,18 +102,30 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
     public let blocked: TaskBlockedReason?
     /// Conversations owned by the task, in ID order.
     public let conversations: [ConversationID]
+    /// Raw signal keys from the sleep state, retained for graph round trips.
+    private let rawSignals: JSONValue?
+    /// The keys named by a signal sleep.
+    public func sleepSignals() throws -> [SignalKey]? {
+        guard let rawSignals else { return nil }
+        return try rawSignals.decode([SignalKey].self)
+    }
 
     fileprivate init(record: TaskRecord, conversations: [ConversationID], blocked: TaskBlockedReason?) {
         id = record.id; kind = record.kind; conversationId = record.conversationId
         owner = record.owner; background = record.background; abortRequested = record.abortRequested
         self.conversations = conversations
         self.blocked = blocked
+        if case .sleeping(_, _, let fields) = record.state { rawSignals = fields["signals"] }
+        else { rawSignals = nil }
         func phase(_ checkpoint: JSONValue) -> String { checkpoint.objectValue?["phase"]?.stringValue ?? "" }
         switch record.state {
         case .pending(let checkpoint, _): state = .pending(phase: phase(checkpoint))
         case .running(let checkpoint, _): state = .running(phase: phase(checkpoint))
         case let .waiting(checkpoint, on, policy, _): state = .waiting(phase: phase(checkpoint), on: on, policy: policy)
-        case let .sleeping(checkpoint, until, _): state = .sleeping(phase: phase(checkpoint), until: until)
+        case let .sleeping(checkpoint, until, _):
+            if let keys = try? record.state.sleepSignals() {
+                state = .signalSleeping(phase: phase(checkpoint), until: until, signals: keys)
+            } else { state = .sleeping(phase: phase(checkpoint), until: until) }
         case .completing(let outcome, _), .terminal(let outcome, _): state = .completing(outcome: outcome.status)
         }
     }
@@ -103,6 +134,7 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
         background = node.background; abortRequested = node.abortRequested; state = node.state
         self.conversations = conversations
         self.blocked = blocked
+        rawSignals = node.rawSignals
     }
     fileprivate func owning(_ conversations: [ConversationID]) -> Self {
         Self(node: self, conversations: conversations, blocked: blocked)
@@ -120,6 +152,8 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
         background = try recordRequired(object, "background")
         abortRequested = try recordRequired(object, "abortRequested")
         state = try recordRequired(object, "state")
+        let stateObject: JSONObject = try recordRequired(object, "state")
+        rawSignals = stateObject["signals"]
         conversations = try recordRequired(object, "conversations")
         if let reason: String = try recordOptional(object, "blocked") {
             guard let value = TaskBlockedReason(rawValue: reason) else { throw recordUnknown("blocked", reason) }
@@ -128,13 +162,23 @@ public struct TaskGraphNode: Sendable, Equatable, Codable {
     }
     /// Encodes a graph node with its JSON representation.
     public func encode(to encoder: any Encoder) throws {
-        if case .sleeping(_, let until) = state { try recordValidateDeadline(until) }
+        switch state {
+        case .sleeping(_, let until):
+            guard let until else { throw recordUnknown("sleep", "missing until and signals") }
+            try recordValidateDeadline(until)
+        case .signalSleeping(_, let until, let signals):
+            if signals.isEmpty { throw recordUnknown("sleep signals", "empty list") }
+            if let until { try recordValidateDeadline(until) }
+        default: break
+        }
         try json.encode(to: encoder)
     }
     fileprivate var json: JSONValue {
+        var stateObject = state.json.objectValue ?? [:]
+        if let rawSignals { stateObject["signals"] = rawSignals }
         var object: JSONObject = ["id": .number(Double(id.rawValue)), "kind": .string(kind),
             "conversationId": .number(Double(conversationId.rawValue)), "background": .bool(background),
-            "abortRequested": .bool(abortRequested), "state": state.json,
+            "abortRequested": .bool(abortRequested), "state": .object(stateObject),
             "conversations": .array(conversations.map { .number(Double($0.rawValue)) })]
         if let owner { object["owner"] = .number(Double(owner.rawValue)) }
         if let blocked { object["blocked"] = .string(blocked.rawValue) }
@@ -198,12 +242,17 @@ internal struct TaskBlockedSubject: Sendable {
     let status: String
     let input: JSONValue
     let checkpoint: JSONValue?
+    let signals: JSONValue?
 
     init(record: TaskRecord) {
         id = record.id; kind = record.kind; version = record.version
         abortRequested = record.abortRequested; abortReason = record.abortReason
         restarts = record.restarts; status = record.state.status
         input = record.input; checkpoint = record.state.checkpoint
+        switch record.state {
+        case .sleeping(_, _, let fields): signals = fields["signals"]
+        default: signals = nil
+        }
     }
 }
 

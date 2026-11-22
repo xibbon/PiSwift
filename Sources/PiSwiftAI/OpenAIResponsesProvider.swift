@@ -9,13 +9,21 @@ private let responsesConfigurationUpdateMarker = "\u{0}__PI_CONFIGURATION_EFFORT
 
 /// Return the effort for input updates. A nil value keeps the request-level effort path.
 func responsesConfigurationUpdateEffort(model: Model, options: OpenAIResponsesOptions) -> String? {
+    responsesConfigurationUpdateEffort(model: model, requestedEffort: options.reasoningEffort, apiKey: options.apiKey)
+}
+
+func responsesConfigurationUpdateEffort(model: Model, requestedEffort: ThinkingLevel?, apiKey: String?) -> String? {
     guard model.compat?.supportsMidConvoEffort == true,
-          let effort = options.reasoningEffort,
-          !isChatGPTSignIn(model: model, apiKey: options.apiKey) else { return nil }
+          let effort = requestedEffort,
+          !isChatGPTSignIn(model: model, apiKey: apiKey) else { return nil }
     if let map = model.thinkingLevelMap, let mapped = map[ModelThinkingLevel(effort)] ?? nil {
         return mapped
     }
     return effort.rawValue
+}
+
+func responsesConfigurationUpdateItem(_ effort: String) -> [String: Any] {
+    ["type": "configuration_update", "reasoning": ["effort": effort]]
 }
 
 private func responsesConfigurationUpdatePlaceholder(_ effort: String) -> InputItem {
@@ -1246,9 +1254,7 @@ struct ResponsesReplayMiddleware: OpenAIMiddleware {
             if includesConfigurationUpdates, item["role"] as? String == "developer",
                let content = item["content"] as? String,
                content.hasPrefix(responsesConfigurationUpdateMarker) {
-                result.append(["type": "configuration_update", "reasoning": [
-                    "effort": String(content.dropFirst(responsesConfigurationUpdateMarker.count)),
-                ]])
+                result.append(responsesConfigurationUpdateItem(String(content.dropFirst(responsesConfigurationUpdateMarker.count))))
                 continue
             }
             if let content = item["content"] as? String,

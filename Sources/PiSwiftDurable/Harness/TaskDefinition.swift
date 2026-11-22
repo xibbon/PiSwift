@@ -96,6 +96,10 @@ public struct TaskDefinition<Input: Codable & Sendable, Checkpoint: TaskCheckpoi
         try recordValidateDeadline(until)
         return .sleeping(checkpoint: try encodeTaskCheckpoint(checkpoint), until: until)
     }
+    /// Creates a signal sleep, with an optional deadline.
+    public func sleeping(_ checkpoint: Checkpoint, signals: [SignalKey], until: Double? = nil) throws -> TaskState {
+        try .sleeping(checkpoint: encodeTaskCheckpoint(checkpoint), until: until, signals: signals)
+    }
     /// Creates a completed terminal task state with a JSON-encoded result.
     public func completed(_ result: Result) throws -> TaskState {
         .terminal(outcome: .completed(result: try JSONValue(encoding: result)))

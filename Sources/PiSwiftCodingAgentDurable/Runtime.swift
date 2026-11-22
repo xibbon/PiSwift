@@ -365,6 +365,14 @@ private final class RuntimeController: DurableHostController {
     func submit(_ text: String, whenBusy: SubmitWhenBusy) async {
         await command { try await $0.submit(text, whenBusy: whenBusy) }
     }
+    func submitInput(_ content: UserInput, whenBusy: SubmitWhenBusy,
+                     onAbort: InputOnAbort) async throws -> SubmissionID {
+        try await runtime.submitInput(content, whenBusy: whenBusy, onAbort: onAbort)
+    }
+    func deliverSignal<Value: Codable & Sendable>(taskId: TaskID, token: SignalToken<Value>,
+                                                  key: String, value: Value) async throws -> SignalResult {
+        try await runtime.deliverSignal(taskId: taskId, token: token, key: key, value: value)
+    }
     func continueRun() async { await command { try await $0.submitContinue() } }
     func loadEarlier() async { await command { try await $0.loadEarlier() } }
     func fillGap(_ gap: TranscriptGap) async { await command { try await $0.fillGap(gap) } }
@@ -505,6 +513,31 @@ private actor DurableRuntime {
                 }
             }
         }
+    }
+    func submitInput(_ content: UserInput, whenBusy: SubmitWhenBusy,
+                     onAbort: InputOnAbort) async throws -> SubmissionID {
+        try assertWritable()
+        let modelRef = try await current.agent(context: .background).model
+        let model = modelRef.flatMap { models.getModel(provider: $0.provider, modelId: $0.modelId) }
+        let prepared: UserInput
+        switch content {
+        case .text: prepared = content
+        case .blocks(let blocks):
+            switch await fitImages(content: blocks, limits: imageLimits(model), processor: NativeImageProcessor()) {
+            case .unchanged: prepared = content
+            case .fitted(let fitted, let notes):
+                prepared = .blocks(fitted + notes.map { .text(.init(text: $0)) })
+            }
+        }
+        let submission = try await current.submit(.input(content: prepared,
+            whenBusy: whenBusy == .steer ? .steer : .followUp, onAbort: onAbort), context: .background)
+        return submission.id
+    }
+    func deliverSignal<Value: Codable & Sendable>(taskId: TaskID, token: SignalToken<Value>,
+                                                  key: String, value: Value) async throws -> SignalResult {
+        try assertWritable()
+        return try await harness.signal(taskId: taskId, token: token, key: key,
+                                        value: value, context: .background)
     }
     func submitAtomically(_ text: String, whenBusy: SubmitWhenBusy,
                           writes: [EntryDraft], requestId: String?) async throws -> SubmissionID {

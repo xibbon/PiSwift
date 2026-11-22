@@ -13,6 +13,70 @@ import ImageIO
 
 @Suite("PiSwiftCodingAgentDurableTests.HostImages")
 struct HostImageTests {
+    @Test func stockRegistryFitsOversizedToolResultBeforeStorage() async throws {
+        let original = try png(width: 4000, height: 1000)
+        let registry = try createCodingRegistry(settingsManager: .inMemory(), cwd: "/tmp",
+                                                agentDirectory: "/tmp")
+        let tool = try ToolRegistration(name: "oversized", description: "Oversized image",
+            parameters: ["type": "object"], execute: { _, _, _ in
+                .result(.init(output: [.image(.init(data: original.base64EncodedString(), mimeType: "image/png"))]))
+            })
+        try registry.install(Extension(name: "oversized-test", tools: [tool]))
+        var request = chatAssistant("", reason: .toolUse)
+        request.content = [.toolCall(.init(id: "oversized-1", name: "oversized", arguments: [:]))]
+        let models = FakeDurableModels(options: .init(models: [.init(id: "faux-1", input: [.text, .image])]),
+                                       responses: [.message(request), .message(chatAssistant("done"))])
+        let harness = try await Harness.open(storage: MemoryStorage(), options: .init(
+            models: models, registry: registry, clock: TestClock(now: 1_000)), context: .background)
+        defer { Task { try? await harness.close(context: .background) } }
+        let root = try await harness.root(options: .init(agent: .init(
+            model: .set(.init(provider: "faux", modelId: "faux-1")))), context: .background)
+        #expect(try await root.submit(.input(content: .text("show")), context: .background)
+            .wait(context: .background).status == "done")
+        let (stored, decoded) = try image(result(await allEntries(root)))
+        #expect(decoded.width == 2000 && decoded.height == 500)
+        #expect(Data(base64Encoded: stored.data) != original)
+        try await harness.close(context: .background)
+    }
+
+    @Test func hostFitsAttachmentBeforeSubmission() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("D10-attachment-\(UUID())")
+        let agent = base.appendingPathComponent("agent")
+        let cwd = base.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let models = FakeDurableModels(options: .init(models: [.init(id: "faux-1", input: [.text, .image])]),
+                                       responses: [.message(chatAssistant("done"))])
+        let session = try await openDurable(.init(cwd: cwd.path, transcriptMode: .paged), dependencies: .init(
+            agentDirectory: agent.path, makeModels: { _ in
+                .init(models: models, available: models.models,
+                      initial: { _ in .init(model: .init(provider: "faux", modelId: "faux-1")) })
+            }, clock: TestClock(now: 1_000)))
+        defer { Task { await session.close() } }
+        let original = try png(width: 4000, height: 1000)
+        _ = try await session.hostController.submitInput(.blocks([
+            .text(.init(text: "Describe")), .image(.init(data: original.base64EncodedString(), mimeType: "image/png"))
+        ]), whenBusy: .followUp, onAbort: .withdraw)
+        try await eventually {
+            session.hostView.hostCurrent().rows.contains { row in
+                if case .entry(let entry) = row.item { return entry.kind == "pi.user" }
+                return false
+            }
+        }
+        let entry = try #require(session.hostView.hostCurrent().rows.compactMap { row -> EntryRecord? in
+            if case .entry(let entry) = row.item, entry.kind == "pi.user" { return entry }
+            return nil
+        }.first)
+        guard case .user(let user)? = try entry.messages()?.first, case .blocks(let blocks) = user.content else {
+            Issue.record("User attachment is absent"); return
+        }
+        let (_, decoded) = try image(.init(toolCallId: "user", toolName: "attachment", content: blocks, isError: false))
+        #expect(decoded.width == 2000 && decoded.height == 500)
+        #expect(blocks.contains { if case .text(let text) = $0 { return text.text.contains("Resized from 4000x1000") }; return false })
+        await session.close()
+    }
+
     // Both host registry paths must pass the processor to the installed read tool.
     private func read(_ bytes: Data, name: String, agentDirectory: Bool) async throws -> ToolResultMessage {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("e12-image-\(UUID())")

@@ -8,13 +8,16 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { mirrorV152 } from './mirror-v152.mjs';
+import { mirrorV160 } from './mirror-v160.mjs';
 
 if (!process.execArgv.includes('--experimental-strip-types')) {
   const child = spawnSync(process.execPath,
     ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(child.status ?? 1);
 }
-const output = fileURLToPath(new URL('./d5b-reverse-v152/', import.meta.url));
+const v160 = process.argv.includes('--v160');
+const tag = v160 ? 'v1.6.0' : 'v1.5.2';
+const output = fileURLToPath(new URL(v160 ? './d5b-reverse-v160/' : './d5b-reverse-v152/', import.meta.url));
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const check = process.argv.includes('--check');
 const verifyIndex = process.argv.indexOf('--verify-swift');
@@ -52,6 +55,10 @@ try {
   if (verifyIndex >= 0) {
     generated = process.argv[verifyIndex + 1];
     if (!generated) throw new Error('--verify-swift needs a fixture directory');
+  } else if (check && !v160) {
+    // Keep checking the frozen v1.5.2 files with their own tagged runtime.
+    // A new Swift export now writes v1.6.0 task versions.
+    generated = output;
   } else {
     generated = join(temporary, 'swift');
     await mkdir(generated);
@@ -64,10 +71,10 @@ try {
   const manifest = JSON.parse(await readFile(join(generated, 'manifest.json'), 'utf8'));
   const expectedNames = ['continue', 'turn-limit', 'model-error-retry', 'host-death-request', 'interrupted-poll', 'handoff']
     .flatMap(scenario => ['sqlite', 'jsonl'].map(backend => `${scenario}-${backend}`)).sort();
-  if (manifest.tag !== 'v1.5.2' || !isDeepStrictEqual(Object.keys(manifest.cases).sort(), expectedNames)) {
+  if (manifest.tag !== tag || !isDeepStrictEqual(Object.keys(manifest.cases).sort(), expectedNames)) {
     throw new Error('Expected six scenarios on two backends');
   }
-  source = await mirrorV152({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
+  source = await (v160 ? mirrorV160 : mirrorV152)({ dependencies: ['typebox@1.3.27', 'partial-json@0.1.7', 'diff@8.0.4'] });
   const { BACKGROUND_CONTEXT: context } = await source.import('packages/chord/src/context/index.ts');
   const { Harness } = await source.import('packages/durable/src/harness/harness.ts');
   const { createRegistry } = await source.import('packages/durable/src/harness/registry.ts');
@@ -199,6 +206,7 @@ try {
         await writeTaggedPre(manifest.cases[name], join(directory, backend === 'sqlite' ? 'pre.sqlite' : 'pre'));
       }
     }
+    if (v160) {
     const resumed = spawnSync('swift', ['test', '--skip-build', '--filter',
       'D5bReverseFixtureTests.swiftContinuesTagWrittenPreEvents'], {
       cwd: root, stdio: 'inherit', timeout: 120_000,
@@ -206,6 +214,7 @@ try {
     });
     if (resumed.error) throw resumed.error;
     if (resumed.status !== 0) throw new Error(`Swift tagged pre-event continuation exited ${resumed.status}`);
+    }
   } else if (verifyIndex < 0) {
     for (const [name, item] of Object.entries(manifest.cases)) {
       const destination = join(output, name), file = item.backend === 'sqlite' ? 'pre.sqlite' : 'pre';
@@ -217,7 +226,7 @@ try {
     }
     await writeFile(join(output, 'manifest.json'), JSON.stringify(manifest) + '\n');
   }
-  console.log(`D5b reverse fixtures ${check || verifyIndex >= 0 ? 'match' : 'written'}: six Swift scenarios, SQLite and JSONL, plus three tag-written pre-events resumed by Swift in check mode.`);
+  console.log(`D5b ${tag} reverse fixtures ${check || verifyIndex >= 0 ? 'match' : 'written'}: six Swift scenarios, SQLite and JSONL${v160 ? ', plus three tag-written pre-events resumed by Swift in check mode' : ''}.`);
 } finally {
   Date.now = oldDateNow; Math.random = oldMathRandom; crypto.getRandomValues = oldGetRandomValues;
   if (oldPerformanceNow) Object.defineProperty(performance, 'now', oldPerformanceNow);

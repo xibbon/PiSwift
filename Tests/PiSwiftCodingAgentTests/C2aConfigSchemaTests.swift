@@ -23,11 +23,11 @@ private func c2aTemporaryDirectory() throws -> URL {
 }
 
 @Suite struct C2aConfigSchemaTests {
-    @Test func bundledArtifactsMatchV152() throws {
-        // Upstream v1.5.2: pin the published schema bytes.
+    @Test func bundledArtifactsMatchV160() throws {
+        // Upstream v1.6.0: pin the published schema bytes.
         let expected: [BundledConfigSchema: String] = [
             .settings: "10c0b73ace40dd0a3461a45f08cb819b39b1089ce7037e27b746fc812f28beb9",
-            .models: "3e4cb1963defc0ea67a25d81a652536ed0a0d480c536db04dabe9d02baad8bdc",
+            .models: "b5679d7ad00fa34aa4f0b42aa7578ed85ae1fbf4b254ddeba5a4288e1c3c4f27",
             .keybindings: "46d494b2493cd9fcf957d352aac653fe6f04121254f34033a5664e7c8f9928aa",
             .theme: "f526a690b63c6303296f683c9df6077ddc290ee9acb1bc27eedef169c0caad59",
         ]
